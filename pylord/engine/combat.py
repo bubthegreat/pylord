@@ -38,6 +38,23 @@ their point of use below):
    reproduce that with ``rng.randrange(n)``, guarding ``n <= 0`` (which
    ``Math.random() * 0`` always resolves to 0 for in JS) by returning 0
    without drawing. See ``_random()``.
+5. ``pfight`` (post-review correction): lord.js gates the player-side
+   defense subtraction on this flag -- ``do_attack``:6948-6949 and
+   ``handle_hit``:6897-6898 both read ``if (pfight) atk -= op.def;``. Every
+   monster AND master encounter is started with ``pfight=false`` (masters:
+   ``battle(trainer, false, false)``, lord.js:15760); the only caller that
+   passes ``pfight=true`` is real player-vs-player combat
+   (``battle(op, true, false)``, lord.js:7824). So a Master's ``defense``
+   is *never* subtracted from the player's attack in an ordinary encounter
+   -- only in PvP. ``Fight.pfight`` defaults to ``False`` accordingly; a
+   future PvP task must construct ``Fight(..., pfight=True)`` explicitly.
+   ``enemy_attack()``'s ``atk -= player.def`` (lord.js:6726) has no such
+   guard and stays unconditional in both modes.
+6. ``skill_points`` is never decremented by ``skill_attack()`` -- lord.js
+   decrements ``player.levelw``/``levelm``/``levelt`` itself after a
+   successful cast (e.g. lord.js:7107, 7183, 7295/7310/7321/7334/7345/7360).
+   The caller is responsible for persisting the decremented value back onto
+   whichever ``Player`` field the ``kind`` maps to.
 """
 
 from __future__ import annotations
@@ -121,29 +138,52 @@ class Combatant:
         )
 
 
-def attack_damage(attacker: Combatant, defender: Combatant, rng: random.Random) -> int:
-    """Base damage roll shared by every attack formula in lord.js:
+def attack_damage(
+    attacker: Combatant,
+    defender: Combatant,
+    rng: random.Random,
+    pfight: bool = False,
+) -> int:
+    """Base damage roll for a **player-side** attack, per lord.js:
 
         atk = random(parseInt(str / 2, 10)) + parseInt(str / 2, 10)
-        atk -= defender.def
+        if (pfight) atk -= defender.def
 
     seen (with identical shape, different variable names) at:
-      - do_attack (player's basic attack): lord.js:6943 (roll), 6949 (defense subtract)
-      - enemy_attack (monster/master's attack): lord.js:6703 (roll), 6726 (defense subtract)
+      - do_attack (player's basic attack): lord.js:6943 (roll), 6948-6949 (pfight-gated defense subtract)
       - use_death_knight / use_thief_skill (skill roll): lord.js:7099 / 7180
-      - handle_hit (skill defense subtract): lord.js:6898
+      - handle_hit (skill's pfight-gated defense subtract): lord.js:6897-6898
 
-    Result is floored at 0 -- never negative, per the Task 7 TDD requirement.
-    ``Fight.player_attack()`` treats a 0 result as a miss (lord.js's
-    do_attack does the same: ``if (atk < 1)`` at 6954), while skill attacks
-    routed through ``handle_hit`` instead clamp a non-positive result *up*
-    to a guaranteed 1 (lord.js:6900-6902) -- that clamp-up is applied by the
-    caller (``_handle_hit`` below), not by this shared primitive, since the
-    two behaviours diverge here.
+    **``pfight`` gating (post-review correction):** lord.js only subtracts
+    the defender's defense when ``pfight`` is true -- i.e. real
+    player-vs-player combat (``battle(op, true, false)``, lord.js:7824).
+    Every monster and master encounter uses ``pfight=false``
+    (``battle(trainer, false, false)``, lord.js:15760), so a Master's
+    ``defense`` is never subtracted from the player's attack in an ordinary
+    fight. Defaults to ``False`` to match that. See module docstring note 5.
+
+    This is the **player-side** formula only -- do not use it for the
+    enemy's attack. ``Fight.enemy_attack()`` subtracts ``player.defense``
+    unconditionally (lord.js:6726 has no ``pfight`` guard at all); that
+    asymmetry is correct per lord.js and is implemented separately.
+
+    Result is floored at 0 -- never negative, per the Task 7 TDD
+    requirement. ``Fight.player_attack()`` treats a 0 result as a miss
+    (lord.js's do_attack does the same: ``if (atk < 1)`` at 6954), while
+    skill attacks routed through ``handle_hit`` instead clamp a
+    non-positive result *up* to a guaranteed 1 (lord.js:6900-6902) -- that
+    clamp-up is applied by the caller (``_handle_hit`` below), not by this
+    shared primitive, since the two behaviours diverge here.
+
+    Consumes exactly one rng draw (the base roll) -- defense subtraction is
+    not random -- so callers that need a further draw afterward (e.g.
+    ``player_attack()``'s crit roll) stay aligned with lord.js's draw order.
     """
     half = attacker.strength // 2
     raw = _random(rng, half) + half
-    return max(raw - defender.defense, 0)
+    if pfight:
+        raw -= defender.defense
+    return max(raw, 0)
 
 
 @dataclass
@@ -153,6 +193,7 @@ class Fight:
     player_side: Combatant
     enemy: Combatant
     rng: random.Random
+    pfight: bool = False
     ran_away: bool = False
     light_shield: bool = False
     gem_found: bool = False
@@ -196,22 +237,22 @@ class Fight:
         return ""
 
     def player_attack(self) -> Round:
-        """Port of do_attack() for a plain (non-pfight) encounter.
-        reference/lord.js:6931-6997.
+        """Port of do_attack(). reference/lord.js:6931-6997.
 
+        Delegates the base roll + ``pfight``-gated defense subtraction to
+        ``attack_damage()`` (single source of truth, no duplicated formula
+        -- see module docstring note 5 for the ``pfight`` correction).
         Amulet handling (6945-6946, 6951-6952) is omitted -- Player
         (pylord/models.py) has no amulet field. Draw order matches lord.js
-        exactly: base roll first (6943), then the power-move-chance roll
-        (6944, drawn unconditionally, before the miss check), so seeded rng
-        sequences stay aligned with the source even though the multiply
-        itself only applies on a hit.
+        exactly: base roll first (6943, inside ``attack_damage()``), then
+        the power-move-chance roll (6944, drawn unconditionally, before the
+        miss check), so seeded rng sequences stay aligned with the source
+        even though the multiply itself only applies on a hit.
         """
-        half = self.player_side.strength // 2
-        raw = _random(self.rng, half) + half  # lord.js:6943
+        dmg = attack_damage(
+            self.player_side, self.enemy, self.rng, self.pfight
+        )  # lord.js:6943, 6948-6949
         crit_roll = _random(self.rng, 10) + 1  # lord.js:6944
-        dmg = (
-            raw - self.enemy.defense
-        )  # lord.js:6949 (pfight-gated there; unconditional here, see attack_damage())
         if dmg < 1:  # lord.js:6954
             return Round(
                 damage=0, killed=False, text=f"You miss {self.enemy.name} completely!"
@@ -273,13 +314,13 @@ def _handle_hit(fight: Fight, atk: int, verb: str) -> Round:
     skill attack (Death Knight, Thieving, and 3 of the 6 Mystical spells).
     reference/lord.js:6893-6929.
 
-    Unlike do_attack(), this never misses: defense is subtracted, then the
-    result is clamped *up* to a guaranteed minimum of 1
+    Unlike do_attack(), this never misses: defense is subtracted (gated on
+    ``fight.pfight``, per module docstring note 5), then the result is
+    clamped *up* to a guaranteed minimum of 1
     (lord.js:6900-6902: ``if (atk < 1) atk = 1;``).
     """
-    atk -= (
-        fight.enemy.defense
-    )  # lord.js:6898 (`if (pfight) atk -= op.def`; 0 for Monster combatants)
+    if fight.pfight:  # lord.js:6897-6898 `if (pfight) atk -= op.def;`
+        atk -= fight.enemy.defense
     atk = max(atk, 1)  # lord.js:6900-6902
     fight.enemy.hp -= atk  # lord.js:6904
     killed = fight.enemy.hp <= 0
@@ -300,9 +341,16 @@ def _death_knight_attack(fight: Fight, skill_points: int) -> Round:
     The pfight honor-check (7038-7051) is player-vs-player-only and omitted.
     """
     if skill_points < 1:
+        # Equivalent to lord.js's menu hiding this option entirely
+        # (battle_prompt only shows it when player.levelw > 0) -- the
+        # underlying function is never invoked, so zero rng draws here
+        # matches lord.js exactly (no draw happens either).
         return Round(
             damage=0, killed=False, text="You don't have the strength for that."
         )
+    _random(
+        fight.rng, 7
+    )  # lord.js:7059, flavor-text switch(random(7)) -- discarded, draw-order only
     half = fight.player_side.strength // 2
     atk = _random(fight.rng, half) + half  # lord.js:7099
     atk *= 3  # lord.js:7104 (non-dk_boost branch)
@@ -324,7 +372,12 @@ def _thief_attack(fight: Fight, skill_points: int) -> Round:
     surfaced here via ``fight.gem_found`` / ``fight.bonus_gold``.
     """
     if skill_points < 1:
+        # See _death_knight_attack's identical guard note: equivalent to
+        # the menu hiding this option, zero draws.
         return Round(damage=0, killed=False, text="You don't have the skill for that.")
+    _random(
+        fight.rng, 7
+    )  # lord.js:7137, flavor-text switch(random(7)) -- discarded, draw-order only
     half = fight.player_side.strength // 2
     atk = _random(fight.rng, half) + half  # lord.js:7180
     atk *= 3  # lord.js:7181
@@ -397,6 +450,11 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
                 killed=False,
                 text="You reach for the power, but it just isn't there.",
             )
+
+    # lord.js:7225, flavor-text switch(random(7)) -- drawn unconditionally
+    # once per cast, before the menu/spell dispatch, regardless of which
+    # letter is eventually chosen. Discarded, draw-order only.
+    _random(fight.rng, 7)
 
     half = fight.player_side.strength // 2
 

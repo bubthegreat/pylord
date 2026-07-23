@@ -65,10 +65,87 @@ def test_attack_damage_is_never_negative():
     defender = combat.Combatant(
         name="B", hp=10, hp_max=10, strength=1, defense=999, weapon_name="Fists"
     )
-    rng = random.Random(0)
-    for _ in range(500):
-        dmg = combat.attack_damage(attacker, defender, rng)
-        assert dmg >= 0
+    for seed in range(500):
+        rng = random.Random(seed)
+        assert combat.attack_damage(attacker, defender, rng, pfight=False) >= 0
+        rng = random.Random(seed)
+        assert combat.attack_damage(attacker, defender, rng, pfight=True) >= 0
+
+
+def test_attack_damage_pfight_gates_defense_subtraction():
+    """CRITICAL regression test: lord.js only subtracts defender.defense
+    when pfight is true (do_attack:6948-6949, handle_hit:6897-6898).
+
+    strength=10 -> half=5; random.Random(42).randrange(5) == 0, so the raw
+    roll is 0 + 5 == 5 (hand-computed, matches _random()'s port of lord.js's
+    random(n)). defender.defense=999 must be completely ignored when
+    pfight=False, and fully subtracted (floored at 0) when pfight=True.
+    """
+    attacker = combat.Combatant(
+        name="A", hp=10, hp_max=10, strength=10, defense=0, weapon_name="Fists"
+    )
+    defender = combat.Combatant(
+        name="B", hp=10, hp_max=10, strength=1, defense=999, weapon_name="Fists"
+    )
+
+    dmg_pfight_false = combat.attack_damage(
+        attacker, defender, random.Random(42), pfight=False
+    )
+    dmg_pfight_true = combat.attack_damage(
+        attacker, defender, random.Random(42), pfight=True
+    )
+
+    assert dmg_pfight_false == 5
+    assert dmg_pfight_true == 0  # 5 - 999, floored at 0
+
+
+def test_player_attack_vs_master_ignores_defense():
+    """CRITICAL regression test: an ordinary (non-PvP) fight against a
+    Master never subtracts the Master's defense, no matter how high it is
+    -- every trainer encounter runs as battle(trainer, false, false)
+    (lord.js:15760), and do_attack only subtracts op.def `if (pfight)`
+    (lord.js:6948-6949). Turgon (MASTERS[11]) has defense=150; without the
+    fix this would floor player_attack's damage to 0 (a miss) every time.
+
+    Hand-computed for strength=10 (half=5), random.Random(42):
+    randrange(5) == 0 -> raw = 5; randrange(10)+1 == 1 (not > 9, no crit)
+    -> final damage == 5, completely unaffected by Turgon's defense=150.
+    """
+    player = combat.Combatant(
+        name="Hero", hp=20, hp_max=20, strength=10, defense=1, weapon_name="Fists"
+    )
+    turgon = combat.Combatant.from_master(data.MASTERS[11])
+    assert turgon.defense == 150
+
+    fight = combat.Fight(player, turgon, random.Random(42))  # pfight defaults False
+
+    round_ = fight.player_attack()
+
+    assert round_.damage == 5
+    assert round_.killed is False
+    assert "miss" not in round_.text.lower()
+
+
+def test_player_attack_pfight_true_subtracts_defense():
+    """PvP-style test: with pfight=True, the defender's defense IS
+    subtracted (lord.js:6948-6949, the only caller that sets pfight=true is
+    real player-vs-player combat, lord.js:7824).
+
+    Hand-computed for strength=10 (half=5), random.Random(42): raw roll ==
+    5 (as above), defender.defense=3 subtracted -> 2; crit_roll == 1 (not >
+    9, no crit multiply) -> final damage == 2.
+    """
+    player = combat.Combatant(
+        name="Hero", hp=20, hp_max=20, strength=10, defense=1, weapon_name="Fists"
+    )
+    rival = combat.Combatant(
+        name="Rival", hp=20, hp_max=20, strength=8, defense=3, weapon_name="Dagger"
+    )
+    fight = combat.Fight(player, rival, random.Random(42), pfight=True)
+
+    round_ = fight.player_attack()
+
+    assert round_.damage == 2
 
 
 def test_player_attack_round_damage_never_negative():
@@ -78,6 +155,24 @@ def test_player_attack_round_damage_never_negative():
         fight = combat.Fight(player, enemy, random.Random(seed))
         round_ = fight.player_attack()
         assert round_.damage >= 0
+
+
+def test_enemy_attack_exact_value_vs_small_thief():
+    """Exact-value regression test for a normal monster attack.
+
+    Small Thief strength=6 -> half=3. random.Random(0): randrange(3) == 1
+    -> raw = 1 + 3 = 4; randrange(30) == 24 (!= 1, no power move); player
+    defense=1 -> atk = 4 - 1 = 3 (hand-computed against enemy_attack()'s
+    ported formula, lord.js:6703-6726).
+    """
+    player = combat.Combatant.from_player(make_player())
+    enemy = combat.Combatant.from_monster(small_thief())
+    fight = combat.Fight(player, enemy, random.Random(0))
+
+    round_ = fight.enemy_attack()
+
+    assert round_.damage == 3
+    assert player.hp == 20 - 3
 
 
 def test_enemy_attack_round_damage_never_negative():
