@@ -233,6 +233,15 @@ class OutOfKeys(Exception):
     """Raised by FakeIO when a scripted input queue is exhausted."""
 
 
+class ConnectionClosed(Exception):
+    """Raised by TelnetIO when the peer has disconnected mid-read.
+
+    This is TelnetIO's counterpart to FakeIO's ``OutOfKeys``: both signal
+    "no more input is coming" to callers (menu()/pause()/scene code) rather
+    than silently synthesizing a blank line or keypress.
+    """
+
+
 class TermIO(ABC):
     """Abstract-ish base for terminal I/O. Concrete subclasses implement
     write/readkey/readline; pause() and menu() are built from those."""
@@ -303,12 +312,49 @@ class TelnetIO(TermIO):
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
+        # Set right after a raw read returns "\r": a CRLF-style Enter
+        # arrives over the wire as two separate reads ("\r" then "\n"), so
+        # the very next raw read must swallow a leading "\n" instead of
+        # misreading it as an already-terminated blank line/keypress. See
+        # _raw_read()'s docstring for the bug this fixes.
+        self._swallow_lf = False
+
+    async def _raw_read(self) -> str:
+        """Read one character, applying CRLF-swallowing and EOF handling.
+
+        Bug fixed here (found while writing this task's integration tests --
+        TelnetIO was previously untested against a real telnetlib3 reader):
+        a client's Enter key normally arrives as two bytes, "\\r\\n". The old
+        code read only one byte per readline()/readkey() call, so the "\\n"
+        left over from an Enter was seen as the *start* of the next
+        readline()/readkey() call and immediately treated as "nothing
+        typed" -- every other line of input from a real telnet client was
+        silently swallowed. This also compounds with a second bug: on a
+        genuine disconnect, ``reader.read(1)`` returns ``""`` forever
+        without blocking, so the old ``readline()``/``menu()`` treated EOF
+        as an ordinary terminator/keypress and ``menu()`` would spin in a
+        tight, non-blocking infinite loop re-reading "" forever. Both are
+        fixed here: a lone "\\n" immediately following a "\\r" is consumed
+        and not returned, and "" now raises ``ConnectionClosed`` so callers
+        (readline/readkey/menu/pause and ultimately the server's
+        connection handler) can unwind and clean up instead of spinning.
+        """
+        ch = await self.reader.read(1)
+        if self._swallow_lf:
+            self._swallow_lf = False
+            if ch == "\n":
+                ch = await self.reader.read(1)
+        if ch == "":
+            raise ConnectionClosed("telnet connection closed by peer")
+        if ch == "\r":
+            self._swallow_lf = True
+        return ch
 
     async def write(self, text: str) -> None:
         self.writer.write(render(text))
 
     async def readkey(self) -> str:
-        return await self.reader.read(1)
+        return await self._raw_read()
 
     async def readline(
         self, prompt: str = "", maxlen: int = 40, charset: str | None = None
@@ -317,8 +363,8 @@ class TelnetIO(TermIO):
             await self.write(prompt)
         chars: list[str] = []
         while True:
-            ch = await self.reader.read(1)
-            if ch in ("\r", "\n", ""):
+            ch = await self._raw_read()
+            if ch in ("\r", "\n"):
                 break
             if ch in ("\x08", "\x7f"):  # backspace / delete
                 if chars:
