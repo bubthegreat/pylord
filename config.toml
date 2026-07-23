@@ -1,0 +1,12 @@
+[server]
+host = "0.0.0.0"
+port = 2323
+
+[game]
+forest_fights_per_day = 15
+player_fights_per_day = 3
+flirts_per_day = 1
+clean_mode = false
+
+[igms]
+# populated by bundled IGMs; true = enabled

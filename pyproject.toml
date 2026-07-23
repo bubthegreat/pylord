@@ -1,0 +1,20 @@
+[project]
+name = "pylord"
+version = "0.1.0"
+description = "Legend of the Red Dragon — Python telnet remake"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "GPL-3.0-or-later"}
+dependencies = [
+    "telnetlib3>=4.0.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
