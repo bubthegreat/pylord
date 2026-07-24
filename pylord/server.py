@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import telnetlib3
+from telnetlib3.telopt import ECHO, SGA, WILL
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
 from pylord import db, igm_loader
@@ -166,6 +167,17 @@ async def handle_connection(
     the ``finally`` block, regardless of how the session ends (normal
     logoff, an unhandled scene error, or the client disconnecting).
     """
+    # Ask the client for character-at-a-time mode (the standard BBS-door
+    # arrangement): WILL ECHO + WILL SGA tell it to stop line-buffering
+    # locally and let the server echo. Without this, real telnet clients
+    # send nothing until Enter, so readkey() gets the first letter and the
+    # leftover CR hits the next menu() as an invalid key (re-printing its
+    # prompt), and hotkey+argument screens only work typed as one line.
+    # telnetlib3 handles the DO/DONT replies; a client that refuses simply
+    # stays in line mode and behaves no worse than before.
+    writer.iac(WILL, ECHO)
+    writer.iac(WILL, SGA)
+
     io = TelnetIO(reader, writer)
     repo = PlayerRepo(conn)
 

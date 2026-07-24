@@ -1,6 +1,6 @@
 import pytest
 
-from pylord.terminal import FakeIO, OutOfKeys, TermIO, render, strip
+from pylord.terminal import FakeIO, OutOfKeys, TelnetIO, TermIO, render, strip
 
 # --- render() -----------------------------------------------------------
 
@@ -196,3 +196,53 @@ async def test_fakeio_pause_writes_more_and_reads_key():
 def test_termio_is_not_directly_usable():
     io = TermIO()
     assert isinstance(io, TermIO)
+
+
+# --- Real-client behavior (Task 21 follow-up bug reports) -------------------
+
+
+class _StubWriter:
+    """Captures TelnetIO.write output without a real telnet connection."""
+
+    def __init__(self):
+        self.chunks: list[str] = []
+
+    def write(self, text: str) -> None:
+        self.chunks.append(text)
+
+
+async def test_telnetio_write_translates_lf_to_crlf():
+    """A real telnet client treats bare LF per the telnet spec: move down
+    one line but KEEP the column, producing stair-stepped output. Every
+    outgoing newline must go over the wire as CRLF."""
+    io = TelnetIO(reader=None, writer=_StubWriter())
+    await io.write("line one\nline two\n")
+    sent = "".join(io.writer.chunks)
+    assert "\r\n" in sent
+    assert "\n" not in sent.replace("\r\n", "")
+
+
+async def test_telnetio_write_does_not_double_existing_crlf():
+    io = TelnetIO(reader=None, writer=_StubWriter())
+    await io.write("already fine\r\nnext\n")
+    sent = "".join(io.writer.chunks)
+    assert sent == "already fine\r\nnext\r\n"
+
+
+async def test_menu_silently_ignores_stray_enter_keys():
+    """Line-mode clients (e.g. Mudlet) transmit a full line plus CRLF; the
+    letter is consumed by the menu that asked for it and the CR/LF
+    leftovers hit the NEXT menu()/readkey(). Those must not count as
+    invalid keys -- re-prompting on them is what doubled every prompt
+    ("Your choice? Your choice?")."""
+    io = FakeIO(keys=["\r", "\n", "f"])
+    result = await io.menu({"F": "Forest"}, "Where to?")
+    assert result == "F"
+    assert io.output.count("Where to?") == 1
+
+
+async def test_menu_still_reprompts_on_genuinely_wrong_key():
+    io = FakeIO(keys=["x", "f"])
+    result = await io.menu({"F": "Forest"}, "Where to?")
+    assert result == "F"
+    assert io.output.count("Where to?") == 2

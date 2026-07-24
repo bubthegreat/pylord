@@ -74,6 +74,45 @@ async def _wait_until(predicate, timeout: float = 2.0, interval: float = 0.05) -
     await asyncio.wait_for(_poll(), timeout)
 
 
+async def test_server_negotiates_character_at_a_time_mode(tmp_path):
+    """The server must open every connection with IAC WILL ECHO + IAC WILL
+    SGA so real telnet clients drop out of line mode. Without this, a
+    client buffers a whole line locally and sends it only on Enter --
+    readkey() then eats the first character and the leftover CR hits the
+    next menu() as an invalid key, silently re-printing its prompt (the
+    doubled "Your choice? Your choice?"), and any hotkey+argument screen
+    (e.g. buying in the weapons shop) only works when typed as one line
+    like "b 2". Probed with a raw asyncio socket, NOT a telnetlib3 client,
+    because the client library performs its own negotiation and would mask
+    what the server actually sent."""
+    server, port, _db_path = await _start_test_server(tmp_path)
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        try:
+            # Refuse the server's DO TTYPE probe so it stops waiting for
+            # negotiation (telnetlib3 holds the shell back for
+            # connect_maxwait, ~4s, when the peer never answers).
+            writer.write(b"\xff\xfc\x18")  # IAC WONT TTYPE
+            await writer.drain()
+            data = b""
+            async def _collect() -> None:
+                nonlocal data
+                while not (b"\xff\xfb\x01" in data and b"\xff\xfb\x03" in data):
+                    chunk = await reader.read(4096)
+                    if chunk == b"":
+                        raise AssertionError(
+                            f"connection closed; bytes so far: {data.hex()}"
+                        )
+                    data += chunk
+
+            await asyncio.wait_for(_collect(), 2.0)  # WILL ECHO + WILL SGA
+        finally:
+            writer.close()
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
 async def test_new_character_creation_view_stats_and_quit(tmp_path):
     server, port, db_path = await _start_test_server(tmp_path)
     try:

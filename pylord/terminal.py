@@ -269,12 +269,20 @@ class TermIO(ABC):
         raw pressed key, which may differ in case).
         """
         lookup = {key.upper(): key for key in options}
+        if prompt:
+            await self.write(prompt)
         while True:
-            if prompt:
-                await self.write(prompt)
             pressed = (await self.readkey()).upper()
             if pressed in lookup:
                 return lookup[pressed]
+            if pressed in ("\r", "\n"):
+                # Stray Enter -- typically the CR/LF tail of a line-mode
+                # client's previous input (e.g. Mudlet sends "t\r\n"; the
+                # "t" answered the previous menu). Ignore it without
+                # re-printing, otherwise every prompt shows doubled.
+                continue
+            if prompt:
+                await self.write(prompt)
 
 
 class FakeIO(TermIO):
@@ -351,7 +359,11 @@ class TelnetIO(TermIO):
         return ch
 
     async def write(self, text: str) -> None:
-        self.writer.write(render(text))
+        # Telnet requires CRLF line endings: a bare LF moves the cursor
+        # down without returning to column 0, stair-stepping all output in
+        # real clients. Normalize first so an already-CRLF string isn't
+        # doubled into CR CR LF.
+        self.writer.write(render(text).replace("\r\n", "\n").replace("\n", "\r\n"))
 
     async def readkey(self) -> str:
         return await self._raw_read()
