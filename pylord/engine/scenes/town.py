@@ -14,8 +14,9 @@ using the same backtick color-code conventions (`` `2`` green body text,
 `` `0`` bright-green highlight) the rest of lord.js's screens use.
 
 Destinations not yet implemented by an earlier/this task (everything except
-``stats`` and the town loop itself) route to a single shared "coming soon"
-stub scene (see ``_stub`` below) until their own task lands.
+``stats``, ``weapons``, ``armor``, ``healer``, ``bank``, ``training``, and
+the town loop itself) route to a single shared "coming soon" stub scene
+(see ``_stub`` below) until their own task lands.
 """
 
 from __future__ import annotations
@@ -59,13 +60,13 @@ _PROMPT = "`2Your choice`0? `2"
 _DESTINATIONS: dict[str, str | None] = {
     "F": "forest",
     "S": "pvp_stub",
-    "K": "weapons_stub",
-    "A": "armor_stub",
-    "H": "healer_stub",
+    "K": "weapons",
+    "A": "armor",
+    "H": "healer",
     "V": "stats",
     "I": "inn_stub",
-    "T": "training_stub",
-    "Y": "bank_stub",
+    "T": "training",
+    "Y": "bank",
     "L": "list_stub",
     "W": "mail_stub",
     "D": "news_stub",
@@ -97,12 +98,7 @@ async def _stub(ctx: GameCtx) -> str:
 
 for _key in (
     "pvp_stub",
-    "weapons_stub",
-    "armor_stub",
-    "healer_stub",
     "inn_stub",
-    "training_stub",
-    "bank_stub",
     "list_stub",
     "mail_stub",
     "news_stub",

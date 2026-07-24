@@ -100,10 +100,15 @@ async def test_kill_flow_grants_exact_gold_and_exp():
     assert player.gems == 0
 
 
-async def test_healer_option_routes_to_healer_stub():
+async def test_healer_option_routes_to_real_healer_scene():
+    """Task 11: (H) now routes to the real healer scene, not a stub. A
+    fresh player is already at full HP (hp == hp_max == 20), so the
+    healer's "you look fine to us" branch fires and bounces straight back
+    to town -- see pylord/engine/scenes/healer.py."""
     io, _player = await play(["f", "h", "q"])
     text = screen(io)
-    assert "Under construction" in text
+    assert "You look fine to us" in text
+    assert text.count("Town Square") == 2
 
 
 async def test_view_stats_option_routes_to_stats_then_town():

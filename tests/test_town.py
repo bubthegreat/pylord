@@ -50,7 +50,8 @@ async def test_stub_scene_shows_under_construction_and_returns_to_town():
 
 
 async def test_every_stub_destination_reachable():
-    stub_keys = ["s", "k", "a", "h", "i", "t", "y", "l", "w", "d", "c", "o", "x"]
+    # K/A/H/T/Y are real scenes now (Task 11: shops, healer, bank, training).
+    stub_keys = ["s", "i", "l", "w", "d", "c", "o", "x"]
     for key in stub_keys:
         io, _player = await play([key, "q"])
         assert "Under construction" in screen(io)

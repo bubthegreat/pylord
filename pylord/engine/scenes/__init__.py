@@ -5,6 +5,6 @@ server entrypoint, tests/harness.py) should ``import pylord.engine.scenes``
 before calling ``run_session``.
 """
 
-from pylord.engine.scenes import forest, stats, town
+from pylord.engine.scenes import bank, forest, healer, shops, stats, town, training
 
-__all__ = ["forest", "stats", "town"]
+__all__ = ["bank", "forest", "healer", "shops", "stats", "town", "training"]

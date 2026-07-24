@@ -10,7 +10,7 @@ ported onto ``pylord.engine.combat`` in Task 7).
 Menu letters/destinations: the top-level task brief's "Produce" section
 (the authoritative, most specific source -- see also the module-level
 "Deviations" note below) asks for **(L)ook for something to kill,
-(H)ealer's Hut -> "healer_stub", (R)eturn to town -> "town", (V)iew your
+(H)ealer's Hut -> "healer", (R)eturn to town -> "town", (V)iew your
 stats -> "stats"**. ``(L)``/``(H)``/``(R)`` text matches lord.js's own
 persistent forest menu verbatim (``:15210-15216``); ``(V)`` is a
 reconstruction matching Town Square's own "(V)iew your stats" wording
@@ -156,7 +156,7 @@ async def forest(ctx: GameCtx) -> str | None:
         if choice == "V":
             return "stats"
         if choice == "H":
-            return "healer_stub"
+            return "healer"
         # choice == "L"
         died = await _look_to_kill(ctx)
         if died:
