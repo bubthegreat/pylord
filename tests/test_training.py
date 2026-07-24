@@ -107,7 +107,9 @@ async def test_master_win_grants_level_and_exact_stat_gains():
     """A one-shot kill: player str=1000 (so attack_damage's floor(str/2)=
     500 dominates Halder's hp=30 regardless of the roll), and the crit
     roll must land <= 9 (no power-move multiplier needed to one-shot
-    anyway). ``_SeqRNG`` pins both draws deterministically:
+    anyway). ``_SeqRNG`` pins every draw deterministically:
+        randrange(99)  -> 0   (opening initiative, 0+1=1: player strikes
+                               first -- reference/lord.js:7375-7391)
         randrange(500) -> 0   (attack_damage's base roll -> dmg = 500)
         randrange(10)  -> 0   (crit-move roll, 0+1=1, not > 9)
     500 damage one-shots Halder (hp=30) on the very first swing.
@@ -120,7 +122,7 @@ async def test_master_win_grants_level_and_exact_stat_gains():
             "hp": 200,
             "hp_max": 200,
         },
-        rng=_SeqRNG([0, 0]),
+        rng=_SeqRNG([0, 0, 0]),
         keys=["a"],
     )
     await training_mod._attack_master(ctx, trainer)
@@ -167,7 +169,7 @@ async def test_level_11_to_12_win_broadcasts_ultimate_warrior_to_news_only():
             "hp": 5000,
             "hp_max": 5000,
         },
-        rng=_SeqRNG([0, 0]),
+        rng=_SeqRNG([0, 0, 0]),
         keys=["a"],
     )
     await training_mod._attack_master(ctx, trainer)
@@ -187,7 +189,8 @@ async def test_master_loss_heals_and_shows_mercy_no_death():
     """Player deals 0 damage (strength=0 -> attack_damage's base roll
     floors at 0, a guaranteed miss that costs no rng draw -- ``half=0``
     short-circuits ``_random()``) while Halder (str=15) one-shots a
-    5-hp player back. Draw order for a single "a" press:
+    5-hp player back. Draw order, opening roll first:
+        randrange(99) -> 0   (opening initiative: player strikes first)
         randrange(10) -> 0   (crit-move roll on the miss, 0+1=1: no power move)
         randrange(7)  -> 0   (enemy's base roll, half=7 -> 0+7=7 damage)
         randrange(30) -> 0   (enemy power-move check, != 1: no power move)
@@ -203,7 +206,7 @@ async def test_master_loss_heals_and_shows_mercy_no_death():
             "hp": 5,
             "hp_max": 5,
         },
-        rng=_SeqRNG([0, 0, 0]),
+        rng=_SeqRNG([0, 0, 0, 0]),
         keys=["a", "x", "x"],
     )
     await training_mod._attack_master(ctx, trainer)

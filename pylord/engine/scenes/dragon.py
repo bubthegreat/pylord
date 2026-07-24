@@ -101,6 +101,7 @@ from typing import TYPE_CHECKING
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.data import Monster
 from pylord.engine.game import scene
+from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
     from pylord.engine.game import GameCtx
@@ -151,6 +152,7 @@ def _battle_options(p: Player) -> dict[str, str]:
     options = {"A": "attack", "R": "run"}
     if _can_skill(p):
         options["S"] = "skill"
+    options.update(_battle.extra_options(p))
     return options
 
 
@@ -168,6 +170,7 @@ async def _battle_prompt(ctx: GameCtx, fight: Fight) -> None:
     if entry is not None and _can_skill(p):
         _field, _kind, label = entry
         lines.append(f"  `2(`0S`2)kill: {label} (`%{p.skill_uses}`0)")
+    lines.extend(_battle.extra_menu_lines(p))
     lines.append("")
     lines.append(f"  `2Your command, `0{p.name}`2?  [`5A`2] : ")
     await ctx.io.write("\n".join(lines))
@@ -219,7 +222,16 @@ async def _fight_dragon(ctx: GameCtx) -> bool:
         "\n\n  `%**`4DRAGON ENCOUNTER`%**\n\n  `2The Red Dragon approaches.\n\n"
     )  # reference/lord.js:12089-12093
 
-    fight = Fight(Combatant.from_player(p), Combatant.from_monster(_DRAGON), ctx.rng, pfight=False)
+    fight = Fight(
+        Combatant.from_player(p),
+        # is_dragon drives the per-swing weapon switch, whose Flaming
+        # Breath outcome doubles the damage roll (reference/lord.js:6704-6720).
+        Combatant.from_monster(_DRAGON, is_dragon=True),
+        ctx.rng,
+        pfight=False,
+    )
+    await _battle.opening(ctx, fight)  # reference/lord.js:7375-7391
+    p.hp = fight.player_side.hp
 
     while not fight.over:
         await _battle_prompt(ctx, fight)
@@ -228,18 +240,18 @@ async def _fight_dragon(ctx: GameCtx) -> bool:
         if action == "A":
             round_ = fight.player_attack()
             await ctx.io.write(f"\n  {round_.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, round_)
+        elif action == "H":
+            round_ = await _battle.fairy_lore_heal(ctx, fight)
         elif action == "S":
-            _field, kind, _label = _SKILL_BY_CLASS[p.class_type]
-            round_ = skill_attack(fight, kind, p.skill_uses)
+            field, kind, _label = _SKILL_BY_CLASS[p.class_type]
+            round_ = skill_attack(
+                fight, kind, p.skill_uses, skill_rank=getattr(p, field)
+            )
             cost = fight.last_spell_cost if kind == "my" else 1
             p.skill_uses -= cost
             await ctx.io.write(f"\n  {round_.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, round_)
         elif action == "R":
             hp_before = fight.player_side.hp
             ran = fight.attempt_run()

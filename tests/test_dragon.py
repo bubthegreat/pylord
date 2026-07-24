@@ -96,7 +96,9 @@ async def test_dragon_win_resets_every_field_and_increments_king_count():
             "gold": 12345, "bank": 999, "exp": 54321, "gems": 3,
             "weapon_num": 9, "armor_num": 9, "defense": 88,
         },
-        rng=_SeqRNG([0, 0]),
+        # First draw is the opening initiative roll (0 -> tmp 1, the
+        # player strikes first, reference/lord.js:7375-7391).
+        rng=_SeqRNG([0, 0, 0]),
         keys=["a", "a", "x", "x", "x", "x", "x", "x"],
     )
     result = await dragon_mod.dragon(ctx)
@@ -141,7 +143,9 @@ async def test_dragon_win_resets_every_field_and_increments_king_count():
 async def test_dragon_win_reset_honors_configured_forest_and_player_fights():
     ctx = _ctx(
         overrides={"level": 12, "strength": 40000, "hp": 500, "hp_max": 500},
-        rng=_SeqRNG([0, 0]),
+        # First draw is the opening initiative roll (0 -> tmp 1, the
+        # player strikes first, reference/lord.js:7375-7391).
+        rng=_SeqRNG([0, 0, 0]),
         keys=["a", "a", "x", "x", "x", "x", "x", "x"],
         config={"game": {"forest_fights_per_day": 20, "player_fights_per_day": 5}},
     )
@@ -160,7 +164,9 @@ async def test_dragon_win_at_win_deeds_threshold_ends_session():
             "level": 12, "strength": 40000, "hp": 500, "hp_max": 500,
             "king_count": 2,
         },
-        rng=_SeqRNG([0, 0]),
+        # First draw is the opening initiative roll (0 -> tmp 1, the
+        # player strikes first, reference/lord.js:7375-7391).
+        rng=_SeqRNG([0, 0, 0]),
         keys=["a", "a", "x", "x", "x", "x", "x"],
     )
     result = await dragon_mod.dragon(ctx)
@@ -183,9 +189,12 @@ async def test_dragon_win_at_win_deeds_threshold_ends_session():
 async def test_dragon_loss_kills_player_with_no_experience_penalty():
     """Player deals 0 damage (str=0 -> guaranteed miss, no rng draw for the
     base roll) while the Dragon (str=2000) one-shots a 5-hp player. Draw
-    order for a single "a" press:
+    order, opening roll first:
+        randrange(99) -> 0   (opening initiative: the player strikes first)
         randrange(10) -> 0   (player's crit-move roll on the miss)
         randrange(1000) -> 0 (Dragon's base roll, half=1000 -> 1000 damage)
+        randrange(4) -> 0    (Dragon's weapon pick: Huge Claw, no doubling
+                              -- reference/lord.js:6704-6720)
         randrange(30) -> 0   (Dragon's power-move check, != 1: no boost)
     """
     ctx = _ctx(
@@ -193,7 +202,7 @@ async def test_dragon_loss_kills_player_with_no_experience_penalty():
             "level": 12, "strength": 0, "defense": 0, "hp": 5, "hp_max": 5,
             "gold": 999, "exp": 555,
         },
-        rng=_SeqRNG([0, 0, 0]),
+        rng=_SeqRNG([0, 0, 0, 0, 0]),
         keys=["a", "a", "x"],
     )
     result = await dragon_mod.dragon(ctx)

@@ -157,7 +157,9 @@ async def test_online_target_blocked_and_costs_no_attempt():
 async def test_run_away_costs_a_fight_but_sends_no_mail_or_news():
     conn, repo, attacker, target = _two_players()
     ctx = _ctx(conn, repo, attacker, ["r", "x"])
-    ctx.rng = _SeqRNG([0])  # randrange(9) -> 0, != 1: run succeeds
+    # randrange(99) -> 0: opening initiative, player strikes first
+    # (reference/lord.js:7375-7391); then randrange(9) -> 0, != 1: run succeeds
+    ctx.rng = _SeqRNG([0, 0])
     died = await pvp_mod.run_attack(ctx, target, from_inn=False)
     assert died is False
     assert ctx.player.player_fights == 2  # still decremented once
@@ -182,7 +184,8 @@ async def test_win_transfers_exact_gold_exp_gems_and_writes_news_and_mail():
         },
     )
     ctx = _ctx(conn, repo, attacker, ["a", "x"])
-    ctx.rng = _SeqRNG([0, 0])
+    # First draw is the opening initiative roll (lord.js:7375-7391).
+    ctx.rng = _SeqRNG([0, 0, 0])
 
     died = await pvp_mod.run_attack(ctx, target, from_inn=False)
     assert died is False
@@ -226,7 +229,8 @@ async def test_win_gold_capped_at_two_billion():
         target_overrides={"hp": 5, "hp_max": 5, "defense": 0, "gold": 50},
     )
     ctx = _ctx(conn, repo, attacker, ["a", "x"])
-    ctx.rng = _SeqRNG([0, 0])
+    # First draw is the opening initiative roll (lord.js:7375-7391).
+    ctx.rng = _SeqRNG([0, 0, 0])
     await pvp_mod.run_attack(ctx, target, from_inn=False)
     assert ctx.player.gold == 2_000_000_000
     assert "You receive 1 gold" in screen(ctx.io)
@@ -251,7 +255,9 @@ async def test_loss_kills_attacker_and_credits_victim_directly():
         target_overrides={"strength": 2000, "defense": 0, "hp": 50, "hp_max": 50, "exp": 20},
     )
     ctx = _ctx(conn, repo, attacker, ["a", "x"])
-    ctx.rng = _SeqRNG([0, 0, 0])
+    # Opening initiative, then the miss/counter draws (a plain player
+    # target: base roll + power-move check).
+    ctx.rng = _SeqRNG([0, 0, 0, 0])
 
     died = await pvp_mod.run_attack(ctx, target, from_inn=False)
     assert died is True
@@ -293,7 +299,8 @@ async def test_inn_sneak_attack_kills_sleeping_target_and_spends_bribe():
     )
     keys = ["y", "s", "Victim", "y", "y", "x", "a", "x"]
     ctx = _ctx(conn, repo, attacker, keys)
-    ctx.rng = _SeqRNG([0, 0, 0])  # 2 combat draws + 1 weapon-steal-chance draw (misses)
+    # opening initiative + 2 combat draws + 1 weapon-steal-chance draw (misses)
+    ctx.rng = _SeqRNG([0, 0, 0, 0])
 
     died = await inn_mod._bribe_attack(ctx)
     assert died is False

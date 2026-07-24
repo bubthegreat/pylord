@@ -60,8 +60,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pylord.engine import data
-from pylord.engine.combat import Combatant, Fight, skill_attack
+from pylord.engine.combat import Combatant, Fight
 from pylord.engine.game import scene
+from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
     from pylord.engine.data import Master
@@ -214,9 +215,12 @@ def _can_skill(p: Player) -> bool:
 
 
 def _battle_options(p: Player) -> dict[str, str]:
-    options = {"A": "attack", "R": "run"}
-    if _can_skill(p):
-        options["S"] = "skill"
+    """No `(R)un` and no `(S)kill` here: your master is an arena opponent,
+    and lord.js refuses both against one (reference/lord.js:7001-7006 and
+    :7045-7051/:7118-7124/:7211-7217 -- "You came here to prove your
+    worth" / "Your honor stops you...")."""
+    options = {"A": "attack"}
+    options.update(_battle.extra_options(p))
     return options
 
 
@@ -228,12 +232,8 @@ async def _battle_prompt(ctx: GameCtx, fight: Fight, trainer: Master) -> None:
         f"  `2{trainer.name}`2's Hitpoints : `0{max(fight.enemy.hp, 0)}",
         "",
         "  `2(`5A`2)ttack",
-        "  `2(`5R`2)un",
     ]
-    entry = _SKILL_BY_CLASS.get(p.class_type)
-    if entry is not None and _can_skill(p):
-        _field, _kind, label = entry
-        lines.append(f"  `2(`0S`2)kill: {label} (`%{p.skill_uses}`0)")
+    lines.extend(_battle.extra_menu_lines(p))
     lines.append("")
     lines.append(f"  `2Your command, `0{p.name}`2?  [`5A`2] : ")
     await ctx.io.write("\n".join(lines))
@@ -255,46 +255,21 @@ async def _run_master_fight(ctx: GameCtx, trainer: Master):
         Combatant.from_player(p), Combatant.from_master(trainer), ctx.rng, pfight=False
     )
     last_round = None
+    await _battle.opening(ctx, fight)  # reference/lord.js:7375-7391
+    p.hp = fight.player_side.hp
 
     while not fight.over:
         await _battle_prompt(ctx, fight, trainer)
         action = await ctx.io.menu(_battle_options(p), "")
 
-        if action == "A":
+        if action == "H":
+            last_round = await _battle.fairy_lore_heal(ctx, fight)
+        else:  # action == "A"
             last_round = fight.player_attack()
             await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
-        elif action == "S":
-            _field, kind, _label = _SKILL_BY_CLASS[p.class_type]
-            last_round = skill_attack(fight, kind, p.skill_uses)
-            cost = fight.last_spell_cost if kind == "my" else 1
-            p.skill_uses -= cost
-            await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
-        elif action == "R":
-            hp_before = fight.player_side.hp
-            ran = fight.attempt_run()
-            if ran:
-                await ctx.io.write(
-                    f"\n  You turn to run, and dash into the forest, "
-                    f"leaving {trainer.name} behind!\n"
-                )
-            else:
-                dmg = hp_before - fight.player_side.hp
-                await ctx.io.write(f"\n  {trainer.name} sees you!\n")
-                if dmg > 0:
-                    await ctx.io.write(f"  {trainer.name} hits you for {dmg} damage!\n")
-                else:
-                    await ctx.io.write(f"  {trainer.name} misses you completely!\n")
+            await _battle.enemy_turn(ctx, fight, last_round)
 
         p.hp = fight.player_side.hp
-
-    if fight.ran_away:
-        await ctx.io.pause()
 
     return fight, last_round
 

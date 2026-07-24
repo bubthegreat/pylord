@@ -106,6 +106,7 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
+from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
     from pylord.engine.data import Monster
@@ -236,6 +237,7 @@ def _battle_options(p: Player) -> dict[str, str]:
     options = {"A": "attack", "R": "run"}
     if _can_skill(p):
         options["S"] = "skill"
+    options.update(_battle.extra_options(p))
     return options
 
 
@@ -256,6 +258,7 @@ async def _battle_prompt(ctx: GameCtx, fight: Fight, monster: Monster) -> None:
     if entry is not None and _can_skill(p):
         _field, _kind, label = entry
         lines.append(f"  `2(`0S`2)kill: {label} (`%{p.skill_uses}`0)")
+    lines.extend(_battle.extra_menu_lines(p))
     lines.append("")
     lines.append(f"  `2Your command, `0{p.name}`2?  [`5A`2] : ")
     await ctx.io.write("\n".join(lines))
@@ -267,6 +270,7 @@ async def _run_fight(ctx: GameCtx, monster: Monster) -> bool:
         Combatant.from_player(p), Combatant.from_monster(monster), ctx.rng, pfight=False
     )
     last_round = None
+    await _battle.opening(ctx, fight)  # reference/lord.js:7375-7391
 
     while not fight.over:
         await _battle_prompt(ctx, fight, monster)
@@ -275,17 +279,17 @@ async def _run_fight(ctx: GameCtx, monster: Monster) -> bool:
         if action == "A":
             last_round = fight.player_attack()
             await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, last_round)
+        elif action == "H":
+            last_round = await _battle.fairy_lore_heal(ctx, fight)
         elif action == "S":
-            _field, kind, _label = _SKILL_BY_CLASS[p.class_type]
-            # `skill_points` gates *both* eligibility and (for Mystical)
-            # which tier auto-selects -- lord.js's real gate is always the
-            # remaining daily budget (levelw/levelm/levelt), never the
-            # permanent rank (see _can_skill's docstring), so p.skill_uses
-            # is what's passed here, not the class's rank field.
-            last_round = skill_attack(fight, kind, p.skill_uses)
+            field, kind, _label = _SKILL_BY_CLASS[p.class_type]
+            # Today's budget (skill_uses) gates eligibility; the permanent
+            # class rank additionally gates which Mystical tier is castable
+            # (lord.js:7247-7268 checks levelm AND skillm).
+            last_round = skill_attack(
+                fight, kind, p.skill_uses, skill_rank=getattr(p, field)
+            )
             # DK/Thief always cost a flat 1 use point (lord.js:7107, 7183).
             # Mystical costs vary by tier (1/4/8/12/16/20); skill_attack()
             # records the real cost of whatever was actually cast (0 if
@@ -294,9 +298,7 @@ async def _run_fight(ctx: GameCtx, monster: Monster) -> bool:
             cost = fight.last_spell_cost if kind == "my" else 1
             p.skill_uses -= cost
             await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, last_round)
         elif action == "R":
             hp_before = fight.player_side.hp
             ran = fight.attempt_run()

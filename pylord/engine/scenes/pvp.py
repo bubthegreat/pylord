@@ -123,6 +123,7 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
+from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
     from pylord.engine.game import GameCtx
@@ -170,6 +171,7 @@ def _battle_options(p: Player) -> dict[str, str]:
     options = {"A": "attack", "R": "run"}
     if _can_skill(p):
         options["S"] = "skill"
+    options.update(_battle.extra_options(p))
     return options
 
 
@@ -187,6 +189,7 @@ async def _battle_prompt(ctx: GameCtx, fight: Fight, enemy_name: str) -> None:
     if entry is not None and _can_skill(p):
         _field, _kind, label = entry
         lines.append(f"  `2(`0S`2)kill: {label} (`%{p.skill_uses}`0)")
+    lines.extend(_battle.extra_menu_lines(p))
     lines.append("")
     lines.append(f"  `2Your command, `0{p.name}`2?  [`5A`2] : ")
     await ctx.io.write("\n".join(lines))
@@ -246,6 +249,11 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
     target_combatant = Combatant.from_player(target)
     fight = Fight(Combatant.from_player(p), target_combatant, ctx.rng, pfight=True)
     last_round = None
+    # reference/lord.js:7375-7391 -- and in a player fight, a
+    # higher-level opponent turns any roll over 60 into a guaranteed
+    # surprise (:7377-7383).
+    await _battle.opening(ctx, fight, enemy_level=target.level)
+    p.hp = fight.player_side.hp
 
     while not fight.over:
         await _battle_prompt(ctx, fight, target.name)
@@ -254,18 +262,18 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
         if action == "A":
             last_round = fight.player_attack()
             await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, last_round)
+        elif action == "H":
+            last_round = await _battle.fairy_lore_heal(ctx, fight)
         elif action == "S":
-            _field, kind, _label = _SKILL_BY_CLASS[p.class_type]
-            last_round = skill_attack(fight, kind, p.skill_uses)
+            field, kind, _label = _SKILL_BY_CLASS[p.class_type]
+            last_round = skill_attack(
+                fight, kind, p.skill_uses, skill_rank=getattr(p, field)
+            )
             cost = fight.last_spell_cost if kind == "my" else 1
             p.skill_uses -= cost
             await ctx.io.write(f"\n  {last_round.text}\n")
-            if not fight.over:
-                enemy_round = fight.enemy_attack()
-                await ctx.io.write(f"  {enemy_round.text}\n")
+            await _battle.enemy_turn(ctx, fight, last_round)
         elif action == "R":
             hp_before = fight.player_side.hp
             ran = fight.attempt_run()

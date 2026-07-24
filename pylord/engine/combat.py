@@ -24,20 +24,23 @@ their point of use below):
    responsible for sequencing "player hits, enemy survives, enemy hits
    back", matching lord.js's net behaviour without baking the chaining into
    this engine layer.
-2. lord.js's player-vs-player-only bits (``pfight`` honor checks, arena
-   no-run rule, ``cant_run``) don't apply to the ``Combatant`` abstraction
-   used here (no arena/duel concept) and are omitted.
+2. The arena rules (``op.is_arena``) *are* modeled -- see ``Combatant``'s
+   field and ``can_run``. lord.js's remaining player-vs-player-only bits
+   (the ``pfight``-gated "you need every advantage" line, ``cant_run``)
+   are omitted.
 3. The "child startles your attacker" and "horse intercepts a killing blow"
    side stories in ``enemy_attack`` (lord.js:6731-6758, 6795-6838) depend on
    ``player.kids``/``player.horse`` state that has no equivalent on
    ``Combatant`` and are omitted.
 4. lord.js's ``random(n)`` helper isn't defined in this repo's
    ``reference/lord.js`` excerpt (it's supplied by the surrounding BBS
-   door-game runtime) but every call site is used as
-   ``Math.floor(Math.random() * n)`` -- uniform over ``0..n-1``. We
-   reproduce that with ``rng.randrange(n)``, guarding ``n <= 0`` (which
-   ``Math.random() * 0`` always resolves to 0 for in JS) by returning 0
-   without drawing. See ``_random()``.
+   door-game runtime); Synchronet's own implementation coerces its
+   argument to an integer and returns a uniform ``0..n-1``. We reproduce
+   that with ``rng.randrange(int(n))``, guarding ``n <= 0`` by returning 0
+   without drawing. The coercion matters at one site: lord.js writes
+   ``random(op.str / 2)`` (:6703) with an un-truncated JS float, so an
+   odd-strength enemy rolls over the *truncated* half here, matching
+   Synchronet. See ``_random()``.
 5. ``pfight`` (post-review correction): lord.js gates the player-side
    defense subtraction on this flag -- ``do_attack``:6948-6949 and
    ``handle_hit``:6897-6898 both read ``if (pfight) atk -= op.def;``. Every
@@ -77,7 +80,35 @@ if TYPE_CHECKING:
     from pylord.engine.data import Master, Monster
     from pylord.models import Player
 
-Round = namedtuple("Round", "damage killed text")
+# ``counter`` tells the caller whether the enemy gets its usual swing back
+# after this action. lord.js's battle loop only reaches ``enemy_attack()``
+# through ``handle_hit()`` (reference/lord.js:6926-6928) -- an action that
+# never calls it (a refused/too-tired skill, Light Shield, Mind Heal, the
+# fairy-lore heal, an arena refusal) drops straight back to
+# ``battle_prompt()`` with no counter-attack. Defaults to True, the shape
+# every damage-dealing action has.
+Round = namedtuple("Round", "damage killed text counter", defaults=(True,))
+
+# reference/lord.js:6704-6720 -- the Red Dragon picks a fresh "weapon" each
+# swing; Flaming Breath (index 2) also doubles the damage roll.
+DRAGON_WEAPONS = (
+    "Huge Claw",
+    "Swishing Tail",
+    "`4Flaming Breath",
+    "Stomping The Ground",
+)
+_DRAGON_BREATH = 2
+
+# reference/lord.js:7001-7003 and :7045-7047 (identical text in
+# use_thief_skill:7118-7120 and use_mystical_skill:7211-7213).
+ARENA_NO_RUN_TEXT = (
+    "You cannot run from an Arena!!!  You came here to prove\n"
+    "  your worth, and that's what you are going to do."
+)
+ARENA_NO_SKILL_TEXT = (
+    "Your honor stops you from using the more unorthodox methods of\n"
+    "  battle against your teacher."
+)
 
 
 def _random(rng: random.Random, n: int) -> int:
@@ -97,6 +128,14 @@ class Combatant:
     strength: int
     defense: int
     weapon_name: str
+    # lord.js's ``op.is_arena`` -- true for every trainer_stats entry
+    # (reference/lord.js:49, 64, ... 199) and for get_trainer()'s own
+    # override (:1832). Blocks running (:7001-7006) and every skill attack
+    # (:7045-7051, :7118-7124, :7211-7217).
+    is_arena: bool = False
+    # lord.js's ``op.is_dragon`` -- drives the per-swing weapon switch and
+    # its Flaming Breath damage doubling (:6704-6720).
+    is_dragon: bool = False
 
     @classmethod
     def from_player(cls, p: Player) -> Combatant:
@@ -115,12 +154,16 @@ class Combatant:
         )
 
     @classmethod
-    def from_monster(cls, m: Monster) -> Combatant:
+    def from_monster(cls, m: Monster, *, is_dragon: bool = False) -> Combatant:
         """Monster has no defense field at all in lord.js (see
         engine/data/monsters.py docstring) -- defense=0 here reproduces that
         exactly, since do_attack()/handle_hit() only ever subtract op.def
         when ``pfight`` is true (never for a plain monster encounter);
-        subtracting a defense of 0 is a no-op with the same net effect."""
+        subtracting a defense of 0 is a no-op with the same net effect.
+
+        ``is_dragon`` marks the Red Dragon, whose ``enemy_attack()`` picks a
+        weapon per swing and doubles the roll on Flaming Breath
+        (reference/lord.js:6704-6720)."""
         return cls(
             name=m.name,
             hp=m.hp,
@@ -128,13 +171,21 @@ class Combatant:
             strength=m.strength,
             defense=0,
             weapon_name=m.weapon,
+            is_dragon=is_dragon,
         )
 
     @classmethod
     def from_master(cls, m: Master) -> Combatant:
         """Masters carry a real ``def`` in lord.js's trainer_stats (it also
         doubles as the level-up stat grant -- see engine/data/masters.py
-        docstring), so it's used here, unlike Monster."""
+        docstring), so it's carried here, unlike Monster. Note it is never
+        actually subtracted in a master fight (``pfight`` is false there --
+        see module docstring note 5); it's kept so ``Combatant`` mirrors the
+        record.
+
+        Every trainer is an arena opponent (``is_arena:true`` on all 11
+        trainer_stats entries), which is what forbids running and skill
+        attacks against your own master."""
         return cls(
             name=m.name,
             hp=m.hp,
@@ -142,6 +193,7 @@ class Combatant:
             strength=m.strength,
             defense=m.defense,
             weapon_name=m.weapon,
+            is_arena=True,
         )
 
 
@@ -230,6 +282,43 @@ class Fight:
             return "enemy"
         return None
 
+    @property
+    def can_run(self) -> bool:
+        """False against an arena opponent (your master).
+        reference/lord.js:7001-7006."""
+        return not self.enemy.is_arena
+
+    def opening(self, player_level: int = 0, enemy_level: int = 0) -> Round:
+        """Port of ``battle()``'s opening initiative roll.
+        reference/lord.js:7375-7391.
+
+        ``tmp = random(99) + 1``; in a player-vs-player fight an opponent of
+        a higher level turns any roll over 60 into a guaranteed surprise
+        (``tmp = 95``, :7377-7383). ``tmp > 90`` means the enemy swings
+        first, otherwise the player gets the first strike. Returns the
+        enemy's opening ``Round`` when surprised (``counter=False`` -- the
+        swing has already happened), or a no-damage Round carrying the
+        "first strike" line otherwise.
+
+        ``player_level``/``enemy_level`` are only consulted when
+        ``self.pfight`` is set.
+        """
+        tmp = _random(self.rng, 99) + 1  # lord.js:7375
+        if self.pfight and enemy_level > player_level and tmp > 60:
+            tmp = 95  # lord.js:7377-7383
+        if tmp > 90:  # lord.js:7385
+            enemy_round = self.enemy_attack()
+            return enemy_round._replace(
+                text=f"{self.enemy.name} surprises you.\n  {enemy_round.text}",
+                counter=False,
+            )
+        return Round(
+            damage=0,
+            killed=False,
+            text="Your skill allows you to get the first strike.",
+            counter=False,
+        )
+
     def _loot_bonus(self, dmg: int, killed: bool) -> str:
         """Overkill loot roll shared by do_attack() and handle_hit():
 
@@ -285,16 +374,24 @@ class Fight:
         return Round(damage=dmg, killed=killed, text=text)
 
     def enemy_attack(self) -> Round:
-        """Port of enemy_attack() for a plain (non-pfight, non-dragon)
-        encounter. reference/lord.js:6691-6839.
+        """Port of enemy_attack(). reference/lord.js:6691-6839.
 
-        Dragon weapon-switching (6704-6720) and the kids/horse side stories
-        (6731-6758, 6795-6838) are omitted -- see module docstring notes 2-3.
-        ``light_shield``'s halving (6767-6769) is kept, since it's driven
-        purely by Fight/skill_attack state modeled here.
+        The kids/horse side stories (6731-6758, 6795-6838) are omitted --
+        see module docstring notes 2-3. ``light_shield``'s halving
+        (6767-6769) and the dragon's per-swing weapon switch (6704-6720,
+        where Flaming Breath doubles the roll) are both reproduced.
+
+        The fairy-in-your-pouch death save (6771-6793) belongs to the
+        player record rather than the Combatant, so it is exposed as
+        ``fairy_save()`` for the caller to apply.
         """
         half = self.enemy.strength // 2
         raw = _random(self.rng, half) + half  # lord.js:6703
+        if self.enemy.is_dragon:  # lord.js:6704-6720
+            pick = _random(self.rng, 4)
+            self.enemy.weapon_name = DRAGON_WEAPONS[pick]
+            if pick == _DRAGON_BREATH:
+                raw += raw  # lord.js:6714
         if _random(self.rng, 30) == 1:  # lord.js:6721, 1-in-30 power move
             raw += raw // 2  # lord.js:6722
         atk = raw - self.player_side.defense  # lord.js:6726
@@ -309,18 +406,66 @@ class Fight:
         return Round(
             damage=atk,
             killed=killed,
-            text=f"{self.enemy.name} hits you for {atk} damage!",
+            text=(
+                f"{self.enemy.name} hits with its {self.enemy.weapon_name}"
+                f"`2 for {atk} damage!"
+            ),
+        )
+
+    def fairy_save(self) -> Round | None:
+        """Port of the fairy-in-your-pouch death save.
+        reference/lord.js:6771-6793.
+
+        Called by a scene after a killing blow when the player is carrying a
+        captured fairy: the fairy is released, the player is no longer dead
+        and heals to full. Returns ``None`` when the player is still alive
+        (nothing to save). The caller owns clearing ``player.has_fairy``.
+        """
+        if self.player_side.hp > 0:
+            return None
+        self.player_side.hp = self.player_side.hp_max  # lord.js:6792
+        return Round(
+            damage=0,
+            killed=False,
+            counter=False,
+            text=(
+                "`%YOU FEEL A BUZZING IN YOUR POUCH!`2\n\n"
+                "  Knowing you are too weak to go on, you decide to release the\n"
+                "  fairy in your pocket.  `0The tiny thing rises in the air - And\n"
+                "  blows you a kiss!\n\n  `%YOU FEEL MUCH BETTER!"
+            ),
+        )
+
+    def fairy_lore_heal(self) -> Round:
+        """Port of the battle menu's ``(H)eal`` key, unlocked for the day by
+        the forest fairy event's lore outcome. reference/lord.js:7480-7501.
+
+        Heals to full and costs no counter-attack; the caller owns clearing
+        ``player.fairy_lore`` (it is a one-shot).
+        """
+        self.player_side.hp = self.player_side.hp_max  # lord.js:7497
+        return Round(
+            damage=0,
+            killed=False,
+            counter=False,
+            text=(
+                "Thanks to your fairy lore training today, you are able to heal\n"
+                "  yourself.  Concentrating only on your wounds, they heal themselves!"
+            ),
         )
 
     def attempt_run(self) -> bool:
-        """Port of try_running() for a plain encounter.
-        reference/lord.js:6999-7030.
+        """Port of try_running(). reference/lord.js:6999-7030.
 
-        The arena no-run rule (7001-7006) and ``cant_run`` override don't
-        apply to a bare Combatant fight and are omitted. On a failed
-        attempt the enemy gets a free attack, exactly as lord.js does
-        (``enemy_attack(op, pfight)`` at 7011).
+        An arena opponent (your master) refuses outright, costing nothing
+        and drawing no rng (lord.js:7001-7006) -- scenes that fight a master
+        don't offer the key at all (see ``can_run``), so this is a backstop.
+        The ``cant_run`` override doesn't apply to a bare Combatant fight
+        and is omitted. On a failed attempt the enemy gets a free attack,
+        exactly as lord.js does (``enemy_attack(op, pfight)`` at 7011).
         """
+        if not self.can_run:  # lord.js:7001-7006
+            return False
         if _random(self.rng, 9) == 1:  # lord.js:7008, 1-in-9 chance to be caught
             self.enemy_attack()
             return False
@@ -359,13 +504,18 @@ def _death_knight_attack(fight: Fight, skill_points: int) -> Round:
     server-config variant (7100-7101) is a deployment toggle, not modeled.
     The pfight honor-check (7038-7051) is player-vs-player-only and omitted.
     """
+    if fight.enemy.is_arena:  # lord.js:7045-7051
+        return Round(damage=0, killed=False, text=ARENA_NO_SKILL_TEXT, counter=False)
     if skill_points < 1:
         # Equivalent to lord.js's menu hiding this option entirely
         # (battle_prompt only shows it when player.levelw > 0) -- the
         # underlying function is never invoked, so zero rng draws here
         # matches lord.js exactly (no draw happens either).
         return Round(
-            damage=0, killed=False, text="You don't have the strength for that."
+            damage=0,
+            killed=False,
+            text="You don't have the strength for that.",
+            counter=False,
         )
     _random(
         fight.rng, 7
@@ -390,10 +540,17 @@ def _thief_attack(fight: Fight, skill_points: int) -> Round:
     Per "lord.js wins" over the brief's guess, that shared bonus is what's
     surfaced here via ``fight.gem_found`` / ``fight.bonus_gold``.
     """
+    if fight.enemy.is_arena:  # lord.js:7118-7124
+        return Round(damage=0, killed=False, text=ARENA_NO_SKILL_TEXT, counter=False)
     if skill_points < 1:
         # See _death_knight_attack's identical guard note: equivalent to
         # the menu hiding this option, zero draws.
-        return Round(damage=0, killed=False, text="You don't have the skill for that.")
+        return Round(
+            damage=0,
+            killed=False,
+            text="You don't have the skill for that.",
+            counter=False,
+        )
     _random(
         fight.rng, 7
     )  # lord.js:7137, flavor-text switch(random(7)) -- discarded, draw-order only
@@ -408,7 +565,9 @@ _MYSTICAL_COST = {"P": 1, "D": 4, "H": 8, "L": 12, "S": 16, "M": 20}
 _MYSTICAL_TIERS_HIGH_TO_LOW = ("M", "S", "L", "H", "D", "P")
 
 
-def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Round:
+def _mystical_attack(
+    fight: Fight, skill_points: int, choice: str | None, skill_rank: int
+) -> Round:
     """Port of use_mystical_skill(). reference/lord.js:7186-7363.
 
     **Skill-mapping decision (see also the Task 7 report):** lord.js gates
@@ -448,20 +607,27 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
     =====  ====  ==========================================================
     """
     fight.last_spell_cost = 0  # reset; only set once a cast actually happens
+    if fight.enemy.is_arena:  # lord.js:7211-7217
+        return Round(damage=0, killed=False, text=ARENA_NO_SKILL_TEXT, counter=False)
+
+    def _affordable(letter: str) -> bool:
+        """lord.js:7247-7268 -- a tier needs BOTH enough use points for
+        today and enough permanent rank (``levelm > N && skillm > N``,
+        where ``N + 1`` is the tier's cost)."""
+        cost = _MYSTICAL_COST[letter]
+        return skill_points >= cost and skill_rank >= cost
+
     if choice is not None:
-        if choice not in _MYSTICAL_COST or skill_points < _MYSTICAL_COST[choice]:
+        if choice not in _MYSTICAL_COST or not _affordable(choice):
             return Round(
                 damage=0,
                 killed=False,
                 text="You reach for the power, but it just isn't there.",
+                counter=False,
             )
     else:
         choice = next(
-            (
-                c
-                for c in _MYSTICAL_TIERS_HIGH_TO_LOW
-                if skill_points >= _MYSTICAL_COST[c]
-            ),
+            (c for c in _MYSTICAL_TIERS_HIGH_TO_LOW if _affordable(c)),
             None,
         )
         if choice is None:
@@ -469,6 +635,7 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
                 damage=0,
                 killed=False,
                 text="You reach for the power, but it just isn't there.",
+                counter=False,
             )
 
     fight.last_spell_cost = _MYSTICAL_COST[choice]
@@ -500,10 +667,13 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
 
     if choice == "L":
         fight.light_shield = True  # lord.js:7335
+        # lord.js:7326-7336 never reaches handle_hit(), so the enemy does
+        # not swing back this round.
         return Round(
             damage=0,
             killed=False,
             text="A beam of light covers you. You are still glowing.",
+            counter=False,
         )
 
     if choice == "S":
@@ -511,12 +681,14 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
         atk = atk * 4 + (atk * 4) // 4  # lord.js:7347
         return _handle_hit(fight, atk, "You imagine the bones shattering inside")
 
-    # choice == "M"
+    # choice == "M" -- like Light Shield, no handle_hit() and so no
+    # counter-attack (lord.js:7350-7362).
     fight.player_side.hp = fight.player_side.hp_max  # lord.js:7361
     return Round(
         damage=0,
         killed=False,
         text="Missing pieces of your flesh crawl back into place. You are healed.",
+        counter=False,
     )
 
 
@@ -525,6 +697,7 @@ def skill_attack(
     kind: Literal["dk", "my", "th"],
     skill_points: int,
     mystical_choice: str | None = None,
+    skill_rank: int = 0,
 ) -> Round:
     """Dispatch to the three skill-attack ports:
     ``dk`` -> use_death_knight() (lord.js:7032-7108)
@@ -532,12 +705,17 @@ def skill_attack(
     ``my`` -> use_mystical_skill() (lord.js:7186-7363)
 
     ``mystical_choice`` is ``my``-only; see ``_mystical_attack`` docstring
-    for why it exists and what it defaults to.
+    for why it exists and what it defaults to. ``skill_rank`` is the
+    player's *permanent* class rank (``skill_dk``/``skill_my``/``skill_th``,
+    raised at Turgon's by ``raise_class``); lord.js gates each Mystical
+    tier on both it and today's use points (:7247-7268). Only ``my`` reads
+    it -- the Death Knight and Thief menus gate on use points alone
+    (:6858-6866).
     """
     if kind == "dk":
         return _death_knight_attack(fight, skill_points)
     if kind == "th":
         return _thief_attack(fight, skill_points)
     if kind == "my":
-        return _mystical_attack(fight, skill_points, mystical_choice)
+        return _mystical_attack(fight, skill_points, mystical_choice, skill_rank)
     raise ValueError(f"unknown skill kind: {kind!r}")

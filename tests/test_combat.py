@@ -309,7 +309,7 @@ def test_mystical_disappear_sets_ran_away():
     enemy = combat.Combatant.from_monster(small_thief())
     fight = combat.Fight(player, enemy, random.Random(0))
 
-    round_ = combat.skill_attack(fight, "my", 4, mystical_choice="D")
+    round_ = combat.skill_attack(fight, "my", 4, mystical_choice="D", skill_rank=40)
 
     assert round_.damage == 0
     assert fight.ran_away is True
@@ -322,7 +322,7 @@ def test_mystical_mind_heal_restores_hp():
     fight = combat.Fight(player, enemy, random.Random(0))
     fight.player_side.hp = 1
 
-    round_ = combat.skill_attack(fight, "my", 20, mystical_choice="M")
+    round_ = combat.skill_attack(fight, "my", 20, mystical_choice="M", skill_rank=40)
 
     assert round_.damage == 0
     assert fight.player_side.hp == fight.player_side.hp_max
@@ -333,7 +333,7 @@ def test_mystical_light_shield_halves_next_enemy_hit():
     enemy = combat.Combatant.from_monster(small_thief())
     fight = combat.Fight(player, enemy, random.Random(0))
 
-    combat.skill_attack(fight, "my", 12, mystical_choice="L")
+    combat.skill_attack(fight, "my", 12, mystical_choice="L", skill_rank=40)
     assert fight.light_shield is True
 
     shielded_fight = fight
@@ -357,7 +357,7 @@ def test_mystical_auto_selects_highest_affordable_tier():
 
     # 20 points affords Mind Heal (highest tier); auto-select should pick it.
     fight.player_side.hp = 1
-    combat.skill_attack(fight, "my", 20)
+    combat.skill_attack(fight, "my", 20, skill_rank=40)
 
     assert fight.player_side.hp == fight.player_side.hp_max
 
@@ -369,3 +369,148 @@ def test_skill_attack_unknown_kind_raises():
 
     with pytest.raises(ValueError):
         combat.skill_attack(fight, "nope", 5)
+
+
+# -- Rank gating, arena rules, dragon breath, opening round ----------------
+
+
+def test_mystical_tier_needs_permanent_rank_not_just_uses():
+    """reference/lord.js:7247-7268 gates each tier on levelm AND skillm --
+    20 use points with rank 0 can't reach Mind Heal (or anything above
+    Pinch, which every mystic knows)."""
+    fight = combat.Fight(
+        combat.Combatant.from_player(make_player(hp=1, hp_max=20)),
+        combat.Combatant.from_monster(small_thief()),
+        random.Random(0),
+    )
+
+    round_ = combat.skill_attack(fight, "my", 20, mystical_choice="M", skill_rank=0)
+
+    assert round_.damage == 0
+    assert fight.player_side.hp == 1  # no heal happened
+    assert round_.counter is False  # a refused cast costs no counter-attack
+
+
+def test_running_from_a_master_is_refused():
+    """Every trainer is an arena opponent (reference/lord.js:7001-7006)."""
+    fight = combat.Fight(
+        combat.Combatant.from_player(make_player()),
+        combat.Combatant.from_master(data.MASTERS[1]),
+        random.Random(0),
+    )
+
+    assert fight.can_run is False
+    assert fight.attempt_run() is False
+    assert fight.ran_away is False
+
+
+def test_skill_attacks_are_refused_against_a_master():
+    """reference/lord.js:7045-7051, 7118-7124, 7211-7217."""
+    for kind in ("dk", "th", "my"):
+        fight = combat.Fight(
+            combat.Combatant.from_player(make_player()),
+            combat.Combatant.from_master(data.MASTERS[1]),
+            random.Random(0),
+        )
+        hp_before = fight.enemy.hp
+
+        round_ = combat.skill_attack(fight, kind, 20, skill_rank=40)
+
+        assert round_.damage == 0
+        assert fight.enemy.hp == hp_before
+        assert "honor" in round_.text
+        assert round_.counter is False
+
+
+def test_dragon_flaming_breath_doubles_the_roll():
+    """reference/lord.js:6704-6720 -- weapon pick 2 doubles the damage."""
+
+    class _PickedRNG:
+        """random(str//2) -> 0, then the dragon weapon pick, then the
+        power-move roll (never 1)."""
+
+        def __init__(self, weapon_pick):
+            self._weapon_pick = weapon_pick
+            self._calls = 0
+
+        def randrange(self, n):
+            self._calls += 1
+            if self._calls == 1:
+                return 0  # base roll addend
+            if self._calls == 2:
+                return self._weapon_pick
+            return 0  # power-move roll: not 1, so no power move
+
+    dragon = data.Monster(
+        name="Red Dragon", weapon="Claw", strength=20, hp=100, gold=0, exp=0,
+        death_phrase="",
+    )
+    breath = combat.Fight(
+        combat.Combatant.from_player(make_player(defense=0)),
+        combat.Combatant.from_monster(dragon, is_dragon=True),
+        _PickedRNG(2),
+    ).enemy_attack()
+    claw = combat.Fight(
+        combat.Combatant.from_player(make_player(defense=0)),
+        combat.Combatant.from_monster(dragon, is_dragon=True),
+        _PickedRNG(0),
+    ).enemy_attack()
+
+    assert breath.damage == claw.damage * 2
+    assert "Flaming Breath" in breath.text
+
+
+def test_opening_round_surprises_on_a_high_roll():
+    """reference/lord.js:7375-7389 -- tmp = random(99) + 1 > 90."""
+
+    class _FixedRNG:
+        def __init__(self, first):
+            self._first = first
+            self._used = False
+
+        def randrange(self, n):
+            if not self._used:
+                self._used = True
+                return self._first
+            return 0
+
+    surprised = combat.Fight(
+        combat.Combatant.from_player(make_player()),
+        combat.Combatant.from_monster(small_thief()),
+        _FixedRNG(94),  # -> tmp 95
+    )
+    result = surprised.opening()
+    assert "surprises you" in result.text
+    assert result.counter is False
+
+    first_strike = combat.Fight(
+        combat.Combatant.from_player(make_player()),
+        combat.Combatant.from_monster(small_thief()),
+        _FixedRNG(0),  # -> tmp 1
+    )
+    assert "first strike" in first_strike.opening().text
+    assert first_strike.player_side.hp == first_strike.player_side.hp_max
+
+
+def test_opening_round_always_surprises_a_higher_level_pvp_target():
+    """reference/lord.js:7377-7383 -- any roll over 60 becomes 95."""
+
+    class _FixedRNG:
+        def __init__(self, first):
+            self._first = first
+            self._used = False
+
+        def randrange(self, n):
+            if not self._used:
+                self._used = True
+                return self._first
+            return 0
+
+    fight = combat.Fight(
+        combat.Combatant.from_player(make_player()),
+        combat.Combatant.from_player(make_player(name="Bigger")),
+        _FixedRNG(70),  # -> tmp 71, harmless outside PvP
+        pfight=True,
+    )
+    result = fight.opening(player_level=1, enemy_level=5)
+    assert "surprises you" in result.text

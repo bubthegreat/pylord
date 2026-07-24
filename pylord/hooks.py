@@ -102,13 +102,13 @@ class PlayerView:
 
     Reads pass straight through. Writes are validated:
 
-    * ``gold`` / ``gems``           -> floored at 0.
+    * ``gold`` / ``bank``           -> floored at 0, capped at 2,000,000,000.
     * ``exp``                       -> floored at 0, capped at 2,000,000,000
                                        (same ceiling as ``grant_exp``).
     * ``hp``                        -> clamped to ``[0, hp_max]``.
-    * ``hp_max``/``strength``/``defense``/``charm`` -> floored at 1, capped
+    * ``hp_max``/``strength``/``defense``/``charm``/``gems``/``lays``/
+      ``kids``/``forest_fights``/``player_fights`` -> floored at 0, capped
                                        at 32,000.
-    * ``forest_fights``/``player_fights`` -> floored at 0, capped at 32,000.
     * ``level``                     -> :class:`IgmViolation` (immutable;
                                        leveling happens at Turgon's).
     * ``id`` / ``name`` / ``password_hash`` -> :class:`IgmViolation`

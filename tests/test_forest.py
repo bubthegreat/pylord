@@ -176,10 +176,11 @@ async def test_run_fail_applies_enemy_counter_attack():
 
 
 async def test_skill_attack_decrements_skill_uses():
-    """Hand-verified: ``random.Random(1)`` fed to
-    ``skill_attack(fight, 'dk', 5)`` against MONSTERS[1][0] (Small Thief,
-    9 hp) does 27 damage in one shot -- an overkill (27 > player.str(10))
-    that both kills the thief and rolls a "find a gem" loot bonus."""
+    """Hand-verified: with ``random.Random(0)`` (the opening initiative
+    roll -- reference/lord.js:7375-7391 -- draws first, then the skill
+    attack) a Death Knight skill attack against MONSTERS[1][0] (Small
+    Thief, 9 hp) overkills it (damage > player.str(10)), which both kills
+    the thief and rolls a "find a gem" loot bonus."""
     monster = data.MONSTERS[1][0]
     ctx = _ctx(
         overrides={
@@ -191,7 +192,7 @@ async def test_skill_attack_decrements_skill_uses():
             "hp": 20,
             "hp_max": 20,
         },
-        rng=random.Random(1),
+        rng=random.Random(0),
         keys=["s", "z"],
     )
     died = await forest_mod._run_fight(ctx, monster)
