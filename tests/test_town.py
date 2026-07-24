@@ -30,10 +30,25 @@ async def test_view_stats_shows_name_level_and_returns_to_town():
 
 
 async def test_stats_shows_fists_and_nothing_for_unequipped_player():
-    io, _player = await play(["v", "q"])
+    """A *new* character starts with a Stick and a Coat (reference/
+    recorddefs.js:47-51, 136-141), so the unarmed display has to be set up
+    explicitly (e.g. a player who sold their gear back to the shops)."""
+    io, _player = await play(
+        ["v", "q"], overrides={"weapon_num": 0, "armor_num": 0}
+    )
     text = screen(io)
     assert "Fists" in text
     assert "Nothing!" in text
+
+
+async def test_new_character_starts_with_stick_and_coat():
+    """reference/recorddefs.js:46-56 (weapon_num def:1 / 'Stick') and
+    :131-141 (arm_num def:1 / 'Coat')."""
+    io, player = await play(["v", "q"])
+    text = screen(io)
+    assert player.weapon_num == 1 and player.armor_num == 1
+    assert "Stick" in text
+    assert "Coat" in text
 
 
 async def test_unknown_key_reprompts_then_accepts_valid_key():

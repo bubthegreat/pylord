@@ -30,12 +30,12 @@ MIGRATIONS = [
       hp_max INTEGER NOT NULL DEFAULT 20,
       strength INTEGER NOT NULL DEFAULT 10,
       defense INTEGER NOT NULL DEFAULT 1,
-      charm INTEGER NOT NULL DEFAULT 2,
+      charm INTEGER NOT NULL DEFAULT 1,
       gold INTEGER NOT NULL DEFAULT 500,
       bank INTEGER NOT NULL DEFAULT 0,
       gems INTEGER NOT NULL DEFAULT 0,
-      weapon_num INTEGER NOT NULL DEFAULT 0,
-      armor_num INTEGER NOT NULL DEFAULT 0,
+      weapon_num INTEGER NOT NULL DEFAULT 1,
+      armor_num INTEGER NOT NULL DEFAULT 1,
       forest_fights INTEGER NOT NULL DEFAULT 15,
       player_fights INTEGER NOT NULL DEFAULT 3,
       flirts_today INTEGER NOT NULL DEFAULT 0,
@@ -65,7 +65,27 @@ MIGRATIONS = [
     CREATE TABLE igm_data (
       igm_key TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL,
       PRIMARY KEY (igm_key, k));
+    """,
+    # Flags/counters that exist on the original player record
+    # (reference/recorddefs.js) and gate mechanics ported after v0.1:
+    # the forest JENNIE codeword (high_spirits), the forest "weird" gem
+    # event, fairy capture/lore, the Amulet of Accuracy, player-kill
+    # tallies, the JENNIE "magically delicious" skill refill, Violet's
+    # remarriage cooldown, and the per-class mastery flags raise_class()
+    # sets at rank 40.
     """
+    ALTER TABLE players ADD COLUMN high_spirits INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN weird INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN has_fairy INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN fairy_lore INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN amulet INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN pvp_kills INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN magically_delicious INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN divorced INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN mastered_dk INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN mastered_my INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN mastered_th INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

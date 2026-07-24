@@ -51,12 +51,12 @@ class Player:
     hp_max: int = 20
     strength: int = 10
     defense: int = 1
-    charm: int = 2
+    charm: int = 1
     gold: int = 500
     bank: int = 0
     gems: int = 0
-    weapon_num: int = 0
-    armor_num: int = 0
+    weapon_num: int = 1
+    armor_num: int = 1
     forest_fights: int = 15
     player_fights: int = 3
     flirts_today: int = 0
@@ -77,6 +77,18 @@ class Player:
     horse: int = 0
     last_played: str = ""
     online: int = 0
+    # Migration 2 -- see pylord/db.py's MIGRATIONS[1] for what each gates.
+    high_spirits: int = 0
+    weird: int = 0
+    has_fairy: int = 0
+    fairy_lore: int = 0
+    amulet: int = 0
+    pvp_kills: int = 0
+    magically_delicious: int = 0
+    divorced: int = 0
+    mastered_dk: int = 0
+    mastered_my: int = 0
+    mastered_th: int = 0
 
 
 _COLUMNS = [f.name for f in fields(Player)]

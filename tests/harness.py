@@ -29,7 +29,11 @@ def screen(io: FakeIO) -> str:
 
 
 async def play(
-    keys: list[str], player: Player | None = None, igms=None, **config
+    keys: list[str],
+    player: Player | None = None,
+    igms=None,
+    overrides: dict | None = None,
+    **config,
 ) -> tuple[FakeIO, Player]:
     """Run a scripted session and return (io, reloaded player).
 
@@ -37,6 +41,10 @@ async def play(
     ``GameCtx.config``) picks the starting scene; defaults to "town".
     ``igms`` (an IgmRegistry) stays ``None`` by default -- most scene tests
     don't exercise plugins; the IGM framework's own tests pass one in.
+    ``overrides`` sets fields on the freshly-created player before the
+    session starts (e.g. ``{"weapon_num": 0}`` to test the unarmed path a
+    new character no longer starts in -- see pylord/db.py's Stick/Coat
+    defaults, reference/recorddefs.js:47-51, 136-141).
     """
     start = config.pop("start", "town")
 
@@ -46,6 +54,8 @@ async def play(
 
     if player is None:
         player = repo.create("Tester", "pw", "M")
+    for key, value in (overrides or {}).items():
+        setattr(player, key, value)
 
     io = FakeIO(keys)
     ctx = GameCtx(
