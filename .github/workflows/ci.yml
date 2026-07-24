@@ -35,3 +35,79 @@ jobs:
             helm template pylord deploy/helm/pylord \
               -f "deploy/values/${env}.yaml" > "/tmp/render-${env}.yaml"
           done
+
+  image:
+    name: Image runs the way the chart runs it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: pylord:ci
+          cache-from: type=gha
+
+      - name: Take the container's config and arguments from the chart
+        run: |
+          # Whatever the chart mounts and passes is what we run here -- an
+          # image that only works with its own CMD is not deployable.
+          helm template pylord deploy/helm/pylord \
+            -f deploy/values/prod.yaml > /tmp/render.yaml
+          mkdir -p /tmp/pylord-config /tmp/pylord-data
+          chmod 777 /tmp/pylord-data  # the image runs as uid 10001
+          uv run --with pyyaml python - <<'PY'
+          import json, pathlib, yaml
+          docs = [d for d in yaml.safe_load_all(pathlib.Path("/tmp/render.yaml").read_text()) if d]
+          cm = next(d for d in docs if d["kind"] == "ConfigMap")
+          pathlib.Path("/tmp/pylord-config/config.toml").write_text(cm["data"]["config.toml"])
+          dep = next(d for d in docs if d["kind"] == "Deployment")
+          args = dep["spec"]["template"]["spec"]["containers"][0]["args"]
+          pathlib.Path("/tmp/args.json").write_text(json.dumps(args))
+          print("chart args:", args)
+          PY
+
+      - name: Start it and play a hand
+        run: |
+          set -e
+          docker run -d --name pylord-ci \
+            -p 2323:2323 \
+            -v /tmp/pylord-config:/config:ro \
+            -v /tmp/pylord-data:/data \
+            pylord:ci $(uv run python -c "import json;print(' '.join(json.load(open('/tmp/args.json'))))")
+
+          # The realm should answer a real telnet client within a few seconds.
+          uv run python - <<'PY'
+          import socket, sys, time
+          deadline = time.time() + 30
+          while time.time() < deadline:
+              try:
+                  with socket.create_connection(("127.0.0.1", 2323), timeout=5) as sock:
+                      sock.settimeout(5)
+                      banner = b""
+                      while b"warrior" not in banner.lower() and len(banner) < 4096:
+                          chunk = sock.recv(1024)
+                          if not chunk:
+                              break
+                          banner += chunk
+                      if b"warrior" in banner.lower():
+                          print("realm answered:", banner[-120:])
+                          sys.exit(0)
+              except OSError:
+                  time.sleep(1)
+          sys.exit("no name prompt from the container within 30s")
+          PY
+
+      - name: Container logs
+        if: always()
+        run: docker logs pylord-ci || true

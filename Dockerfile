@@ -43,6 +43,13 @@ USER pylord
 EXPOSE 2323
 VOLUME ["/data"]
 
+# ENTRYPOINT is the binary, CMD the default arguments: a deployment that
+# overrides `args` (the Helm chart does, to point at its own config path)
+# replaces only the arguments. With the command baked into CMD alone, any
+# `args` override would replace the whole line and the container would try
+# to exec "serve" as a binary.
+#
 # config.toml is supplied by the deployment (a ConfigMap in Kubernetes, a
 # bind mount locally); /config/config.toml is where the chart mounts it.
-CMD ["pylord", "serve", "--config", "/config/config.toml"]
+ENTRYPOINT ["pylord"]
+CMD ["serve", "--config", "/config/config.toml"]
