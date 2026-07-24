@@ -70,3 +70,14 @@ async def contract_check(igm_cls: type[IGM], keys: list[str] | None = None) -> N
     assert player.gems >= 0, "IGM drove gems negative"
     assert player.exp >= 0, "IGM drove exp negative"
     assert 0 <= player.hp <= player.hp_max, "IGM drove hp out of [0, hp_max]"
+
+    # The per-IGM store must round-trip through the DB: flush a value, then
+    # read it back through a fresh context scoped to the same key. This
+    # exercises the storage path every IGM relies on for persistence.
+    igm_ctx.store.set("__contract_probe__", {"ok": True})
+    igm_ctx.store.flush()
+    conn.commit()
+    fresh = IgmContext(ctx, inst)
+    assert fresh.store.get("__contract_probe__") == {"ok": True}, (
+        "IgmStore did not round-trip through the database"
+    )

@@ -243,8 +243,12 @@ async def start(config: dict[str, Any]):
 
     # Discover drop-in IGM plugins once at startup; the registry is shared
     # (read-only after discovery) by every connection this server accepts.
-    igms = igm_loader.discover(Path("igms"), config)
-    logger.info("loaded %d enabled IGM(s)", len(igms.enabled))
+    # Resolve ``igms/`` next to the database (which cli.load_config already
+    # anchors to the config file's directory), so discovery doesn't depend
+    # on the server's current working directory.
+    igms_dir = Path(db_path).resolve().parent / "igms"
+    igms = igm_loader.discover(igms_dir, config)
+    logger.info("loaded %d enabled IGM(s) from %s", len(igms.enabled), igms_dir)
 
     async def shell(reader, writer) -> None:
         await handle_connection(reader, writer, conn=conn, config=config, igms=igms)

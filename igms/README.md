@@ -42,6 +42,12 @@ class DragonLottery(IGM):
         await ctx.term.pause()
 ```
 
+> **Use absolute imports.** Each `igm.py` is loaded as a standalone module
+> (`igms.<dir>`) without a parent package, so package-relative imports
+> (`from . import helpers`) will fail. Import from installed/absolute paths
+> instead (`from pylord.hooks import IGM`). If you need helper modules, keep
+> your logic inside `igm.py` or import them by absolute name.
+
 Then enable it in `config.toml`:
 
 ```toml

@@ -18,7 +18,7 @@ from pylord import db
 from pylord.engine.game import GameCtx
 from pylord.hooks import IGM, ForestEvent, IgmContext, IgmViolation
 from pylord.models import PlayerRepo
-from pylord.terminal import FakeIO
+from pylord.terminal import ConnectionClosed, FakeIO
 from tests.igm_contract import contract_check
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -399,12 +399,20 @@ async def test_crash_restores_player_and_rolls_back_store():
     p.hp = 20
     p.hp_max = 20
     repo.save(p)
+    original = p  # the object server.handle_connection would also hold
     ctx = _visit_ctx(conn, repo, p, _CrashIGM())
 
     from pylord.engine.scenes.other_places import _visit
 
     await _visit(ctx, _CrashIGM())
 
+    # CRITICAL: restore must be in place -- the SAME object identity the
+    # rest of the session (and the server's cleanup save) holds, restored
+    # to pre-visit values (not a rebound snapshot copy leaving the original
+    # carrying the IGM's mutations).
+    assert ctx.player is original
+    assert original.gold == 100
+    assert original.hp == 20
     # player object restored to pre-visit values
     assert ctx.player.gold == 100
     assert ctx.player.hp == 20
@@ -427,6 +435,54 @@ async def test_crash_restores_player_and_rolls_back_store():
     # flavor message shown
     out = "".join(ctx.io.output)
     assert "strange force" in out
+
+
+class _DisconnectIGM(IGM):
+    key = "disconnect"
+    name = "Disconnect Test"
+    default_enabled = True
+
+    async def enter(self, ctx):
+        # Mutate, then the player disconnects mid-visit (the common case).
+        ctx.player.gold = 999999
+        ctx.store.set("nope", "x")
+        raise ConnectionClosed("peer vanished mid-IGM")
+
+
+async def test_disconnect_midvisit_restores_before_reraise_and_cleanup_save():
+    from pylord.terminal import ConnectionClosed as _CC
+
+    conn, repo = _db()
+    p = repo.create("Hero", "pw", "M")
+    p.gold = 100
+    repo.save(p)
+    original = p
+    ctx = _visit_ctx(conn, repo, p, _DisconnectIGM())
+
+    from pylord.engine.scenes.other_places import _visit
+
+    # ConnectionClosed must re-raise (session teardown needs the signal) ...
+    with pytest.raises(_CC):
+        await _visit(ctx, _DisconnectIGM())
+
+    # ... but the in-place restore must already have happened on the SAME
+    # object, so the server's finally-block cleanup save (which holds this
+    # very object) can't re-persist the IGM's mutation.
+    assert ctx.player is original
+    assert original.gold == 100
+
+    # Simulate server.handle_connection's cleanup: online = 0; repo.save.
+    original.online = 0
+    repo.save(original)
+
+    reloaded = repo.get(p.id)
+    assert reloaded.gold == 100  # rollback survived the cleanup save
+    assert reloaded.online == 0
+    # store write rolled back too
+    assert (
+        conn.execute("SELECT 1 FROM igm_data WHERE igm_key='disconnect'").fetchone()
+        is None
+    )
 
 
 async def test_clean_visit_flushes_everything():

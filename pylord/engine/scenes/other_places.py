@@ -12,8 +12,9 @@ sandbox that makes a drop-in plugin safe to run against a live character:
 4. **Clean exit** -> flush the store + buffered news and persist the
    (possibly mutated) player, all in one ``commit()``.
 5. **Any exception** -> ``rollback()`` (undoing store/news/mail writes the
-   plugin made mid-visit), restore the player object from the snapshot,
-   log, and show the "strange force" flavor line. ``ConnectionClosed`` /
+   plugin made mid-visit), restore the player's fields **in place** from the
+   snapshot (preserving object identity -- see ``_restore_in_place``), log,
+   and show the "strange force" flavor line. ``ConnectionClosed`` /
    ``OutOfKeys`` are re-raised after the rollback so the session's own
    teardown still sees the real "input is gone" signal; every other
    exception (including :class:`~pylord.hooks.IgmViolation`) is swallowed
@@ -68,6 +69,22 @@ def _save_player_raw(ctx: GameCtx) -> None:
     ctx.conn.execute(f"UPDATE players SET {set_clause} WHERE id = :id", params)
 
 
+def _restore_in_place(player: Player, snapshot: Player) -> None:
+    """Copy ``snapshot``'s fields back onto ``player`` **in place**.
+
+    Object identity matters: ``server.handle_connection`` holds its own
+    reference to the very same ``Player`` object (its ``finally:`` clears
+    ``online`` and re-saves it). If a crashing/disconnecting visit merely
+    rebound ``ctx.player`` to a fresh snapshot copy, that dangling original
+    would still carry the IGM's mutations and the cleanup save would
+    re-persist them -- silently undoing the DB rollback. Mutating the
+    original back to its pre-visit state keeps every holder of the object
+    consistent.
+    """
+    for f in fields(Player):
+        setattr(player, f.name, getattr(snapshot, f.name))
+
+
 async def _visit(ctx: GameCtx, igm: IGM) -> None:
     """Run one IGM visit under the transactional sandbox (see module doc)."""
     conn = ctx.conn
@@ -81,21 +98,23 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
         await igm.enter(igm_ctx)
     except (ConnectionClosed, OutOfKeys):
         conn.rollback()
-        ctx.player = snapshot
+        _restore_in_place(ctx.player, snapshot)
         raise
     except Exception:
         conn.rollback()
-        ctx.player = snapshot
+        _restore_in_place(ctx.player, snapshot)
         logger.exception("IGM %s crashed during enter()", igm.key)
         await ctx.io.write(
             "\n  `%A strange force pushes you back to the forest...`0\n"
         )
         return
 
-    # Clean exit: flush everything the visit produced, atomically.
+    # Clean exit: flush everything the visit produced, atomically. Skip the
+    # player UPDATE when nothing was written (PlayerView tracks this).
     igm_ctx.store.flush()
     igm_ctx.flush_news()
-    _save_player_raw(ctx)
+    if igm_ctx.player.dirty:
+        _save_player_raw(ctx)
     conn.commit()
 
 
