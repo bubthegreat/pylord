@@ -82,6 +82,7 @@ jobs:
           set -e
           docker run -d --name pylord-ci \
             -p 2323:2323 \
+            -p 7681:7681 \
             -v /tmp/pylord-config:/config:ro \
             -v /tmp/pylord-data:/data \
             pylord:ci $(uv run python -c "import json;print(' '.join(json.load(open('/tmp/args.json'))))")
@@ -132,11 +133,14 @@ jobs:
             --entrypoint ttyd \
             pylord:ci "$@"
 
+          # The sidecar shares pylord-ci's network namespace, so its port is
+          # published by that container (7681 above).
           for _ in $(seq 1 20); do
-            body=$(docker exec pylord-ci sh -c 'exec 3<>/dev/tcp/127.0.0.1/7681; printf "GET / HTTP/1.0\r\n\r\n" >&3; cat <&3' 2>/dev/null || true)
-            case "$body" in
-              *"200 OK"*) echo "terminal served:"; echo "$body" | head -3; exit 0 ;;
-            esac
+            if body=$(curl -fsS --max-time 5 http://127.0.0.1:7681/ 2>/dev/null); then
+              echo "terminal served $(printf %s "$body" | wc -c) bytes"
+              printf %s "$body" | grep -qi "ttyd\|terminal" \
+                && echo "and it is the ttyd page" && exit 0
+            fi
             sleep 2
           done
           echo "the browser terminal never answered"
