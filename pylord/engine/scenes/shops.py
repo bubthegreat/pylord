@@ -107,6 +107,19 @@ def _sell_price(
     return int(price)
 
 
+async def _credit_gold(ctx: GameCtx, amount: int) -> None:
+    """``player.gold += amount; if (player.gold > 2000000000) { ...cap +
+    flavor line... }`` -- shared by both sell paths (weapon:
+    lord.js:10099-10103, armor: lord.js:10494-10498)."""
+    p = ctx.player
+    new_gold = p.gold + amount
+    if new_gold > _GOLD_CAP:
+        p.gold = _GOLD_CAP
+        await ctx.io.write("Wow, you have a lot of money!\n")
+    else:
+        p.gold = new_gold
+
+
 def _weapon_name(p: Player) -> str:
     return "Fists" if p.weapon_num == 0 else data.weapon(p.weapon_num).name
 
@@ -238,7 +251,7 @@ async def _sell_weapon(ctx: GameCtx) -> None:
         "  money.\n\n"
     )
     p.weapon_num = 0
-    p.gold = min(p.gold + price, _GOLD_CAP)
+    await _credit_gold(ctx, price)
     p.strength = max(p.strength - oldw.power, 5)
     await ctx.io.pause()
 
@@ -361,6 +374,6 @@ async def _sell_armor(ctx: GameCtx) -> None:
         "  and gives you the money.\n"
     )
     p.armor_num = 0
-    p.gold = min(p.gold + price, _GOLD_CAP)
+    await _credit_gold(ctx, price)
     p.defense = max(p.defense - olda.power, 0)
     await ctx.io.pause()

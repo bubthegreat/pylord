@@ -155,6 +155,21 @@ async def test_sell_weapon_with_nothing_equipped_refused():
     assert ctx.player.gold == 500
 
 
+async def test_sell_weapon_gold_cap_shows_lot_of_money_flavor():
+    """Post-review Minor 2: reference/lord.js:10099-10103. gold starts 50
+    under the 2,000,000,000 cap; selling for 101 (same pinned roll as
+    ``test_sell_weapon_exact_price_and_stat_rollback``) pushes it over."""
+    ctx = _ctx(
+        overrides={"weapon_num": 1, "strength": 15, "gold": 2_000_000_000 - 50},
+        rng=_SeqRNG([1]),
+        keys=["y", "x"],
+    )
+    await shops_mod._sell_weapon(ctx)
+    text = screen(ctx.io)
+    assert "Wow, you have a lot of money!" in text
+    assert ctx.player.gold == 2_000_000_000
+
+
 # --- Armor: buy/sell mirror the weapon tests ------------------------------
 
 
@@ -189,6 +204,19 @@ async def test_sell_armor_exact_price_and_stat_rollback():
     assert ctx.player.armor_num == 0
     assert ctx.player.gold == 500 + 101
     assert ctx.player.defense == 2 - 1
+
+
+async def test_sell_armor_gold_cap_shows_lot_of_money_flavor():
+    """Post-review Minor 2: reference/lord.js:10494-10498."""
+    ctx = _ctx(
+        overrides={"armor_num": 1, "defense": 2, "gold": 2_000_000_000 - 50},
+        rng=_SeqRNG([1]),
+        keys=["y", "x"],
+    )
+    await shops_mod._sell_armor(ctx)
+    text = screen(ctx.io)
+    assert "Wow, you have a lot of money!" in text
+    assert ctx.player.gold == 2_000_000_000
 
 
 async def test_sell_armor_with_nothing_equipped_refused():

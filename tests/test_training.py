@@ -121,13 +121,16 @@ async def test_master_win_grants_level_and_exact_stat_gains():
             "hp_max": 200,
         },
         rng=_SeqRNG([0, 0]),
-        keys=["a", "x"],
+        keys=["a"],
     )
     await training_mod._attack_master(ctx, trainer)
     text = screen(ctx.io)
     assert "You have bested Halder" in text
     assert trainer.swear in text
     assert "YOU ARE NOW LEVEL 2" in text
+    # No more() after the win text (post-review Minor 1) -- the on-screen
+    # text has no pause, so nothing is left unread in the scripted queue.
+    assert ctx.io.keys == []
 
     gain = data.LEVEL_STATS[1]
     assert ctx.player.level == 2
@@ -136,6 +139,48 @@ async def test_master_win_grants_level_and_exact_stat_gains():
     assert ctx.player.strength == 1000 + gain.strength
     assert ctx.player.defense == 1 + trainer.defense
     assert ctx.player.seen_master == 0  # reset on a win
+
+    # Post-review Important: the win broadcasts news (log_line()'s
+    # equivalent) -- and it, not the player's own screen, is where
+    # "Ultimate Warrior" text would go (this isn't a level-12 win, so it
+    # shouldn't appear at all here).
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "Hero" in row["text"]
+    assert "has beaten" in row["text"]
+    assert "Halder" in row["text"]
+    assert "Ultimate Warrior" not in row["text"]
+    assert "Ultimate Warrior" not in text
+
+
+async def test_level_11_to_12_win_broadcasts_ultimate_warrior_to_news_only():
+    """Beating Turgon (master 11) at level 11 -> 12 appends the
+    "Ultimate Warrior" line to the news broadcast (lord.js:15792-15801,
+    `log_line(mline)`) -- it is never printed to the winning player's own
+    screen (post-review Important fix)."""
+    trainer = data.MASTERS[11]
+    ctx = _ctx(
+        overrides={
+            "level": 11,
+            "exp": trainer.exp_reward + 1,
+            "strength": 6000,
+            "hp": 5000,
+            "hp_max": 5000,
+        },
+        rng=_SeqRNG([0, 0]),
+        keys=["a"],
+    )
+    await training_mod._attack_master(ctx, trainer)
+    text = screen(ctx.io)
+    assert ctx.player.level == 12
+    assert "YOU ARE NOW LEVEL 12" in text
+    assert "Ultimate Warrior" not in text  # never shown to the player
+
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "Ultimate Warrior" in row["text"]
+    assert "Hero" in row["text"]
+    assert "Turgon" in row["text"]
 
 
 async def test_master_loss_heals_and_shows_mercy_no_death():

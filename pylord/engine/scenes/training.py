@@ -301,7 +301,16 @@ async def _run_master_fight(ctx: GameCtx, trainer: Master):
 
 async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> None:
     """Port of the win tail of ``attack_master()``.
-    reference/lord.js:15773-15806."""
+    reference/lord.js:15773-15806.
+
+    **Post-review fix**: the "Ultimate Warrior" line (lord.js:15792-15801)
+    is built into ``mline`` and sent to ``log_line(mline)`` (lord.js:15802)
+    -- it's a *news* broadcast, never printed to the winning player's own
+    screen (the player-visible text ends at "YOU ARE NOW LEVEL N.",
+    lord.js:15789). An earlier draft of this function printed it directly
+    to the player and never called ``log_line``'s equivalent
+    (``ctx.news()``) at all -- both are corrected here.
+    """
     p = ctx.player
     lines = [""]
 
@@ -334,18 +343,24 @@ async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> N
     lines.append(f"  `%YOU ARE NOW LEVEL {p.level}.")
     lines.append("")
 
-    if p.level == 12:  # reference/lord.js:15792-15801
-        pronoun = "He" if p.gender == "M" else "She"
-        lines.append(f"  {pronoun} has become the Ultimate Warrior!")
-        lines.append("")
-
     if fight.gem_found:  # reference/lord.js:6905-6924/6973-6991 -- gem
         p.gems += 1  # bonus applies regardless of monster vs. master.
 
     p.seen_master = 0  # reference/lord.js:15804
 
     await ctx.io.write("\n".join(lines) + "\n")
-    await ctx.io.pause()
+    # reference/lord.js:15791-15802 (mline / log_line()) -- news-only, never
+    # shown to the player. Built *after* player.level += 1 above, matching
+    # lord.js's own ordering (mline is assembled right after the increment).
+    mline = f"  `0{p.name} `2has beaten `%{trainer.name}!"
+    if p.level == 12:
+        pronoun = "He" if p.gender == "M" else "She"
+        mline += f"\n  {pronoun} has become the Ultimate Warrior!"
+    ctx.news(mline)
+    # No pause() here -- lord.js's win branch has no more()/more_nomail()
+    # call anywhere between the stat-gain text and the news broadcast; the
+    # player falls straight back to turgons()'s own prompt() (this
+    # module's outer training() loop redraws immediately).
 
 
 async def _mercy(ctx: GameCtx, trainer: Master) -> None:
