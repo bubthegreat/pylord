@@ -134,6 +134,33 @@ The six bundled IGMs in `igms/` are working examples, from small
 ## Development
 
 ```sh
-uv run pytest        # full suite, including a telnet end-to-end smoke test
+uv run pytest        # full suite, including the telnet end-to-end harness
 uv run ruff check .
+```
+
+### End-to-end harness
+
+`uv run pylord smoke` starts a throwaway server on an ephemeral port,
+connects over real telnet, and plays through every base feature —
+character creation, both shops, bank, healer, Turgon's, the inn, the
+listings, mail, a forest fight, and an IGM visit — checking what each
+screen says:
+
+```sh
+uv run pylord smoke              # one pass/fail line per feature
+uv run pylord smoke --verbose    # also print every screen it saw
+uv run pylord smoke --dir /tmp/x # keep the throwaway db/igms around
+```
+
+The same walkthrough runs in CI as `tests/test_e2e_features.py`. The thin
+client behind it (`pylord/e2e.py`) is reusable for one-off scripted
+sessions:
+
+```python
+from pylord.e2e import LordClient
+
+client = await LordClient.connect("127.0.0.1", 2323)
+await client.login("Zaphod", "hunter2")
+client.key("F")
+print(await client.expect("ook for something to kill"))
 ```

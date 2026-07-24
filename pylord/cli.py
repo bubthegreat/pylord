@@ -182,6 +182,48 @@ def _cmd_players(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_smoke(args: argparse.Namespace) -> int:
+    """Play every base feature over real telnet against a throwaway
+    server/database and report what each screen said. See pylord/e2e.py."""
+    import tempfile
+
+    from pylord.e2e import run_walkthrough
+
+    async def _run(work_dir: Path) -> list:
+        sink = (lambda screen: print(screen, end="")) if args.verbose else None
+        return await run_walkthrough(work_dir, verbose_sink=sink)
+
+    if args.dir:
+        results = asyncio.run(_run(Path(args.dir)))
+    else:
+        with tempfile.TemporaryDirectory(prefix="pylord-smoke-") as tmp:
+            results = asyncio.run(_run(Path(tmp)))
+
+    for result in results:
+        print(f"{'ok  ' if result.ok else 'FAIL'}  {result.name}")
+        if not result.ok:
+            print(f"      {result.detail}")
+            for screen in result.screens[-3:]:
+                print("      --- screen ---")
+                print("".join(f"      {ln}\n" for ln in screen.splitlines()))
+    failed = [r for r in results if not r.ok]
+    skipped = len(results) < len(_smoke_step_count())
+    if failed:
+        print(f"\n{len(failed)} step(s) failed")
+        return 1
+    if skipped:
+        print("\nwalkthrough stopped early")
+        return 1
+    print(f"\nall {len(results)} steps passed")
+    return 0
+
+
+def _smoke_step_count() -> list:
+    from pylord.e2e import STEPS
+
+    return STEPS
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="pylord", description="pylord -- Legend of the Red Dragon telnet remake"
@@ -221,6 +263,22 @@ def main(argv: list[str] | None = None) -> int:
         help="path to config.toml (default: ./config.toml)",
     )
     players_parser.set_defaults(func=_cmd_players)
+
+    smoke_parser = subparsers.add_parser(
+        "smoke",
+        help="play every base feature over telnet against a throwaway server",
+    )
+    smoke_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print every screen the harness sees, not just pass/fail",
+    )
+    smoke_parser.add_argument(
+        "--dir",
+        help="keep the throwaway database/igms in this directory instead of a "
+        "temporary one",
+    )
+    smoke_parser.set_defaults(func=_cmd_smoke)
 
     args = parser.parse_args(argv)
     return args.func(args)
