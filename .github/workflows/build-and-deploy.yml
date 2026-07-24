@@ -14,8 +14,9 @@ on:
       - 'Dockerfile'
       - 'pyproject.toml'
       - 'uv.lock'
-      - 'deploy/**'
       - '.github/workflows/build-and-deploy.yml'
+      # Deliberately not deploy/**: a values-only change needs no rebuild,
+      # and the promote job below commits there -- see its [skip ci].
   workflow_dispatch:
 
 env:
@@ -74,5 +75,6 @@ jobs:
             echo "prod already on this image"
             exit 0
           fi
-          git commit -am "chore: deploy ${{ needs.build.outputs.tag }} to prod"
+          # [skip ci] so promoting doesn't trigger the build that promotes.
+          git commit -am "chore: deploy ${{ needs.build.outputs.tag }} to prod [skip ci]"
           git push
