@@ -62,6 +62,7 @@ class GameCtx:
         conn: sqlite3.Connection,
         config: dict[str, Any] | None = None,
         rng: random.Random | None = None,
+        igms: Any = None,
     ) -> None:
         self.player = player
         self.repo = repo
@@ -69,7 +70,9 @@ class GameCtx:
         self.conn = conn
         self.config: dict[str, Any] = {} if config is None else config
         self.rng: random.Random = random.Random() if rng is None else rng
-        self.igms = None  # Task 12: IGM registry.
+        # Task 12: the session's IgmRegistry (None when no IGMs are wired
+        # in, e.g. most unit tests). Consumed by the "other_places" scene.
+        self.igms = igms
 
     def news(self, text: str) -> None:
         """Append ``text`` to today's daily news log.

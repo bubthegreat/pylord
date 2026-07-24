@@ -29,12 +29,14 @@ def screen(io: FakeIO) -> str:
 
 
 async def play(
-    keys: list[str], player: Player | None = None, **config
+    keys: list[str], player: Player | None = None, igms=None, **config
 ) -> tuple[FakeIO, Player]:
     """Run a scripted session and return (io, reloaded player).
 
     A reserved ``start`` config key (popped before it reaches
     ``GameCtx.config``) picks the starting scene; defaults to "town".
+    ``igms`` (an IgmRegistry) stays ``None`` by default -- most scene tests
+    don't exercise plugins; the IGM framework's own tests pass one in.
     """
     start = config.pop("start", "town")
 
@@ -46,7 +48,9 @@ async def play(
         player = repo.create("Tester", "pw", "M")
 
     io = FakeIO(keys)
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn, config=config)
+    ctx = GameCtx(
+        player=player, repo=repo, io=io, conn=conn, config=config, igms=igms
+    )
     ctx.rng = random.Random(0)
 
     try:

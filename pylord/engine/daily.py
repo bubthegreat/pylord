@@ -81,7 +81,12 @@ def _set_game_state(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def maintenance(conn: sqlite3.Connection, config: dict[str, Any], today: str) -> None:
+def maintenance(
+    conn: sqlite3.Connection,
+    config: dict[str, Any],
+    today: str,
+    igms=None,
+) -> None:
     """Run once-per-day global maintenance, idempotently.
 
     ``today`` is an ISO date string (e.g.
@@ -90,6 +95,12 @@ def maintenance(conn: sqlite3.Connection, config: dict[str, Any], today: str) ->
     Guarded by the ``game_state`` key ``'last_maint'``: if it already
     equals ``today``, this is a cheap no-op (one SELECT) -- safe to call
     on every login.
+
+    ``igms`` (an optional IgmRegistry) runs each enabled plugin's
+    ``daily_maint`` hook *after* the core per-player pass has committed;
+    each plugin's failure is contained (see
+    ``IgmRegistry.run_daily_maint``), so a bad IGM can't abort the daily
+    reset.
     """
     row = conn.execute(
         "SELECT value FROM game_state WHERE key = 'last_maint'"
@@ -128,3 +139,8 @@ def maintenance(conn: sqlite3.Connection, config: dict[str, Any], today: str) ->
         day = int(day_row["value"]) + 1 if day_row is not None else 2
         _set_game_state(conn, "day", str(day))
         _set_game_state(conn, "last_maint", today)
+
+    # After the core reset has committed, let enabled IGMs run their own
+    # daily hook (each contained; see IgmRegistry.run_daily_maint).
+    if igms is not None:
+        igms.run_daily_maint(conn, config)

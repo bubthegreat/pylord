@@ -123,6 +123,7 @@ _MENU_LINES = (
     "`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-",
     "  `2(`0L`2)ook for something to kill",
     "  `2(`0H`2)ealer's Hut",
+    "  `2(`0O`2)ther places",
     "  `2(`0R`2)eturn to town",
     "  `2(`0V`2)iew your stats",
     "",
@@ -130,7 +131,16 @@ _MENU_LINES = (
 _MENU = "\n".join(_MENU_LINES)
 _PROMPT = "`2Your choice`0? `2"
 
-_MENU_OPTIONS = {"L": "look", "H": "healer", "R": "town", "V": "stats"}
+# (O)ther places -> the IGM plugin hub (reference/lord.js puts Other Places
+# in the forest; Task 12). Town's own (O) is Dark Cloak Tavern territory and
+# stays a stub for now.
+_MENU_OPTIONS = {
+    "L": "look",
+    "H": "healer",
+    "O": "other_places",
+    "R": "town",
+    "V": "stats",
+}
 
 # class_type -> (skill_points field, skill_attack() 'kind', display label).
 # reference/lord.js:6858-6866 (per-class letters D/M/T); this project uses
@@ -157,6 +167,8 @@ async def forest(ctx: GameCtx) -> str | None:
             return "stats"
         if choice == "H":
             return "healer"
+        if choice == "O":
+            return "other_places"
         # choice == "L"
         died = await _look_to_kill(ctx)
         if died:

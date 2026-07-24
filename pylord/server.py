@@ -24,12 +24,13 @@ import logging
 import sqlite3
 import string
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import telnetlib3
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
-from pylord import db
+from pylord import db, igm_loader
 from pylord.engine import daily
 from pylord.engine.game import GameCtx, run_session
 from pylord.models import Player, PlayerRepo
@@ -138,7 +139,9 @@ async def _create_character(io: TelnetIO, repo: PlayerRepo, name: str) -> Player
     return player
 
 
-async def handle_connection(reader, writer, *, conn, config: dict[str, Any]) -> None:
+async def handle_connection(
+    reader, writer, *, conn, config: dict[str, Any], igms=None
+) -> None:
     """telnetlib3 shell callback: login flow, then hand off to run_session.
 
     Exactly one live session per character: if the resolved player is
@@ -157,7 +160,7 @@ async def handle_connection(reader, writer, *, conn, config: dict[str, Any]) -> 
     # batch pass rather than lord.js's per-player lazy wake_up(). UTC
     # (rather than host-local "today") avoids the game's day rollover
     # depending on whatever timezone the server process happens to run in.
-    daily.maintenance(conn, config, datetime.now(UTC).date().isoformat())
+    daily.maintenance(conn, config, datetime.now(UTC).date().isoformat(), igms=igms)
 
     player: Player | None = None
     try:
@@ -188,6 +191,7 @@ async def handle_connection(reader, writer, *, conn, config: dict[str, Any]) -> 
             io=io,
             conn=conn,
             config=config.get("game", {}),
+            igms=igms,
         )
         try:
             await run_session(ctx, start="town")
@@ -237,7 +241,12 @@ async def start(config: dict[str, Any]):
     conn = db.connect(db_path)
     db.migrate(conn)
 
+    # Discover drop-in IGM plugins once at startup; the registry is shared
+    # (read-only after discovery) by every connection this server accepts.
+    igms = igm_loader.discover(Path("igms"), config)
+    logger.info("loaded %d enabled IGM(s)", len(igms.enabled))
+
     async def shell(reader, writer) -> None:
-        await handle_connection(reader, writer, conn=conn, config=config)
+        await handle_connection(reader, writer, conn=conn, config=config, igms=igms)
 
     return await telnetlib3.create_server(host=host, port=port, shell=shell)
