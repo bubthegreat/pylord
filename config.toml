@@ -11,3 +11,4 @@ clean_mode = false
 [igms]
 # populated by bundled IGMs; true = enabled
 baraks_house = true
+sandtigers_bar = true
