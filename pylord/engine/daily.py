@@ -29,6 +29,9 @@ Formulas ported from ``wake_up()`` (reference/lord.js:5412-5595):
 - **``seen_master``**: reset to false (line 5425).
 - **``flirts_today``**: reset to 0 (lord.js's ``player.flirted = false``,
   line 5427).
+- **``seen_violet``/``seen_bard``**: reset to 0/false (lines 5437, 5430) --
+  the once-a-day gates for the Inn's Violet/Seth Able flirt chain and bard
+  song (Task 13a, ``pylord/engine/scenes/inn.py``).
 - **Skill uses**: recomputed daily from the player's own class's skill
   rank (lord.js's ``skillw``/``skillm``/``skillt`` -- this project's
   ``skill_dk``/``skill_my``/``skill_th``, see
@@ -129,6 +132,8 @@ def maintenance(
             player.player_fights = player_fights  # reference/lord.js:5432
             player.flirts_today = 0  # reference/lord.js:5427
             player.seen_master = 0  # reference/lord.js:5425
+            player.seen_violet = 0  # reference/lord.js:5437
+            player.seen_bard = 0  # reference/lord.js:5430
             player.skill_uses = _skill_uses_for(player)
 
             repo.save(player)
