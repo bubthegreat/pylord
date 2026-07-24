@@ -123,10 +123,14 @@ jobs:
           PY
           )
           echo "chart web args: $web_args"
+          # Kubernetes passes args as an array; shlex.join above quoted them,
+          # so restore the words rather than letting the shell split
+          # "titleFixed=Legend of the Red Dragon" into five arguments.
+          eval "set -- $web_args"
           docker run -d --name pylord-web \
             --network "container:pylord-ci" \
             --entrypoint ttyd \
-            pylord:ci $web_args
+            pylord:ci "$@"
 
           for _ in $(seq 1 20); do
             body=$(docker exec pylord-ci sh -c 'exec 3<>/dev/tcp/127.0.0.1/7681; printf "GET / HTTP/1.0\r\n\r\n" >&3; cat <&3' 2>/dev/null || true)
