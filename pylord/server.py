@@ -33,6 +33,7 @@ import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
 from pylord import db, igm_loader
 from pylord.engine import daily
 from pylord.engine.game import GameCtx, run_session
+from pylord.engine.scenes import mail as mail_scene
 from pylord.models import Player, PlayerRepo
 from pylord.terminal import ConnectionClosed, TelnetIO
 
@@ -194,6 +195,12 @@ async def handle_connection(
             igms=igms,
         )
         try:
+            # Task 13a: apply/show unread mail (including any async IGM
+            # "effect" payload -- pylord/engine/effects.py) once, right
+            # after login and before the player reaches the Town Square.
+            # See pylord/engine/scenes/mail.py's module docstring for why
+            # this replaces lord.js's constant check_mail() polling.
+            await mail_scene.apply_unread_mail(ctx)
             await run_session(ctx, start="town")
         except KeyError:
             # Every town destination is now registered except the
