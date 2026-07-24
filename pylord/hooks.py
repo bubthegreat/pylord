@@ -35,6 +35,8 @@ from collections import namedtuple
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from pylord.engine import limits
+
 if TYPE_CHECKING:
     import random
     import sqlite3
@@ -51,11 +53,6 @@ ForestEvent = namedtuple("ForestEvent", "weight run")
 # A read-only view of another player handed to IGMs via
 # ``IgmContext.other_players()``.
 PlayerSummary = namedtuple("PlayerSummary", "name level alive class_type")
-
-# lord.js caps exp at 2,000,000,000 everywhere it's credited
-# (reference/lord.js:15108-15110); IgmContext applies the same ceiling to
-# any exp an IGM grants, matching ``pylord.engine.game.grant_exp``.
-_EXP_CAP = 2_000_000_000
 
 
 class IgmViolation(Exception):
@@ -109,38 +106,31 @@ class PlayerView:
     * ``exp``                       -> floored at 0, capped at 2,000,000,000
                                        (same ceiling as ``grant_exp``).
     * ``hp``                        -> clamped to ``[0, hp_max]``.
-    * ``hp_max``                    -> floored at 1.
-    * ``strength``/``defense``/``charm`` -> floored at 1.
+    * ``hp_max``/``strength``/``defense``/``charm`` -> floored at 1, capped
+                                       at 32,000.
+    * ``forest_fights``/``player_fights`` -> floored at 0, capped at 32,000.
     * ``level``                     -> :class:`IgmViolation` (immutable;
                                        leveling happens at Turgon's).
     * ``id`` / ``name`` / ``password_hash`` -> :class:`IgmViolation`
                                        (identity is immutable).
 
-    **Chosen floors, and why.** lord.js never stores these below the values
-    a brand-new warrior starts with, and this project's ``Player`` model
-    encodes those newborn minimums as its field defaults
-    (``strength=10``, ``defense=1``, ``charm=2``, ``hp_max=20`` --
-    ``pylord/models.py``). No lower bound is discoverable in
-    ``reference/lord.js`` beyond "a live warrior always has a positive
-    combat stat", so the floors here are the conservative, documented
-    choice of **1** for every combat stat (``strength``/``defense``/
-    ``charm``/``hp_max``) -- the smallest value that keeps a character
-    functional (a 0-strength or 0-hp_max player can neither fight nor be
-    healed) -- and **0** for the spendable resources (``gold``/``gems``/
-    ``exp``), matching lord.js's own "gold on hand lost -> 0" flooring in
-    combat death (reference/lord.js:15071). Any field *not* listed above
-    (``bank``, ``forest_fights``, ``weapon_num``, the ``seen_*`` flags,
-    ...) passes through unvalidated: IGMs are semi-trusted drop-ins, and
-    the brief scopes validation to the stats a corrupt value would most
-    damage.
+    Every bound above lives in ``pylord/engine/limits.py`` -- the same
+    module :func:`pylord.engine.effects.apply_effect` (Task 13a's mail
+    "effect" channel) validates against, so a stat can't end up with a
+    different validated range depending on which channel wrote it (a
+    review finding: this class and ``effects.py`` used to each carry their
+    own, independently-drifted copy of these bounds -- see
+    ``docs/deviations.md``). See that module's docstring for each bound's
+    reasoning/lord.js citation. Any field *not* covered there (``bank``,
+    ``weapon_num``, the ``seen_*`` flags, ...) passes through unvalidated:
+    IGMs are semi-trusted drop-ins, and the brief scopes validation to the
+    stats a corrupt value would most damage.
 
     ``dirty`` reports whether any successful write has occurred, so the
     visit protocol can skip persisting an untouched player.
     """
 
     _IMMUTABLE = frozenset({"id", "name", "password_hash"})
-    _FLOOR_ZERO = frozenset({"gold", "gems"})
-    _FLOOR_ONE = frozenset({"strength", "defense", "charm", "hp_max"})
 
     def __init__(self, player: Player) -> None:
         object.__setattr__(self, "_player", player)
@@ -166,16 +156,10 @@ class PlayerView:
                 "IGMs may not modify player.level -- grant exp instead"
             )
 
-        if name in self._FLOOR_ZERO:
-            value = max(0, int(value))
-        elif name == "exp":
-            value = min(max(0, int(value)), _EXP_CAP)
-        elif name == "hp_max":
-            value = max(1, int(value))
-        elif name == "hp":
-            value = max(0, min(int(value), player.hp_max))
-        elif name in self._FLOOR_ONE:
-            value = max(1, int(value))
+        if name == "hp":
+            value = limits.clamp_hp(value, player.hp_max)
+        elif name in limits.VALIDATED_FIELDS:
+            value = limits.clamp(name, value)
 
         setattr(player, name, value)
         object.__setattr__(self, "_dirty", True)

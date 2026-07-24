@@ -197,6 +197,41 @@ async def test_login_applies_effect_exactly_once():
     assert ctx2.player.gold == 150
 
 
+async def test_apply_unread_mail_effect_survives_crash_without_session_save():
+    """Post-review durability fix: apply_unread_mail's DB write (marking
+    the row read) and the player's mutated stats must land in the SAME
+    transaction. Simulates a crash by calling apply_unread_mail and then
+    reloading the player straight from the DB via a *fresh* PlayerRepo.get
+    -- never calling ctx.save()/GameCtx.save()/repo.save() at all -- the
+    old "mark read now, persist player only at session end" version would
+    lose the gold here."""
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create("Hero", "pw", "M")
+    player.gold = 100
+    repo.save(player)
+
+    with conn:
+        conn.execute(
+            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
+            "VALUES (?, ?, ?, ?, ?, 0)",
+            (player.id, "IGM", "A gift!", json.dumps({"gold": 50}), "2026-01-01"),
+        )
+
+    ctx = GameCtx(player=player, repo=repo, io=FakeIO(["x"]), conn=conn)
+    count = await mail_mod.apply_unread_mail(ctx)
+    assert count == 1
+    # No ctx.save()/repo.save() call here on purpose -- simulating a crash
+    # (process kill, connection drop) that skips server.py's own cleanup
+    # save entirely.
+
+    reloaded = PlayerRepo(conn).get(player.id)
+    assert reloaded.gold == 150
+    reloaded_row = conn.execute("SELECT read FROM mail").fetchone()
+    assert reloaded_row["read"] == 1
+
+
 async def test_apply_unread_mail_no_mail_is_a_silent_no_op():
     ctx = _ctx(keys=[])
     count = await mail_mod.apply_unread_mail(ctx)

@@ -38,6 +38,20 @@ def _ctx(overrides=None, keys=None, rng=None):
     return ctx
 
 
+def _female_ctx(overrides=None, keys=None, rng=None):
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create("Heroine", "pw", "F")
+    for key, value in (overrides or {}).items():
+        setattr(player, key, value)
+    io = FakeIO(keys or [])
+    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn)
+    if rng is not None:
+        ctx.rng = rng
+    return ctx
+
+
 async def test_inn_reachable_from_town():
     io, _player = await play(["i", "r", "q"])
     text = screen(io)
@@ -164,6 +178,72 @@ async def test_carry_violet_below_charm_threshold_drops_hp_to_1():
     ctx = _ctx(overrides={"charm": 10, "level": 5, "hp": 50}, keys=["f", "c", "x", "r"])
     await inn_mod.inn(ctx)
     assert ctx.player.hp == 1
+
+
+async def test_carry_violet_success_writes_news_row():
+    """Post-review: reference/lord.js:9578 (`log_line('...Got laid by
+    Violet!')`) was missing from the success branch's port."""
+    ctx = _ctx(
+        overrides={"charm": 40, "level": 1},
+        keys=["f", "c", "x", "r"],
+        rng=_FixedRng([1]),  # success branch
+    )
+    await inn_mod.inn(ctx)
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "Got laid by" in row["text"]
+    assert "Violet" in row["text"]
+
+
+async def test_carry_violet_appalled_when_married_writes_news_row():
+    """Post-review: reference/lord.js:9564 (`log_line('...calls X a dirty
+    old man/bastard!')`) was missing from the "married" branch's port."""
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    spouse = repo.create("Spouse", "pw", "F")
+    player = repo.create("Married", "pw", "M")
+    player.married_to = spouse.id
+    ctx = GameCtx(player=player, repo=repo, io=FakeIO(["f", "c", "x", "r"]), conn=conn)
+    await inn_mod.inn(ctx)
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "Violet" in row["text"]
+    assert "calls" in row["text"]
+
+
+async def test_seduce_seth_success_writes_news_row():
+    """Post-review: reference/lord.js:8612 (`log_line('...got laid by Seth
+    Able!')`) was missing from the success branch's port."""
+    ctx = _female_ctx(
+        overrides={"charm": 40, "level": 1},
+        keys=["h", "f", "c", "x", "r", "r"],
+        rng=_FixedRng([2]),  # randrange(4) == 2 -> success branch
+    )
+    await inn_mod.inn(ctx)
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "got laid by" in row["text"]
+    assert "Seth Able" in row["text"]
+
+
+async def test_seduce_seth_appalled_when_married_writes_news_row():
+    """Post-review: reference/lord.js:8596 (`log_line('...calls X a filthy
+    harlot/slut!')`) was missing from the "married" branch's port."""
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    spouse = repo.create("Spouse", "pw", "M")
+    player = repo.create("Married", "pw", "F")
+    player.married_to = spouse.id
+    ctx = GameCtx(
+        player=player, repo=repo, io=FakeIO(["h", "f", "c", "x", "r", "r"]), conn=conn
+    )
+    await inn_mod.inn(ctx)
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None
+    assert "Seth Able" in row["text"]
+    assert "calls" in row["text"]
 
 
 async def test_marriage_below_charm_100_refused():

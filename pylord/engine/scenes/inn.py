@@ -14,13 +14,17 @@ task, no test coverage requested; ``C`` mirrors the same-spirit skip already
 recorded for the Forest's ``darkhorse_tavern()`` random event
 (``docs/deviations.md``).
 
-**Daily gates, exactly**: ``player.seen_violet`` (reset to 0 daily by
-``pylord/engine/daily.py``, reference/lord.js:5437/5430 -- ``seen_bard`` is
-the *same* boolean in lord.js reused for the bard-song gate too, see
-``_bard_song`` below) is the ONE daily gate this scene uses -- covering both
-Violet (male players) and Seth Able (female players), matching lord.js
-reusing a single field for both NPCs. ``player.flirts_today``
-(lord.js's ``player.flirted``) gates a *different*, unrelated lord.js
+**Daily gates, exactly**: this scene uses **two** separate daily-reset
+booleans (both reset by ``pylord/engine/daily.py``, reference/lord.js:5437/
+5429), not one. ``player.seen_violet`` gates the Violet/Seth Able flirt
+*tiers* -- a single shared field lord.js reuses for both NPCs (male players
+flirt with Violet, female players with Seth Able, see ``_flirt``/
+``_bard_menu`` below). ``player.seen_bard`` is a wholly independent gate for
+the bard *song* specifically (``_bard_song`` below, reference/lord.js's own
+``bard_song()`` checks ``player.seen_bard``, never ``seen_violet``) -- a
+player can hear today's song and still have their once-a-day flirt attempt
+available, or vice versa. Neither is ``player.flirts_today``
+(lord.js's ``player.flirted``), which gates a *different*, unrelated lord.js
 mechanic -- the player-to-player "send romantic mail" flow inside
 ``compose_mail()`` (reference/lord.js:5012-5177) -- which this task's Mail
 scene does not implement (see ``mail.py``'s module docstring); it is left
@@ -194,6 +198,8 @@ async def _run_carry_violet(ctx: GameCtx) -> None:
             "  `#Violet `0is appalled that you would even suggest such a "
             "thing!\n\n  She calls you a dirty old man!\n"
         )
+        insult = "dirty old man" if ctx.rng.randrange(2) else "bastard"
+        ctx.news(f"`#  Violet `2calls `0{p.name} `2a `){insult}`2!")
     elif p.charm > 32:
         if ctx.rng.randrange(3) == 1:
             await grant_exp(ctx, p.level * 40)
@@ -203,6 +209,7 @@ async def _run_carry_violet(ctx: GameCtx) -> None:
                 "saunter downstairs.  The drunks are mystified!\n\n"
                 f"  `0YOU GET `%{p.level * 40}`0 EXPERIENCE!\n"
             )
+            ctx.news(f"`5  {p.name} `%Got laid by `#Violet`%!")
         else:
             await ctx.io.write(
                 "  She tells you she's just too busy today.  You saunter "
@@ -232,6 +239,8 @@ async def _run_seduce_seth(ctx: GameCtx) -> None:
             "  Seth Able is appalled that you would even suggest such a "
             "thing!\n\n  He calls you a filthy harlot!\n"
         )
+        insult = ("filthy harlot", "slut")[ctx.rng.randrange(2)]
+        ctx.news(f"`%  Seth Able `2calls `0{p.name} `2a `){insult}`2!")
     elif p.charm >= 32:
         if ctx.rng.randrange(4) == 2:
             await grant_exp(ctx, p.level * 40)
@@ -241,6 +250,7 @@ async def _run_seduce_seth(ctx: GameCtx) -> None:
                 "downstairs.  The drunks are mystified!\n\n"
                 f"  `0YOU GET `%{p.level * 40} `0EXPERIENCE!\n"
             )
+            ctx.news(f"`0  {p.name} `2got laid by `%Seth Able`2!")
         else:
             await ctx.io.write(
                 "  He tells you he is too exhausted from last night!  You "
@@ -477,6 +487,11 @@ async def _bard_menu(ctx: GameCtx) -> None:
                     await ctx.io.write("\n\n  `2You don't wish to interrupt his song.\n")
                 else:
                     p.seen_violet = 1
+                    # Collapsed to one fixed line -- lord.js picks from an
+                    # 8-way switch(random(8)) flavor pool here
+                    # (reference/lord.js:9294-9319: "I love you too,
+                    # honey!" / a peck on the cheek / "duty calls" / etc.).
+                    # See docs/deviations.md.
                     await ctx.io.write('\n\n  `0"I love you too, honey!"\n')
             else:
                 # Homewrecking sub-branch (reference/lord.js:9322-9386) --

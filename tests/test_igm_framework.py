@@ -276,6 +276,39 @@ def test_playerview_exp_cap():
     assert p.exp == 0
 
 
+def test_playerview_stat_caps_at_32000():
+    """Post-review: PlayerView now shares its bounds with
+    pylord.engine.effects.apply_effect (pylord/engine/limits.py), which
+    caps hp_max/strength/defense/charm at 32,000 -- previously PlayerView
+    floored these but never capped them."""
+    conn, repo = _db()
+    p = repo.create("Hero", "pw", "M")
+    ctx = _ctx(conn, repo, p)
+    igm_ctx = IgmContext(ctx, _StubIGM())
+    igm_ctx.player.strength = 99_999
+    igm_ctx.player.defense = 99_999
+    igm_ctx.player.charm = 99_999
+    igm_ctx.player.hp_max = 99_999
+    assert p.strength == 32_000
+    assert p.defense == 32_000
+    assert p.charm == 32_000
+    assert p.hp_max == 32_000
+
+
+def test_playerview_forest_and_player_fights_now_validated():
+    """Post-review: forest_fights/player_fights are floored at 0 and
+    capped at 32,000 by the shared pylord/engine/limits.py bounds --
+    previously PlayerView passed them through completely unvalidated."""
+    conn, repo = _db()
+    p = repo.create("Hero", "pw", "M")
+    ctx = _ctx(conn, repo, p)
+    igm_ctx = IgmContext(ctx, _StubIGM())
+    igm_ctx.player.forest_fights = -5
+    igm_ctx.player.player_fights = 99_999
+    assert p.forest_fights == 0
+    assert p.player_fights == 32_000
+
+
 def test_playerview_reads_pass_through():
     conn, repo = _db()
     p = repo.create("Hero", "pw", "M")

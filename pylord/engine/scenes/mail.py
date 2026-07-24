@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING
 
 from pylord.engine.effects import apply_effect
 from pylord.engine.game import scene
+from pylord.engine.persist import save_player_raw
 
 if TYPE_CHECKING:
     from pylord.engine.game import GameCtx
@@ -57,7 +58,20 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
     shown. Safe to call multiple times -- rows already marked read are
     never re-applied (the ``read = 0`` filter), so a re-login (or a second
     call in the same session) is a no-op. Mirrors the "stopped by a
-    messenger" banner text (reference/lord.js:2322-2323/2347-2348)."""
+    messenger" banner text (reference/lord.js:2322-2323/2347-2348).
+
+    **Durability** (post-review fix): marking a row read and persisting the
+    player's mutated stats happen in the *same* transaction
+    (``save_player_raw``, a raw ``UPDATE`` sharing this loop iteration's
+    ``with ctx.conn:`` block -- see ``pylord/engine/persist.py``). An
+    earlier version committed ``read = 1`` immediately but left the
+    in-memory ``gold``/``exp``/etc. mutation to be persisted only by
+    whatever eventually calls ``GameCtx.save()`` at session end -- so a
+    crash between those two points would durably mark the mail read while
+    silently discarding the effect it was supposed to deliver (a
+    lost-update bug). Now either both commit or neither does, and a
+    dropped commit is safe to retry: the row is still unread, so the next
+    login re-shows and re-applies the very same letter."""
     rows = ctx.conn.execute(
         "SELECT id, from_name, text, effect FROM mail "
         "WHERE to_id = ? AND read = 0 ORDER BY id",
@@ -77,6 +91,7 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
             apply_effect(ctx.player, json.loads(row["effect"]))
         with ctx.conn:
             ctx.conn.execute("UPDATE mail SET read = 1 WHERE id = ?", (row["id"],))
+            save_player_raw(ctx.conn, ctx.player)
     await ctx.io.pause()
     return len(rows)
 

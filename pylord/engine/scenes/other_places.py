@@ -39,6 +39,7 @@ from dataclasses import fields, replace
 from typing import TYPE_CHECKING
 
 from pylord.engine.game import scene
+from pylord.engine.persist import save_player_raw
 from pylord.hooks import IgmContext
 from pylord.models import Player
 from pylord.terminal import ConnectionClosed, OutOfKeys
@@ -49,24 +50,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("pylord.igm")
 
-# Player columns to persist on a clean visit -- everything but the two
-# immutable identity fields (mirrors PlayerRepo.save()'s own set, but as a
-# raw UPDATE so it can share the visit's single transaction).
-_SAVE_COLS = [f.name for f in fields(Player) if f.name not in ("id", "name")]
-
 _PROMPT = "`2Your choice`0? `2"
 
 _HEADER = (
     "\n`5  Other Places\n"
     "`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
 )
-
-
-def _save_player_raw(ctx: GameCtx) -> None:
-    set_clause = ", ".join(f"{c} = :{c}" for c in _SAVE_COLS)
-    params = {c: getattr(ctx.player, c) for c in _SAVE_COLS}
-    params["id"] = ctx.player.id
-    ctx.conn.execute(f"UPDATE players SET {set_clause} WHERE id = :id", params)
 
 
 def _restore_in_place(player: Player, snapshot: Player) -> None:
@@ -114,7 +103,7 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
     igm_ctx.store.flush()
     igm_ctx.flush_news()
     if igm_ctx.player.dirty:
-        _save_player_raw(ctx)
+        save_player_raw(ctx.conn, ctx.player)
     conn.commit()
 
 
