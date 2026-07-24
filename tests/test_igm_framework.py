@@ -610,3 +610,32 @@ class _StubIGM(IGM):
 
     async def enter(self, ctx):
         pass
+
+
+async def test_maint_repo_save_does_not_commit_the_registrys_transaction():
+    """A plugin calling ctx.repo.save() inside daily_maint must not end the
+    registry's transaction early -- sqlite3 connections are not re-entrant
+    context managers, so PlayerRepo.save's own ``with conn:`` would commit
+    it and break the rollback-on-crash guarantee."""
+    from pylord import igm_loader
+
+    conn, repo = _db()
+    player = repo.create("Hero", "pw", "M")
+
+    class _Greedy(IGM):
+        key = "greedy"
+        name = "Greedy"
+
+        async def enter(self, ctx):  # pragma: no cover -- unused here
+            pass
+
+        async def daily_maint(self, ctx):
+            victim = ctx.repo.get_by_name("Hero")
+            victim.gold = 999_999
+            ctx.repo.save(victim)
+            raise RuntimeError("boom, after the write")
+
+    registry = igm_loader.IgmRegistry([_Greedy()])
+    registry.run_daily_maint(conn, {})
+
+    assert repo.get(player.id).gold == 500  # rolled back, not committed

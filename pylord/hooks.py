@@ -314,14 +314,38 @@ class IgmMaintContext:
     registry commits each IGM's store after a clean ``daily_maint`` and
     rolls it back on a crash (see
     :meth:`pylord.igm_loader.IgmRegistry.run_daily_maint`).
+
+    ``repo.save()`` here is deliberately *not*
+    :meth:`pylord.models.PlayerRepo.save` -- that one self-commits via its
+    own ``with conn:``, and sqlite3 connections are not re-entrant context
+    managers, so a plugin calling it would commit the registry's
+    transaction early and break the rollback guarantee. It writes through
+    :func:`pylord.engine.persist.save_player_raw` instead.
     """
 
     def __init__(
         self, conn: sqlite3.Connection, config: dict[str, Any], igm_key: str
     ) -> None:
-        from pylord.models import PlayerRepo
-
         self.conn = conn
         self.config = config
-        self.repo = PlayerRepo(conn)
+        self.repo = _MaintRepo(conn)
         self.store = IgmStore(conn, igm_key)
+
+
+class _MaintRepo:
+    """``PlayerRepo`` with a non-committing ``save`` (see
+    :class:`IgmMaintContext`). Every read passes straight through."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        from pylord.models import PlayerRepo
+
+        self._repo = PlayerRepo(conn)
+        self._conn = conn
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._repo, name)
+
+    def save(self, player: Player) -> None:
+        from pylord.engine.persist import save_player_raw
+
+        save_player_raw(self._conn, player)
