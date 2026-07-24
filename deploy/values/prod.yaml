@@ -1,0 +1,32 @@
+# Production realm on the homelab k3s cluster (namespace pylord-prod).
+#
+# CI rewrites image.tag on every push to the release branch; everything else
+# here is hand-maintained.
+
+image:
+  tag: latest
+  pullPolicy: Always
+
+service:
+  type: LoadBalancer
+  port: 2323
+  # Left blank: MetalLB's general-pool (192.168.0.41-100) assigns one and
+  # keeps it for the life of the Service.
+  loadBalancerIP: ""
+
+persistence:
+  enabled: true
+  storageClass: longhorn-retain
+  size: 1Gi
+
+game:
+  forest_fights_per_day: 15
+  player_fights_per_day: 3
+  flirts_per_day: 1
+  clean_mode: false
+  win_deeds: 3
+  shop_limit: true
+  # One forest fight back every 15 real minutes, so dropping in for a few
+  # minutes at lunch is worth doing.
+  fight_regen_minutes: 15
+  endurance_cost: 1000

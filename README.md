@@ -142,6 +142,22 @@ player returns to where they were.
 The six bundled IGMs in `igms/` are working examples, from small
 (`baraks_house`) to a full mini-game (`lord_casino`).
 
+## Running it for real
+
+`deploy/` holds a Helm chart, per-environment values and an ArgoCD
+Application; `deploy/README.md` covers the homelab setup end to end. In
+short:
+
+```sh
+tilt up                                   # local cluster, port 2323
+helm template pylord deploy/helm/pylord \
+  -f deploy/values/prod.yaml              # what the homelab runs
+```
+
+Characters live on a retained volume at `/data`, config comes from a
+ConfigMap, and CI builds `bubthegreat/pylord` and points production at the
+new tag — ArgoCD does the rest.
+
 ## Development
 
 ```sh

@@ -1,0 +1,78 @@
+name: Build and deploy
+
+# Builds the image on every branch (so a branch can be tried locally) and,
+# on main, writes the new tag into deploy/values/prod.yaml. ArgoCD watches
+# that file and rolls the homelab realm forward -- nothing here talks to
+# the cluster.
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'pylord/**'
+      - 'igms/**'
+      - 'Dockerfile'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'deploy/**'
+      - '.github/workflows/build-and-deploy.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE: bubthegreat/pylord
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tags
+        id: vars
+        run: |
+          echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "branch=$(echo "${GITHUB_REF#refs/heads/}" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: bubthegreat
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.tag }}
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.branch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  promote:
+    name: Point prod at the new image
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the tag into deploy/values/prod.yaml
+        run: |
+          sed -i -E "s/^(  tag: ).*/\1${{ needs.build.outputs.tag }}/" deploy/values/prod.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "prod already on this image"
+            exit 0
+          fi
+          git commit -am "chore: deploy ${{ needs.build.outputs.tag }} to prod"
+          git push

@@ -1,0 +1,102 @@
+# Defaults for the pylord chart. Environment overrides live in
+# deploy/values/*.yaml; see deploy/README.md.
+
+image:
+  repository: bubthegreat/pylord
+  # Overridden per environment (CI writes the commit tag into
+  # deploy/values/prod.yaml). "latest" is only a sane local default.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# SQLite has a single writer and the volume is ReadWriteOnce: never run two.
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  # LoadBalancer gets the game its own address from MetalLB's general-pool
+  # (192.168.0.41-100 on the homelab cluster), so players telnet straight to
+  # it. Set type: ClusterIP instead if you route telnet through
+  # ingress-nginx's tcp-services ConfigMap (the kbk pattern) -- see
+  # deploy/README.md.
+  type: LoadBalancer
+  port: 2323
+  # Pin an address here if you'd rather not let MetalLB choose.
+  loadBalancerIP: ""
+  annotations: {}
+
+persistence:
+  enabled: true
+  # Retain, because this volume holds every character in the realm.
+  storageClass: longhorn-retain
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
+  # Reuse a volume that already exists rather than provisioning one.
+  existingClaim: ""
+
+# Copy the image's bundled IGMs into the volume on first start, so a sysop
+# can edit or remove them without rebuilding the image.
+seedIgms: true
+
+# Rendered into config.toml. Anything valid in the game's [game] table works;
+# see the repo README for what each knob does.
+game:
+  forest_fights_per_day: 15
+  player_fights_per_day: 3
+  flirts_per_day: 1
+  clean_mode: false
+  win_deeds: 3
+  shop_limit: true
+  fight_regen_minutes: 15
+  endurance_cost: 1000
+
+# IGM enable/disable, rendered into config.toml's [igms] table.
+igms:
+  baraks_house: true
+  sandtigers_bar: true
+  violets_cottage: true
+  turgons_house: true
+  warriors_graveyard: true
+  lord_casino: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# A hung telnet listener is the failure worth catching; a TCP connect covers
+# it without pretending the game speaks HTTP.
+probes:
+  startup:
+    periodSeconds: 2
+    failureThreshold: 30
+  readiness:
+    initialDelaySeconds: 3
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+commonLabels: {}

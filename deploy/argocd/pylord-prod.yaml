@@ -1,0 +1,46 @@
+# ArgoCD Application for the production realm.
+#
+# Copy this into the homelab-app-config repo's apps/ directory (the root
+# app recurses it) and commit -- that is the whole deploy step. Nothing
+# here is applied to the cluster by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pylord-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: homelab
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/bubthegreat/pylord.git
+    targetRevision: main
+    path: deploy/helm/pylord
+    helm:
+      releaseName: pylord
+      valueFiles:
+        - ../../values/prod.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pylord-prod
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+  ignoreDifferences:
+    # Longhorn and the LoadBalancer controller write these back.
+    - kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec/volumeName
+        - /metadata/annotations
+        - /metadata/finalizers
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/loadBalancerIP

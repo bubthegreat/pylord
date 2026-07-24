@@ -1,0 +1,27 @@
+{{/*
+config.toml, rendered from values. The server resolves its database and its
+igms/ directory relative to this file's directory, so `db` is set explicitly
+to the volume and the IGMs are seeded next to it.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pylord.fullname" . }}-config
+  labels:
+    {{- include "pylord.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    [server]
+    host = "0.0.0.0"
+    port = {{ .Values.service.port }}
+    db = "{{ .Values.persistence.mountPath }}/lord.db"
+
+    [game]
+    {{- range $key, $value := .Values.game }}
+    {{ $key }} = {{ toJson $value }}
+    {{- end }}
+
+    [igms]
+    {{- range $key, $value := .Values.igms }}
+    {{ $key }} = {{ toJson $value }}
+    {{- end }}

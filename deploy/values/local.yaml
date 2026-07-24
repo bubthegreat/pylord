@@ -1,0 +1,21 @@
+# Local Tilt / docker-desktop values: no MetalLB, no Longhorn.
+
+image:
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  # Tilt port-forwards; a LoadBalancer would sit pending forever locally.
+  type: ClusterIP
+  port: 2323
+
+persistence:
+  enabled: true
+  # Whatever the local cluster's default class is.
+  storageClass: ""
+  size: 100Mi
+
+game:
+  # Short clocks so the regeneration and daily paths are quick to exercise.
+  fight_regen_minutes: 1
+  endurance_cost: 100

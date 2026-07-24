@@ -1,0 +1,16 @@
+# Everything the runtime image doesn't need.
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.superpowers
+tests/
+reference/
+docs/
+deploy/
+*.db
+*.db-wal
+*.db-shm
+Tiltfile
+Makefile

@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pylord.fullname" . }}
+  labels:
+    {{- include "pylord.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # SQLite has one writer and the volume is ReadWriteOnce: the old pod must
+  # be gone before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pylord.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pylord.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restart on a config change -- the game reads config.toml once, at
+        # startup.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Players are mid-session: give the connections a moment to close.
+      terminationGracePeriodSeconds: 15
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "pylord.claimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: config
+          configMap:
+            name: {{ include "pylord.fullname" . }}-config
+        # The root filesystem is read-only; Python still wants a scratch dir.
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.seedIgms }}
+      initContainers:
+        # Copy the image's bundled IGMs onto the volume the first time only,
+        # so a sysop can edit or delete them without rebuilding the image.
+        - name: seed-igms
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              target="{{ .Values.persistence.mountPath }}/igms"
+              if [ -d "$target" ]; then
+                echo "igms/ already present -- leaving it alone"
+              else
+                echo "seeding bundled IGMs into $target"
+                cp -r /app/igms "$target"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      {{- end }}
+      containers:
+        - name: pylord
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args: ["serve", "--config", "/config/config.toml"]
+          ports:
+            - name: telnet
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.startup | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

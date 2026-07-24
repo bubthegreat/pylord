@@ -1,0 +1,28 @@
+pylord {{ .Chart.AppVersion }} is deployed as {{ include "pylord.fullname" . }}.
+
+{{- if eq .Values.service.type "LoadBalancer" }}
+
+Find the address MetalLB handed the realm:
+
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "pylord.fullname" . }} \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+then play:
+
+  telnet <that address> {{ .Values.service.port }}
+{{- else }}
+
+The service is {{ .Values.service.type }} on port {{ .Values.service.port }}.
+To play without exposing it, forward the port:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "pylord.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  telnet localhost {{ .Values.service.port }}
+{{- end }}
+
+Characters, the news log and the IGM data all live on
+{{ if .Values.persistence.enabled }}the {{ .Values.persistence.size }} volume mounted at {{ .Values.persistence.mountPath }}, which is kept if this release is deleted.{{ else }}an emptyDir -- NOTHING IS PERSISTED. Set persistence.enabled=true for a real realm.{{ end }}
+
+Sysop commands run against the same database:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "pylord.fullname" . }} -- \
+    pylord players --config /config/config.toml
