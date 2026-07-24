@@ -357,14 +357,17 @@ async def _step_healer(c: LordClient) -> None:
 
 async def _step_training(c: LordClient) -> None:
     c.key("T")
-    screen = await c.expect("(Q,A,R)")
+    screen = await c.expect("(Q,A,V,R)")
     assert "Halder" in screen, f"wrong master for level 1:\n{screen}"
     c.key("Q")  # question the master
     asked = await c.expect("MORE")
     assert "experience" in asked.lower(), asked
     c.key(" ")
-    await c.expect("(Q,A,R)")
-    c.key("R")
+    await c.expect("(Q,A,V,R)")
+    c.key("V")  # Heroes Of The Realm (reference/lord.js:15870-15881)
+    hall = await c.expect("MORE")
+    assert "Heroes Of The Realm" in hall, hall
+    c.key(" ")
     await c.town()
 
 

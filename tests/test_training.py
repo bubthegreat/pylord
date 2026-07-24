@@ -228,3 +228,102 @@ async def test_level_12_shows_dragon_message_and_returns_to_town():
     assert "Your master is Turgon" in text
     assert "Red Dragon" in text
     assert result == "town"
+
+
+# --- raise_class(): permanent class rank on a win --------------------------
+
+
+async def test_master_win_raises_class_rank_and_uses():
+    """reference/lord.js:15803 -> raise_class() (:10578-10771): +1 rank per
+    win, and every 4th rank also raises a Death Knight's uses per day."""
+    trainer = data.MASTERS[1]
+    ctx = _ctx(
+        overrides={
+            "exp": trainer.exp_reward + 1,
+            "strength": 1000,
+            "hp": 200,
+            "hp_max": 200,
+            "class_type": 1,
+            "skill_dk": 3,
+            "skill_uses": 1,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a"],
+    )
+    await training_mod._attack_master(ctx, trainer)
+    text = screen(ctx.io)
+    assert "YOUR CLASS SKILL IS RAISED BY ONE" in text
+    assert ctx.player.skill_dk == 4
+    assert ctx.player.skill_uses == 2  # 4th rank -> one more use per day
+    assert "uses of Death Knight Skills a day" in text
+
+
+async def test_master_win_reports_lessons_needed_between_use_raises():
+    trainer = data.MASTERS[1]
+    ctx = _ctx(
+        overrides={
+            "exp": trainer.exp_reward + 1,
+            "strength": 1000, "hp": 200, "hp_max": 200,
+            "class_type": 1, "skill_dk": 0, "skill_uses": 1,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a"],
+    )
+    await training_mod._attack_master(ctx, trainer)
+    assert ctx.player.skill_dk == 1
+    assert ctx.player.skill_uses == 1  # unchanged until rank 4
+    assert "3 more lessons" in screen(ctx.io)
+
+
+async def test_mystical_rank_raises_uses_every_win():
+    """reference/lord.js:10671-10676 -- a Mystical gets a point per rank."""
+    trainer = data.MASTERS[1]
+    ctx = _ctx(
+        overrides={
+            "exp": trainer.exp_reward + 1,
+            "strength": 1000, "hp": 200, "hp_max": 200,
+            "class_type": 2, "skill_my": 7, "skill_uses": 8,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a"],
+    )
+    await training_mod._attack_master(ctx, trainer)
+    assert ctx.player.skill_my == 8
+    assert ctx.player.skill_uses == 9
+    assert "Mystical Skill points a day" in screen(ctx.io)
+
+
+async def test_rank_forty_masters_the_class_and_offers_a_new_profession():
+    """reference/lord.js:10620-10625."""
+    trainer = data.MASTERS[1]
+    ctx = _ctx(
+        overrides={
+            "exp": trainer.exp_reward + 1,
+            "strength": 1000, "hp": 200, "hp_max": 200,
+            "class_type": 1, "skill_dk": 39,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a", "D"],  # win, then pick The Mystical
+    )
+    await training_mod._attack_master(ctx, trainer)
+    text = screen(ctx.io)
+    assert ctx.player.skill_dk == 40
+    assert ctx.player.mastered_dk == 1
+    assert "mastered The Death Knight Skills Completely" in text
+    assert ctx.player.class_type == 2  # switched profession
+
+
+async def test_already_mastered_class_is_not_raised_again():
+    trainer = data.MASTERS[1]
+    ctx = _ctx(
+        overrides={
+            "exp": trainer.exp_reward + 1,
+            "strength": 1000, "hp": 200, "hp_max": 200,
+            "class_type": 1, "skill_dk": 40, "mastered_dk": 1,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a"],
+    )
+    await training_mod._attack_master(ctx, trainer)
+    assert ctx.player.skill_dk == 40
+    assert "ALREADY MASTERED THIS CLASS" in screen(ctx.io)

@@ -49,12 +49,20 @@ _CLASS_LETTER = {1: "D", 2: "M", 3: "T"}
 
 
 def _mastery_flags(p: Player) -> str:
+    """Two tiers, per reference/lord.js:6651-6674: a *bright* letter once
+    the class rank passes 39 (mastered -- ``raise_class`` caps there), a
+    dim one past 19, and a blank otherwise."""
     out = []
     for field, letter in (
         ("skill_dk", "D"), ("skill_my", "M"), ("skill_th", "T"),
     ):
         rank = getattr(p, field)
-        out.append(letter if rank > 19 else " ")
+        if rank > 39:
+            out.append(f"`%{letter}`2")
+        elif rank > 19:
+            out.append(f"`8{letter}`2")
+        else:
+            out.append(" ")
     return "".join(out)
 
 

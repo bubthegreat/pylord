@@ -107,11 +107,20 @@ async def training(ctx: GameCtx) -> str:
             return "town"
 
         choice = await ctx.io.menu(
-            {"Q": "ask", "A": "attack", "R": "town"},
-            "  `2(Q,A,R)`2 : ",
+            # `V` is lord.js's own "View the rankings" key
+            # (reference/lord.js:15870-15881), which shows rank_king()'s
+            # dragon-slayer board -- this project's `hall` scene.
+            # lord.js also exits on Enter (:15883); this port doesn't
+            # register it, because TermIO.menu() deliberately swallows a
+            # stray CR for line-mode clients (see its docstring) and a
+            # quit-on-Enter key would fire on every such client's input.
+            {"Q": "ask", "A": "attack", "V": "hall", "R": "town"},
+            "  `2(Q,A,V,R)`2 : ",
         )
         if choice == "R":
             return "town"
+        if choice == "V":
+            return "hall"
         if choice == "Q":
             await _ask(ctx, trainer)
         else:
@@ -324,6 +333,7 @@ async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> N
     p.seen_master = 0  # reference/lord.js:15804
 
     await ctx.io.write("\n".join(lines) + "\n")
+    await _raise_class(ctx)  # reference/lord.js:15803
     # reference/lord.js:15791-15802 (mline / log_line()) -- news-only, never
     # shown to the player. Built *after* player.level += 1 above, matching
     # lord.js's own ordering (mline is assembled right after the increment).
@@ -336,6 +346,102 @@ async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> N
     # call anywhere between the stat-gain text and the news broadcast; the
     # player falls straight back to turgons()'s own prompt() (this
     # module's outer training() loop redraws immediately).
+
+
+# class_type -> (rank field, mastery flag, display name). reference/lord.js's
+# skillw/skillm/skillt and the class names raise_class() prints.
+_CLASS_SKILL: dict[int, tuple[str, str, str]] = {
+    1: ("skill_dk", "mastered_dk", "Death Knight Skills"),
+    2: ("skill_my", "mastered_my", "Mystical Skills"),
+    3: ("skill_th", "mastered_th", "Thieving Skills"),
+}
+
+_MASTERY_RANK = 40  # reference/lord.js:10583-10607 (`> 39`)
+
+# Letter -> class_type, the same mapping choose_profession() uses
+# (`' KDL'.indexOf(ch)`, reference/lord.js:4837-4888).
+_PROFESSION_KEYS = {"K": 1, "D": 2, "L": 3}
+
+
+async def _raise_class(ctx: GameCtx) -> None:
+    """Port of ``raise_class()``. reference/lord.js:10578-10771.
+
+    Every master win raises the player's *permanent* class rank by one
+    (lord.js:15803 calls this right after the level-up). Rank is what gates
+    the Mystical spell tiers in battle (:7247-7268) and what the rankings
+    screen's "Mastered" column reads; ``pylord/engine/daily.py`` already
+    recomputes the daily use budget from it.
+
+    Uses-per-day also rises immediately, without waiting for tomorrow's
+    maintenance: every 4th rank for a Death Knight/Thief
+    (``settings.old_skill_points`` defaults false, so the divisor is 4 --
+    :1866, :10645-10658) and every rank for a Mystical (:10672-10676).
+    At rank 40 the class is mastered and the player picks a new profession
+    (:10620-10625); the flavor instruction screens (:10680-10771) are
+    condensed to their mechanical outcome.
+    """
+    p = ctx.player
+    entry = _CLASS_SKILL.get(p.class_type)
+    if entry is None:
+        return
+    field, mastered_flag, label = entry
+
+    if all(
+        getattr(p, f) >= _MASTERY_RANK for f, _flag, _lbl in _CLASS_SKILL.values()
+    ):  # reference/lord.js:10582-10585
+        await ctx.io.write("\n  `%** `0YOU HAVE ALREADY MASTERED ALL SKILLS `%**`2\n")
+        return
+    if getattr(p, field) >= _MASTERY_RANK:  # reference/lord.js:10588-10606
+        await ctx.io.write("\n  `%** `0YOU HAVE ALREADY MASTERED THIS CLASS `%**`2\n")
+        return
+
+    rank = getattr(p, field) + 1
+    setattr(p, field, rank)
+    lines = ["", "  `%** `0YOUR CLASS SKILL IS RAISED BY ONE! `%**`2", ""]
+
+    if p.class_type == 2:  # reference/lord.js:10671-10676
+        p.skill_uses += 1
+        lines.append(f"  `2You now have `0{rank}`2 Mystical Skill points a day.")
+    elif rank % 4 == 0:  # reference/lord.js:10645-10650
+        p.skill_uses += 1
+        lines.append(f"  `2You now have `0{rank // 4}`2 uses of {label} a day.")
+        if rank < _MASTERY_RANK:
+            lines.append("  (four more lessons needed for next raise in uses per day)")
+    else:  # reference/lord.js:10659-10668
+        needed = 4 - (rank % 4)
+        plural = "lesson" if needed == 1 else "lessons"
+        lines.append(
+            f"  You need {needed} more {plural} to also raise your "
+            f"{label} Uses Per Day."
+        )
+    await ctx.io.write("\n".join(lines) + "\n")
+
+    if rank >= _MASTERY_RANK:  # reference/lord.js:10620-10625
+        setattr(p, mastered_flag, 1)
+        await _choose_new_profession(ctx, label)
+
+
+async def _choose_new_profession(ctx: GameCtx, label: str) -> None:
+    """The rank-40 "learn a NEW skill" branch (reference/lord.js:10620-10625,
+    which calls ``choose_profession(false)``). Classes already mastered are
+    not offered again."""
+    p = ctx.player
+    await ctx.io.write(
+        f"\n  You have mastered The {label} Completely.  You may choose to\n"
+        "  learn a NEW skill now.\n\n"
+        "  `0(`5K`0)illing A Lot Of Woodland Creatures\n"
+        "  `0(`5D`0)abbling In The Mystical Forces\n"
+        "  `0(`5L`0)ying, Cheating, And Stealing From The Blind\n"
+    )
+    options = {
+        letter: str(clss)
+        for letter, clss in _PROFESSION_KEYS.items()
+        if getattr(p, _CLASS_SKILL[clss][1]) == 0
+    }
+    if not options:
+        return
+    choice = await ctx.io.menu(options, "  `2Pick one.  (`0K`2,`0D`2,`0L`2) : `%")
+    p.class_type = _PROFESSION_KEYS[choice]
 
 
 async def _mercy(ctx: GameCtx, trainer: Master) -> None:
