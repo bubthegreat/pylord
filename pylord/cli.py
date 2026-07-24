@@ -59,15 +59,126 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _open_repo(config: dict[str, Any]):
+    from pylord import db
+    from pylord.models import PlayerRepo
+
+    conn = db.connect(config["server"]["db"])
+    db.migrate(conn)
+    return PlayerRepo(conn)
+
+
+_STATS_FIELDS = [
+    "name",
+    "level",
+    "exp",
+    "gold",
+    "gems",
+    "bank",
+    "alive",
+    "forest_fights",
+    "player_fights",
+    "king_count",
+    "last_played",
+    "online",
+]
+
+_ROSTER_FIELDS = [
+    "name",
+    "level",
+    "exp",
+    "gold",
+    "bank",
+    "alive",
+    "online",
+    "king_count",
+    "last_played",
+]
+
+
+def _print_table(headers: list[str], rows: list[list[str]]) -> None:
+    """Print a left-aligned, whitespace-padded table -- no external deps."""
+    widths = [
+        max(len(headers[i]), *(len(row[i]) for row in rows)) if rows else len(headers[i])
+        for i in range(len(headers))
+    ]
+    header_line = "  ".join(h.ljust(w) for h, w in zip(headers, widths))
+    print(header_line)
+    print("  ".join("-" * w for w in widths))
+    for row in rows:
+        print("  ".join(cell.ljust(w) for cell, w in zip(row, widths)))
+
+
+def _print_player_stats(player) -> None:
+    rows = [[field, str(getattr(player, field))] for field in _STATS_FIELDS]
+    _print_table(["field", "value"], rows)
+
+
 def _cmd_edit(args: argparse.Namespace) -> int:
-    # Task 14 fills this in: apply --gold/--level/etc to the named player.
-    print("not implemented")
+    from pylord.engine import limits
+    from pylord.models import hash_password
+
+    if not args.name:
+        print("usage: pylord edit NAME [--gold N] [--gems N] [--level N] "
+              "[--alive 0|1] [--reset-password PW]", file=sys.stderr)
+        return 1
+
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"config file not found: {config_path}", file=sys.stderr)
+        return 1
+    config = load_config(config_path)
+    repo = _open_repo(config)
+
+    player = repo.get_by_name(args.name)
+    if player is None:
+        print(f"no such player: {args.name}", file=sys.stderr)
+        return 1
+
+    changes: list[tuple[str, str, str]] = []
+
+    if args.gold is not None:
+        before, after = player.gold, limits.clamp("gold", args.gold)
+        changes.append(("gold", str(before), str(after)))
+        player.gold = after
+    if args.gems is not None:
+        before, after = player.gems, limits.clamp("gems", args.gems)
+        changes.append(("gems", str(before), str(after)))
+        player.gems = after
+    if args.level is not None:
+        before, after = player.level, max(1, min(args.level, 12))
+        changes.append(("level", str(before), str(after)))
+        player.level = after
+    if args.alive is not None:
+        before, after = player.alive, 1 if args.alive else 0
+        changes.append(("alive", str(before), str(after)))
+        player.alive = after
+    if args.reset_password is not None:
+        changes.append(("password", "(hidden)", "(reset)"))
+        player.password_hash = hash_password(args.reset_password)
+
+    if not changes:
+        print(f"{player.name} (no changes requested)")
+        _print_player_stats(player)
+        return 0
+
+    print(f"{player.name}:")
+    _print_table(["field", "before", "after"], changes)
+    repo.save(player)
     return 0
 
 
 def _cmd_players(args: argparse.Namespace) -> int:
-    # Task 14 fills this in: list players from the configured database.
-    print("not implemented")
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"config file not found: {config_path}", file=sys.stderr)
+        return 1
+    config = load_config(config_path)
+    repo = _open_repo(config)
+
+    players = repo.all_players()
+    rows = [[str(getattr(p, field)) for field in _ROSTER_FIELDS] for p in players]
+    _print_table(_ROSTER_FIELDS, rows)
     return 0
 
 
@@ -85,16 +196,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     serve_parser.set_defaults(func=_cmd_serve)
 
-    edit_parser = subparsers.add_parser(
-        "edit", help="edit a player's stats (not implemented until Task 14)"
-    )
+    edit_parser = subparsers.add_parser("edit", help="edit a player's stats")
     edit_parser.add_argument("name", nargs="?", help="player name")
-    edit_parser.add_argument("--gold", type=int)
-    edit_parser.add_argument("--level", type=int)
+    edit_parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="path to config.toml (default: ./config.toml)",
+    )
+    edit_parser.add_argument("--gold", type=int, help="set gold on hand")
+    edit_parser.add_argument("--gems", type=int, help="set gems")
+    edit_parser.add_argument("--level", type=int, help="set level (clamped 1..12)")
+    edit_parser.add_argument(
+        "--alive", type=int, choices=[0, 1], help="1 = alive, 0 = dead"
+    )
+    edit_parser.add_argument(
+        "--reset-password", help="set a new password for this player"
+    )
     edit_parser.set_defaults(func=_cmd_edit)
 
-    players_parser = subparsers.add_parser(
-        "players", help="list players (not implemented until Task 14)"
+    players_parser = subparsers.add_parser("players", help="list players")
+    players_parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="path to config.toml (default: ./config.toml)",
     )
     players_parser.set_defaults(func=_cmd_players)
 

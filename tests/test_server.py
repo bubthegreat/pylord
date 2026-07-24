@@ -55,11 +55,11 @@ class Recv:
         return seen
 
 
-async def _start_test_server(tmp_path):
+async def _start_test_server(tmp_path, game_config=None):
     db_path = tmp_path / "lord.db"
     config = {
         "server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)},
-        "game": {},
+        "game": game_config or {},
     }
     server = await start(config)
     port = server.sockets[0].getsockname()[1]
@@ -121,6 +121,59 @@ async def test_new_character_creation_view_stats_and_quit(tmp_path):
             assert player.gender == "M"
             assert player.class_type == 1  # K -> Death Knight / warrior
             await _wait_until(lambda: repo.get_by_name("Zaphod").online == 0)
+        finally:
+            conn.close()
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
+    """Task 14 config audit: a brand-new character created *after* today's
+    daily.maintenance() batch pass has already run (the common case -- see
+    handle_connection's docstring) must still get configured
+    forest_fights_per_day/player_fights_per_day, not the DB schema's
+    literal 15/3 defaults (models.py's Player.forest_fights/player_fights),
+    which only match lord.js's *own* stock defaults
+    (reference/lord.js:1857/1856) coincidentally."""
+    server, port, db_path = await _start_test_server(
+        tmp_path,
+        game_config={"forest_fights_per_day": 20, "player_fights_per_day": 7},
+    )
+    try:
+        reader, writer = await telnetlib3.open_connection(
+            host="127.0.0.1", port=port, **_CONNECT_KWARGS
+        )
+        recv = Recv(reader)
+
+        await recv.until("warrior?")
+        writer.write("Trillian\r\n")
+
+        await recv.until("] : ")
+        writer.write("Y")
+
+        await recv.until("gender?")
+        writer.write("F")
+
+        await recv.until("Pick one")
+        writer.write("K")
+
+        await recv.until("Password:")
+        writer.write("hunter2\r\n")
+
+        await recv.until("Confirm password:")
+        writer.write("hunter2\r\n")
+
+        await recv.until("Town Square")
+        writer.close()
+
+        conn = db.connect(str(db_path))
+        try:
+            repo = PlayerRepo(conn)
+            await _wait_until(lambda: repo.get_by_name("Trillian") is not None)
+            player = repo.get_by_name("Trillian")
+            assert player.forest_fights == 20
+            assert player.player_fights == 7
         finally:
             conn.close()
     finally:

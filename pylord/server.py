@@ -102,12 +102,24 @@ async def _login_existing(io: TelnetIO, repo: PlayerRepo, name: str) -> Player |
     return None
 
 
-async def _create_character(io: TelnetIO, repo: PlayerRepo, name: str) -> Player | None:
+async def _create_character(
+    io: TelnetIO, repo: PlayerRepo, name: str, game_config: dict[str, Any]
+) -> Player | None:
     """Full new-character flow: confirm name, splash, gender, class, set
     password, then create. Returns the new Player, or None if the caller
     should re-prompt for a name (creation declined, or lost a race to
     another connection creating the same name concurrently -- see
-    reference/lord.js:6125's own TODO about this exact race)."""
+    reference/lord.js:6125's own TODO about this exact race).
+
+    ``game_config`` (``config["game"]``) applies ``forest_fights_per_day``/
+    ``player_fights_per_day`` to the freshly-created player, the same
+    config keys ``pylord/engine/daily.py``'s ``maintenance()`` uses. Without
+    this, a character created any time *after* today's ``maintenance()``
+    batch pass has already run (the common case -- see
+    ``handle_connection``) would silently keep the DB schema's literal
+    15/3 defaults (``pylord/db.py``) instead of the sysop's configured
+    values until the next day's reset -- a config-consumption gap found in
+    Task 14's audit."""
     confirm = await io.menu({"Y": "yes", "N": "no"}, f"  `0{name}`2? `2[`0Y`2] : `%")
     if confirm == "N":
         return None
@@ -136,6 +148,8 @@ async def _create_character(io: TelnetIO, repo: PlayerRepo, name: str) -> Player
         return None
 
     player.class_type = _CLASS_TYPES[class_letter]
+    player.forest_fights = game_config.get("forest_fights_per_day", player.forest_fights)
+    player.player_fights = game_config.get("player_fights_per_day", player.player_fights)
     repo.save(player)
     return player
 
@@ -181,7 +195,7 @@ async def handle_connection(
                     return
                 player = authed
             else:
-                player = await _create_character(io, repo, name)
+                player = await _create_character(io, repo, name, config.get("game", {}))
 
         player.online = 1
         repo.save(player)

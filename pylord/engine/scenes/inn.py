@@ -452,6 +452,16 @@ async def _tier_menu(ctx, npc, tiers, carry_fn, marriage_fn) -> None:
     if choice == "R":
         return
     if choice == "C":
+        if ctx.config.get("clean_mode"):
+            # reference/lord.js:9784 (Violet's carry()) / :9009 (Seth
+            # Able's seduce()) -- both gated behind clean_mode, each with
+            # its own slightly different punctuation; collapsed to one
+            # shared message since this port's tier menu is shared between
+            # both NPCs. No `more()`/pause in lord.js here either.
+            await ctx.io.write(
+                "\n\n  Sorry, your sysop has disabled that function.\n"
+            )
+            return
         await carry_fn(ctx)
         return
     if choice == "M":

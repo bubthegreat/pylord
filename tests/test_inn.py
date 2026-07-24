@@ -174,6 +174,28 @@ async def test_carry_violet_success_grants_exp_and_lays():
     assert ctx.player.lays == 1
 
 
+async def test_carry_disabled_under_clean_mode():
+    """reference/lord.js:9784 -- ``carry()`` (and ``seduce()``,
+    reference/lord.js:9009) are gated behind ``!settings.clean_mode``; a
+    sysop with ``clean_mode = true`` sees "...disabled that function" and
+    the player is untouched, instead of the racy carry-upstairs scene."""
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create("Hero", "pw", "M")
+    player.charm = 40
+    repo.save(player)
+    io = FakeIO(["f", "c", "r"])
+    ctx = GameCtx(
+        player=player, repo=repo, io=io, conn=conn, config={"clean_mode": True}
+    )
+    await inn_mod.inn(ctx)
+    text = screen(ctx.io)
+    assert "disabled that function" in text
+    assert ctx.player.lays == 0
+    assert ctx.player.seen_violet == 0
+
+
 async def test_carry_violet_below_charm_threshold_drops_hp_to_1():
     ctx = _ctx(overrides={"charm": 10, "level": 5, "hp": 50}, keys=["f", "c", "x", "r"])
     await inn_mod.inn(ctx)
