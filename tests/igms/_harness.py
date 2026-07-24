@@ -7,8 +7,17 @@ the construction pattern in ``tests/test_igm_framework.py`` /
 provides :class:`SeqRandom`, a tiny scripted stand-in for ``random.Random``
 so gambling/charm-check outcomes can be pinned exactly rather than
 seed-hunted -- an IGM's ``ctx.rng`` is duck-typed (only ``.randrange``/
-``.randint``/``.choice`` are ever called on it), so a non-``random.Random``
-object works fine here.
+``.randint``/``.choice``/``.shuffle`` are ever called on it), so a
+non-``random.Random`` object works fine here.
+
+``shuffle`` (added for Task 20's LORD Gambling Casino, which shuffles a
+real 52-card deck) is a scripted forward Fisher-Yates: each queued value is
+an *offset* added to the current index ``i`` to pick the swap partner
+``j = i + offset`` (so a whole ``len(x)``-long shuffle needs ``len(x)``
+queued offsets). An offset of ``0`` is a same-index no-op swap, which lets
+a test cheaply pin just the handful of cards it cares about (put a nonzero
+offset only at the positions being dealt, ``0`` everywhere else) without
+scripting a full realistic shuffle.
 """
 
 from __future__ import annotations
@@ -45,6 +54,13 @@ class SeqRandom:
 
     def choice(self, seq):
         return seq[self._next()]
+
+    def shuffle(self, x: list) -> None:
+        """Scripted forward Fisher-Yates -- see class docstring."""
+        n = len(x)
+        for i in range(n):
+            j = i + self._next()
+            x[i], x[j] = x[j], x[i]
 
 
 def make_db():
