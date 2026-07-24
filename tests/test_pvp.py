@@ -363,3 +363,38 @@ async def test_inn_bribe_return_refunds_half():
     died = await inn_mod._bribe_attack(ctx)
     assert died is False
     assert ctx.player.gold == 100_000 - 3200 + 1600 == 98_400
+
+
+async def test_win_counts_a_player_kill_and_persists_in_one_transaction():
+    """reference/lord.js:7963 (op.pvp += 1). The victim row, the mail and
+    the news line now share one transaction."""
+    conn, repo, attacker, target = _two_players(
+        attacker_overrides={"strength": 2000},
+        target_overrides={"hp": 5, "hp_max": 5, "defense": 0},
+    )
+    ctx = _ctx(conn, repo, attacker, ["a", "x"])
+    ctx.rng = _SeqRNG([0, 0, 0])
+
+    await pvp_mod.run_attack(ctx, target, from_inn=False)
+
+    assert ctx.player.pvp_kills == 1
+    assert repo.get(target.id).alive == 0
+    assert conn.execute("SELECT COUNT(*) c FROM mail").fetchone()["c"] == 1
+    assert conn.execute("SELECT COUNT(*) c FROM daily_news").fetchone()["c"] == 1
+
+
+async def test_loss_never_persists_negative_hitpoints():
+    """A losing attacker used to keep whatever negative HP the killing
+    blow left, which the stats screen then rendered."""
+    conn, repo, attacker, target = _two_players(
+        attacker_overrides={"strength": 0, "defense": 0, "hp": 5, "hp_max": 5},
+        target_overrides={"strength": 2000, "defense": 0, "hp": 50, "hp_max": 50},
+    )
+    ctx = _ctx(conn, repo, attacker, ["a", "x"])
+    ctx.rng = _SeqRNG([0, 0, 0, 0])
+
+    died = await pvp_mod.run_attack(ctx, target, from_inn=False)
+
+    assert died is True
+    assert ctx.player.hp == 0
+    assert repo.get(target.id).pvp_kills == 1

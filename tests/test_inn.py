@@ -407,3 +407,49 @@ async def test_bard_song_refuses_second_time_same_day():
     ctx = _ctx(overrides={"seen_bard": 1}, keys=["h", "a", "x", "r", "q"])
     await inn_mod.inn(ctx)
     assert "throat is too dry" in screen(ctx.io)
+
+
+# --- Pre-marriage guards (reference/lord.js:9781-9800, :9019-9031) ---------
+
+
+async def _marriage_ctx(keys, **overrides):
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create("Hero", "pw", "M")
+    player.charm = 500  # well past every ladder rung
+    for key, value in overrides.items():
+        setattr(player, key, value)
+    repo.save(player)
+    return GameCtx(player=player, repo=repo, io=FakeIO(keys), conn=conn), repo
+
+
+async def test_cannot_marry_violet_while_married_to_a_player():
+    ctx, repo = await _marriage_ctx([" "])
+    spouse = repo.create("Spouse", "pw", "F")
+    ctx.player.married_to = spouse.id
+
+    await inn_mod._marriage_violet(ctx)
+
+    assert "would\n  like that" in screen(ctx.io)
+    assert npc_state.married_to_violet(ctx.conn) == -1
+
+
+async def test_cannot_marry_violet_while_married_to_seth():
+    ctx, _repo = await _marriage_ctx([" "])
+    npc_state.set_married_to_seth(ctx.conn, ctx.player.id)
+
+    await inn_mod._marriage_violet(ctx)
+
+    assert "already married to" in screen(ctx.io)
+    assert npc_state.married_to_violet(ctx.conn) == -1
+
+
+async def test_violet_refuses_a_freshly_divorced_suitor():
+    """reference/lord.js:9496-9499."""
+    ctx, _repo = await _marriage_ctx([" "], divorced=1)
+
+    await inn_mod._marriage_violet(ctx)
+
+    assert "moving too quickly" in screen(ctx.io)
+    assert npc_state.married_to_violet(ctx.conn) == -1

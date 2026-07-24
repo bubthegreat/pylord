@@ -123,6 +123,7 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
+from pylord.engine.persist import save_player_raw
 from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
@@ -130,6 +131,7 @@ if TYPE_CHECKING:
     from pylord.models import Player
 
 _GOLD_CAP = 2_000_000_000
+_STAT_CAP = 32_000  # reference/lord.js:7963-7965 (the pvp-kill counter's cap)
 _EXP_CAP = 2_000_000_000
 _NAME_MAXLEN = 20
 
@@ -241,6 +243,11 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
 
     target.hp = max(target.hp, target.hp_max)  # reference/lord.js:7821-7823
     p.player_fights -= 1  # reference/lord.js:7814
+    # lord.js writes the attacker's own record before the fight starts
+    # (reference/lord.js:16480, player.put() ahead of attack_player()), so
+    # a drop mid-fight can't leave the victim dead and looted while the
+    # attacker's spent fight and taken loot vanish.
+    ctx.save()
 
     await ctx.io.write(
         f"\n\n  `2** `%PLAYER FIGHT `2**\n\n  You have encountered {target.name}`2!!\n\n"
@@ -352,8 +359,13 @@ async def _win(ctx: GameCtx, target: Player, fight: Fight, from_inn: bool) -> No
         if stolen:
             mail_body += f"\n  `${p.name} took your weapon!"
 
-    ctx.repo.save(target)
+    p.pvp_kills = min(p.pvp_kills + 1, _STAT_CAP)  # reference/lord.js:7963
+    # One transaction for the whole outcome: the victim's row, the
+    # notification mail and the news line either all land or none do.
+    # (These used to be three separate commits, so a failure between them
+    # could leave a killed player nobody was told about.)
     with ctx.conn:
+        save_player_raw(ctx.conn, target)
         ctx.conn.execute(
             "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
             "VALUES (?, ?, ?, NULL, datetime('now'), 0)",
@@ -405,6 +417,8 @@ async def _lose(ctx: GameCtx, target: Player, fight: Fight) -> None:
     p.gold = 0  # reference/lord.js:7827
     p.exp -= p.exp // 10  # reference/lord.js:7828
     p.alive = 0
+    p.hp = max(0, fight.player_side.hp)  # never persist a negative HP
+    target.pvp_kills = min(target.pvp_kills + 1, _STAT_CAP)  # lord.js:7835
 
     gained = p.exp // 2  # reference/lord.js:7829/7841 -- uses the *already*-reduced exp
     target.exp = min(target.exp + gained, _EXP_CAP)
@@ -415,8 +429,8 @@ async def _lose(ctx: GameCtx, target: Player, fight: Fight) -> None:
         f"\n`.  `2You have killed `0{p.name}`2 in self defense!\n"
         f"`.  `2You receive `%{gained}`2 experience!"
     )  # reference/lord.js:7829
-    ctx.repo.save(target)
     with ctx.conn:
+        save_player_raw(ctx.conn, target)
         ctx.conn.execute(
             "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
             "VALUES (?, ?, ?, NULL, datetime('now'), 0)",

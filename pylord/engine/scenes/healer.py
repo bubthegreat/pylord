@@ -56,10 +56,11 @@ async def healer(ctx: GameCtx) -> str:
             f"  `2(it costs `%{_cost_per_hp(p)}`2 to heal 1 hitpoint)\n\n"
         )
         choice = await ctx.io.menu(
-            {"H": "heal_all", "C": "heal_some", "R": "town"},
+            # Q also leaves (reference/lord.js:10971's 'RQ\r' set).
+            {"H": "heal_all", "C": "heal_some", "R": "town", "Q": "town"},
             "  `5The Healers`2   (H,C,R)`2 : ",
         )
-        if choice == "R":
+        if choice in ("R", "Q"):
             return "town"
         if choice == "H":
             if await _heal_all(ctx):

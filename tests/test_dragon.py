@@ -147,7 +147,9 @@ async def test_dragon_win_reset_honors_configured_forest_and_player_fights():
         # player strikes first, reference/lord.js:7375-7391).
         rng=_SeqRNG([0, 0, 0]),
         keys=["a", "a", "x", "x", "x", "x", "x", "x"],
-        config={"game": {"forest_fights_per_day": 20, "player_fights_per_day": 5}},
+        # Flat, like pylord/server.py builds it (GameCtx.config is the
+        # [game] table, not the whole config).
+        config={"forest_fights_per_day": 20, "player_fights_per_day": 5},
     )
     await dragon_mod.dragon(ctx)
     assert ctx.player.forest_fights == 20
@@ -222,3 +224,40 @@ async def test_dragon_loss_kills_player_with_no_experience_penalty():
 
     text = screen(ctx.io)
     assert "rips your head off" in text
+
+
+async def test_config_is_read_the_way_the_server_builds_it(tmp_path):
+    """Regression: dragon.py and shops.py used to read ctx.config["game"]
+    while pylord/server.py passes config["game"] *as* ctx.config, so every
+    knob silently fell back to its default in production. Build the
+    context the way the server does and assert the knob lands."""
+    from pylord.server import handle_connection  # noqa: F401 -- documents the source
+
+    ctx = _ctx(
+        overrides={"level": 12, "strength": 40000, "hp": 500, "hp_max": 500},
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a", "a", "x", "x", "x", "x", "x", "x"],
+        config={"forest_fights_per_day": 20, "player_fights_per_day": 5},
+    )
+    await dragon_mod.dragon(ctx)
+    assert ctx.player.forest_fights == 20
+    assert ctx.player.player_fights == 5
+
+
+async def test_dragon_win_records_latest_hero_and_resets_flirts():
+    """reference/lord.js:12170-12181."""
+    ctx = _ctx(
+        overrides={
+            "level": 12, "strength": 40000, "hp": 500, "hp_max": 500,
+            "flirts_today": 3,
+        },
+        rng=_SeqRNG([0, 0, 0]),
+        keys=["a", "a", "x", "x", "x", "x", "x", "x"],
+    )
+    await dragon_mod.dragon(ctx)
+    assert ctx.player.flirts_today == 0
+    assert ctx.player.high_spirits == 1
+    row = ctx.conn.execute(
+        "SELECT value FROM game_state WHERE key = 'latesthero'"
+    ).fetchone()
+    assert row is not None and row["value"] == "Hero"

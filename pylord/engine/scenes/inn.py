@@ -301,12 +301,57 @@ _SETH_MARRIAGE_LADDER = (
 )
 
 
+async def _blocked_from_marrying(ctx: GameCtx, npc: str) -> bool:
+    """The two pre-marriage guards lord.js applies before either NPC
+    proposal: you can't marry an NPC while married to a player
+    (reference/lord.js:9794-9800 / :9025-9031), nor while married to the
+    *other* NPC (:9781-9793 / :9019-9024), and Violet won't have you while
+    a divorce is still fresh (:9496-9499).
+    """
+    p = ctx.player
+    if p.married_to is not None and p.married_to > -1:
+        spouse = ctx.repo.get(p.married_to)
+        name = spouse.name if spouse is not None else "your spouse"
+        title = "wife" if p.gender == "M" else "husband"
+        await ctx.io.write(
+            f"\n  `0You kind of doubt your {title} `){name} `0would\n"
+            "  like that...\n"
+        )
+        await ctx.io.pause()
+        return True
+
+    other = "Seth Able" if npc == "Violet" else "Violet"
+    already = (
+        npc_state.married_to_seth(ctx.conn)
+        if npc == "Violet"
+        else npc_state.married_to_violet(ctx.conn)
+    )
+    if already == p.id:
+        await ctx.io.write(
+            f"\n  `2You are already married to `%{other}`2.  One spouse at a\n"
+            "  time, warrior.\n"
+        )
+        await ctx.io.pause()
+        return True
+
+    if npc == "Violet" and p.divorced:  # reference/lord.js:9496-9499
+        await ctx.io.write(
+            "\n  Since you've just gotten out of a serious relationship, you feel\n"
+            "  it'd be moving too quickly to get married again.\n"
+        )
+        await ctx.io.pause()
+        return True
+    return False
+
+
 async def _marriage_violet(ctx: GameCtx) -> None:
     """Port of ``marriage()``/``marry()``/``no()``.
-    reference/lord.js:9434-9493. No ``player.divorced`` cooldown check --
-    this project's ``Player`` has no ``divorced`` field (player-to-player
-    marriage/divorce isn't modeled -- see ``conjugality.py``)."""
+    reference/lord.js:9434-9499, including the ``player.divorced``
+    cooldown and the "already married" guards (see
+    ``_blocked_from_marrying``)."""
     p = ctx.player
+    if await _blocked_from_marrying(ctx, "Violet"):
+        return
     p.seen_violet = 1
     await ctx.io.write(
         "\n  You take Violet's hand and squeeze it gently.  \"My sweet "
@@ -346,6 +391,8 @@ async def _marriage_violet(ctx: GameCtx) -> None:
 async def _marriage_seth(ctx: GameCtx) -> None:
     """Port of ``marriage()`` (single_seth's). reference/lord.js:8790-8957."""
     p = ctx.player
+    if await _blocked_from_marrying(ctx, "Seth Able"):
+        return
     p.seen_violet = 1
     await ctx.io.write(
         "\n  Seth Able looks at you seriously...\n\n"

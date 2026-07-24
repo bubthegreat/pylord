@@ -364,23 +364,34 @@ async def _victory(ctx: GameCtx) -> bool:
     p.at_inn = 0
     p.exp = 10
 
-    game_cfg = (ctx.config or {}).get("game", {})
+    # ctx.config *is* the [game] table (pylord/server.py passes
+    # config["game"]); the old ctx.config["game"] lookup always missed, so
+    # a sysop's fights-per-day and win_deeds settings were ignored here.
+    game_cfg = ctx.config or {}
     forest_fights = game_cfg.get("forest_fights_per_day", _DEFAULT_FOREST_FIGHTS)
     p.forest_fights = min(forest_fights + p.kids, _STAT_CAP)  # lord.js:12163-12168
     p.player_fights = game_cfg.get("player_fights_per_day", _DEFAULT_PLAYER_FIGHTS)  # :12169
     p.king_count += 1  # reference/lord.js:12172 (player.drag_kills += 1)
+    p.flirts_today = 0  # reference/lord.js:12170 (player.flirted = false)
+    p.high_spirits = 1  # reference/lord.js:12171
+
+    # reference/lord.js:12181 -- the realm remembers its latest hero.
+    with ctx.conn:
+        ctx.conn.execute(
+            "INSERT INTO game_state (key, value) VALUES ('latesthero', :name) "
+            "ON CONFLICT(key) DO UPDATE SET value = :name",
+            {"name": p.name},
+        )
 
     win_deeds = game_cfg.get("win_deeds", _DEFAULT_WIN_DEEDS)
     if win_deeds > 0 and p.king_count >= win_deeds:  # reference/lord.js:12183-12196
-        row = ctx.conn.execute(
-            "SELECT value FROM game_state WHERE key = 'won_by'"
-        ).fetchone()
-        if row is None:
-            with ctx.conn:
-                ctx.conn.execute(
-                    "INSERT INTO game_state (key, value) VALUES ('won_by', ?)",
-                    (str(p.id),),
-                )
+        # lord.js overwrites state.won_by unconditionally (:12184-12185).
+        with ctx.conn:
+            ctx.conn.execute(
+                "INSERT INTO game_state (key, value) VALUES ('won_by', :id) "
+                "ON CONFLICT(key) DO UPDATE SET value = :id",
+                {"id": str(p.id)},
+            )
         await ctx.io.write(
             "\n`c  `%** YOUR QUEST IS OVER **`0\n\n"
             "  `2You must indeed be the chosen one.  The ancient magic that\n"

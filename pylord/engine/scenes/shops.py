@@ -75,7 +75,10 @@ def _need_sum(n: int, base: int, field: str, ctx: GameCtx) -> int:
     ``LEVEL_STATS[i].<field>`` for ``i`` in ``1..min(n-2, 11)`` on top of a
     per-shop ``base`` (10 for weapons, 0 for armor), gated on
     ``settings.shop_limit``."""
-    shop_limit = ctx.config.get("game", {}).get("shop_limit", True)
+    # ctx.config *is* the [game] table -- pylord/server.py passes
+    # config["game"] into GameCtx. Reading ctx.config["game"] here always
+    # missed, so this knob could never be turned off.
+    shop_limit = ctx.config.get("shop_limit", True)
     if not shop_limit:
         return 0
     if n < 3:
@@ -151,10 +154,11 @@ async def weapons(ctx: GameCtx) -> str:
             f"  `2Gold: `0{p.gold}\n\n"
         )
         choice = await ctx.io.menu(
-            {"B": "buy", "S": "sell", "R": "town"},
+            # Q also leaves, as it does in lord.js (:10281-10284).
+            {"B": "buy", "S": "sell", "R": "town", "Q": "town"},
             "  `5King Arthur's Weapons `8(B,S,R)`2 : ",
         )
-        if choice == "R":
+        if choice in ("R", "Q"):
             return "town"
         if choice == "B":
             await _buy_weapon(ctx)
@@ -279,10 +283,11 @@ async def armor(ctx: GameCtx) -> str:
             f"  `2Gold: `0{p.gold}\n\n"
         )
         choice = await ctx.io.menu(
-            {"B": "buy", "S": "sell", "R": "town"},
+            # Q also leaves, as it does in lord.js (:10557-10560).
+            {"B": "buy", "S": "sell", "R": "town", "Q": "town"},
             "  `5Abduls Armour `8(B,S,R)`2 : ",
         )
-        if choice == "R":
+        if choice in ("R", "Q"):
             return "town"
         if choice == "B":
             await _buy_armor(ctx)

@@ -97,7 +97,9 @@ async def test_shop_limit_disabled_skips_strength_gate():
     ctx = _ctx(
         overrides={"gold": 5000, "weapon_num": 0},
         keys=["3", "y", "x"],
-        config={"game": {"shop_limit": False}},
+        # GameCtx.config is the [game] table itself -- pylord/server.py
+        # passes config["game"] in, so knobs are read flat.
+        config={"shop_limit": False},
     )
     await shops_mod._buy_weapon(ctx)
     assert ctx.player.weapon_num == 3

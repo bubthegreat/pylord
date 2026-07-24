@@ -51,10 +51,11 @@ async def bank(ctx: GameCtx) -> str:
             f"\n  `2Gold In Hand: `0{p.gold}\n  `2Gold In Bank: `0{p.bank}\n"
         )
         choice = await ctx.io.menu(
-            {"W": "withdraw", "D": "deposit", "R": "town"},
+            # Q also leaves (reference/lord.js:16098-16100).
+            {"W": "withdraw", "D": "deposit", "R": "town", "Q": "town"},
             "  `5The Bank `8(W,D,R)`2 : ",
         )
-        if choice == "R":
+        if choice in ("R", "Q"):
             return "town"
         if choice == "W":
             await _withdraw(ctx)

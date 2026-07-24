@@ -118,3 +118,52 @@ async def test_every_task_13a_destination_reachable():
 
     io, _player = await play(["c", "x"])
     assert "CONJUGALITY LIST" in screen(io)
+
+
+# --- Stats screen: the second half of show_stats() -------------------------
+
+
+async def test_stats_shows_skills_class_and_family():
+    """reference/lord.js:5842-5919 -- marriage, kids, horse, fairy, the
+    per-track skill block, the class-interest line and the amulet."""
+    io, _player = await play(
+        ["v", "x", "q", "y"],
+        overrides={
+            "class_type": 2,
+            "skill_my": 40,
+            "skill_uses": 6,
+            "kids": 2,
+            "horse": 1,
+            "has_fairy": 1,
+            "amulet": 1,
+        },
+    )
+    text = screen(io)
+    assert "The Mystical Skills: MASTERED" in text
+    assert "Uses Today: (6)" in text
+    assert "You have 2 children." in text
+    assert "You are on horseback." in text
+    assert "fairy in your pocket" in text
+    assert "currently interested in The Mystical" in text
+    assert "Amulet of Accuracy" in text
+
+
+async def test_stats_shows_npc_marriage():
+    """reference/lord.js:5843-5852 -- the NPC marriages live in shared
+    game state (pylord/engine/npc_state.py)."""
+    from pylord import db
+    from pylord.engine import npc_state
+    from pylord.engine.game import GameCtx
+    from pylord.engine.scenes.stats import stats as stats_scene
+    from pylord.models import PlayerRepo
+    from pylord.terminal import FakeIO
+
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create("Hero", "pw", "M")
+    npc_state.set_married_to_violet(conn, player.id)
+
+    io = FakeIO([" "])
+    await stats_scene(GameCtx(player=player, repo=repo, io=io, conn=conn))
+    assert "married to Violet" in screen(io)
