@@ -258,11 +258,13 @@ def test_playerview_stat_floors():
     igm_ctx.player.strength = -3
     igm_ctx.player.defense = 0
     igm_ctx.player.charm = -1
-    igm_ctx.player.hp_max = 0
-    assert p.strength == 1
-    assert p.defense == 1
-    assert p.charm == 1
-    assert p.hp_max == 1
+    igm_ctx.player.hp_max = -9
+    # Floors are lord.js check_fields()'s own: 0, not 1
+    # (reference/lord.js:16611-16658).
+    assert p.strength == 0
+    assert p.defense == 0
+    assert p.charm == 0
+    assert p.hp_max == 0
 
 
 def test_playerview_exp_cap():

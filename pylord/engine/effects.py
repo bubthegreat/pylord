@@ -1,8 +1,9 @@
 """Applying async mail "effects" to a player.
 
 This is the general-purpose channel behind lord.js's mail-embedded escape
-codes -- e.g. `` `E123`` ("you receive 123 exp", reference/lord.js:3857-3858)
-or `` `b500`` ("bank gains 500 gold", lord.js:5460ish) -- which
+codes -- e.g. `` `E123`` ("you receive 123 exp", reference/lord.js:4399-4405)
+or `` `b500`` ("bank gains 500 gold", handler reference/lord.js:4393-4398,
+written by e.g. the kids' allowance at :5556-5561) -- which
 ``lord_to_ansi()``/mail-reading code interprets inline as it displays a
 message. This project generalizes that into a single JSON dict stored on
 the ``mail.effect`` column (``pylord/db.py``) and applied by
@@ -10,9 +11,12 @@ the ``mail.effect`` column (``pylord/db.py``) and applied by
 escape codes out of message text. Both ``IgmContext.mail()`` (Task 12,
 ``pylord/hooks.py``) and this task's Mail scene use the same channel.
 
-Supported keys (additive deltas, per this task's brief): ``gold``, ``gems``,
-``exp``, ``hp_max``, ``strength``, ``defense``, ``charm``, ``forest_fights``,
-``player_fights``. Unknown keys are ignored (a forward-compatible, rather
+Supported keys (additive deltas): ``gold``, ``bank`` (lord.js's `` `b ``,
+:4393-4398), ``gems``, ``exp`` (`` `E ``), ``hp_max``, ``strength``
+(`` `M ``, :4456-4461), ``defense`` (`` `D ``, :4462-4467), ``charm``,
+``forest_fights`` (`` `, ``, :4416-4421), ``player_fights`` (`` `: ``,
+:4422-4427), ``lays`` (`` `{ ``, :4406-4409) and ``kids`` (`` `K ``/`` `k ``,
+:4443-4449). Unknown keys are ignored (a forward-compatible, rather
 than an error-raising, channel -- an IGM author's typo shouldn't crash a
 player's login). Floors/caps are the shared bounds in
 ``pylord/engine/limits.py`` -- the same module ``PlayerView``

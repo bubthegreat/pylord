@@ -42,17 +42,17 @@ async def test_impress_success_grants_charm():
     assert p.charm == charm_before + 1
 
 
-async def test_impress_fail_loses_charm_floored_at_one():
+async def test_impress_fail_loses_charm_floored_at_zero():
     conn, repo = make_db()
     p = repo.create("Hero", "pw", "M")
-    p.charm = 1
+    p.charm = 0
     gctx = make_ctx(conn, repo, p, keys=["I", "\r", "L"], rng=SeqRandom([1]))
     igm = VioletsCottage()
     ctx = make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
-    assert p.charm == 1  # PlayerView floors charm at 1, never 0
+    assert p.charm == 0  # PlayerView floors charm at 0 (lord.js:16653-16654)
 
 
 async def test_impress_blocked_second_time_same_visit():

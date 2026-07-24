@@ -60,13 +60,15 @@ def test_apply_effect_caps_exp_at_2_billion():
     assert player.exp == 2_000_000_000
 
 
-def test_apply_effect_floors_combat_stats_at_one():
+def test_apply_effect_floors_combat_stats_at_zero():
+    """lord.js's check_fields() floors str/def/cha/hp_max at 0, not 1
+    (reference/lord.js:16641-16658)."""
     conn = db.connect(":memory:")
     db.migrate(conn)
     player = PlayerRepo(conn).create("Hero", "pw", "M")
     player.strength = 10
     apply_effect(player, {"strength": -50})
-    assert player.strength == 1
+    assert player.strength == 0
 
 
 def test_apply_effect_ignores_unknown_keys():
@@ -86,13 +88,25 @@ def test_apply_effect_supports_every_documented_key():
     before = {
         f: getattr(player, f)
         for f in (
-            "gold", "gems", "exp", "hp_max", "strength", "defense", "charm",
-            "forest_fights", "player_fights",
+            "gold", "bank", "gems", "exp", "hp_max", "strength", "defense",
+            "charm", "forest_fights", "player_fights", "lays", "kids",
         )
     }
     apply_effect(player, {k: 1 for k in before})
     for field, value in before.items():
         assert getattr(player, field) == value + 1
+
+
+def test_apply_effect_caps_gold_and_bank_at_two_billion():
+    """reference/lord.js:16630-16640 (check_fields)."""
+    conn = db.connect(":memory:")
+    db.migrate(conn)
+    player = PlayerRepo(conn).create("Hero", "pw", "M")
+    player.gold = 2_000_000_000
+    player.bank = 1_999_999_999
+    apply_effect(player, {"gold": 5_000, "bank": 5_000})
+    assert player.gold == 2_000_000_000
+    assert player.bank == 2_000_000_000
 
 
 # -- (W)rite Mail scene -------------------------------------------------
