@@ -21,7 +21,10 @@ below comes entirely from this task's brief, not from a lost transcript.
   four-way split.
 * The guard-dog hp loss (1-3, ``_DOG_MIN``/``_DOG_MAX``) and the gem find
   (1-2, ``_GEM_MIN``/``_GEM_MAX``) ranges are both taken verbatim from the
-  brief's own numbers.
+  brief's own numbers. The dog bite floors hp at 1 rather than letting it
+  reach 0 -- the same no-kill guard ``warriors_graveyard``'s undead fight
+  uses (see that module's docstring), applied here for consistency even
+  though a 1-3 hp nibble can only zero out an already-critical player.
 * **The coupon is inert by design, not a bug.** The brief is explicit:
   finding a weapon-shop discount coupon here grants nothing yet --
   redemption in the actual Weapons Shop (``pylord/engine/scenes/town.py``'s
@@ -112,6 +115,8 @@ class TurgonsHouse(IGM):
         if outcome == 0:
             lost = ctx.rng.randint(_DOG_MIN, _DOG_MAX)
             p.hp = p.hp - lost
+            if p.hp <= 0:
+                p.hp = 1  # no-kill guard, same as warriors_graveyard's undead fight
             await ctx.term.write(
                 "\n  `4A guard dog bursts out of a closet and bites you!\n"
                 f"  `4YOU LOSE {lost} HIT POINT{'S' if lost != 1 else ''}!\n"

@@ -40,6 +40,20 @@ async def test_search_guard_dog_bites():
     assert "guard dog" in "".join(ctx.term.output)
 
 
+async def test_search_guard_dog_no_kill_guard_floors_hp_to_one():
+    conn, repo = make_db()
+    p = repo.create("Hero", "pw", "M")
+    p.hp = 1
+    p.hp_max = 20
+    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0, 3]))
+    igm = TurgonsHouse()
+    ctx = make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    assert p.hp == 1  # floored, never 0 or negative
+
+
 async def test_search_finds_gems_exact_amount():
     conn, repo = make_db()
     p = repo.create("Hero", "pw", "M")

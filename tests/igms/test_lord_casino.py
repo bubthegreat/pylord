@@ -176,6 +176,47 @@ async def test_blackjack_bust_on_hit_loses_bet():
     assert p.gold == 900
 
 
+async def test_blackjack_dealer_stands_on_soft_seventeen():
+    """Dealer's hit condition is a bare ``< 17`` (see igm.py's module
+    docstring), so an Ace+6 (soft 17) must stop drawing without a special
+    case. Pin it by asserting the dealer's *final* displayed hand is
+    exactly the two dealt cards at value 17 -- if the dealer wrongly hit
+    on soft 17 it would draw a third card and the value/hand text would
+    no longer read "AD 6C ... (17)"."""
+    conn, repo = make_db()
+    p = repo.create("Hero", "pw", "M")
+    p.gold = 1000
+    # Player: KS + QH = 20, stands. Dealer: AD + 6C = soft 17, must stand.
+    offsets = _shuffle_offsets(
+        52,
+        {
+            0: ("K", "S"),
+            2: ("Q", "H"),
+            1: ("A", "D"),
+            3: ("6", "C"),
+        },
+    )
+    igm = LordCasino()
+    gctx = make_ctx(
+        conn, repo, p, keys=["B", "100", "S", "\r", "L"], rng=SeqRandom(offsets)
+    )
+    ctx = make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    out = "".join(ctx.term.output)
+    # The dealer-hand line's card list must read exactly "AD 6C" right up
+    # to the opening paren of its value -- a third card (a wrongly-hit
+    # "3S", the next card in this scripted deck) would insert itself
+    # between "6C" and " (", breaking this literal match.
+    assert "AD 6C (" in out
+    assert "3S" not in out
+    # Strongest signal: if the dealer wrongly hit to 20, a 20-vs-20 finish
+    # is a push (gold unchanged at 1000), not the win a stood-at-17 dealer
+    # gives the player's 20.
+    assert p.gold == 1100
+
+
 # -- bet validation (shared _prompt_bet, exercised via Slots) --------------
 
 

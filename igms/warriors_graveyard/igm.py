@@ -214,6 +214,15 @@ class WarriorsGraveyard(IGM):
         gained_gold = ctx.rng.randint(
             p.level * _UNDEAD_GOLD_MIN_PER_LEVEL, p.level * _UNDEAD_GOLD_MAX_PER_LEVEL
         )
+        # Overkill loot bonus (Fight._loot_bonus, combat.py) already
+        # announced itself in the round text above ("You find a gem!" /
+        # "You find more gold than expected!") -- apply the actual reward
+        # here, same pattern as forest.py's _victory: gem_found -> a flat
+        # +1 gem, bonus_gold -> double this fight's gold reward.
+        if fight.bonus_gold:
+            gained_gold *= 2
+        if fight.gem_found:
+            p.gems += 1
         p.exp += gained_exp
         p.gold += gained_gold
         await ctx.term.write(

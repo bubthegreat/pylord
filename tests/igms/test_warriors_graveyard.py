@@ -109,6 +109,60 @@ async def test_undead_fight_victory_grants_exp_and_gold():
     assert _UNDEAD_NAMES[0] in "".join(ctx.term.output)
 
 
+async def test_undead_fight_victory_overkill_credits_gem():
+    """Fight._loot_bonus's roll==0 branch sets fight.gem_found and already
+    announces "You find a gem!" in the round text; this pins that the
+    reward is actually credited to the player, not just narrated."""
+    conn, repo = make_db()
+    p = repo.create("Hero", "pw", "M")
+    p.level = 1
+    p.gold = 100
+    gems_before = p.gems
+    igm = WarriorsGraveyard()
+    gctx = make_ctx(
+        conn,
+        repo,
+        p,
+        keys=["D", "A", "\r", "L"],
+        # Same one-shot overkill setup as the plain victory test above, but
+        # loot-bonus roll=0 -> gem_found.
+        rng=SeqRandom([7, 0, 4, 9, 0, 50]),
+    )
+    ctx = make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    assert p.gems == gems_before + 1
+    assert "find a gem" in "".join(ctx.term.output)
+
+
+async def test_undead_fight_victory_overkill_credits_bonus_gold():
+    """Fight._loot_bonus's roll==1 branch sets fight.bonus_gold and already
+    announces "You find more gold than expected!" in the round text; this
+    pins that the fight's gold reward is actually doubled, not just
+    narrated -- same doubling pattern as forest.py's _victory."""
+    conn, repo = make_db()
+    p = repo.create("Hero", "pw", "M")
+    p.level = 1
+    p.gold = 100
+    igm = WarriorsGraveyard()
+    gctx = make_ctx(
+        conn,
+        repo,
+        p,
+        keys=["D", "A", "\r", "L"],
+        # Same one-shot overkill setup, loot-bonus roll=1 -> bonus_gold;
+        # victory gold roll=50, doubled to 100.
+        rng=SeqRandom([7, 0, 4, 9, 1, 50]),
+    )
+    ctx = make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    assert p.gold == 200  # 100 - 0 (no cost to dig) + 50*2 doubled
+    assert "more gold than expected" in "".join(ctx.term.output)
+
+
 async def test_undead_fight_loss_no_kill_guard_floors_hp_to_one():
     conn, repo = make_db()
     p = repo.create("Hero", "pw", "M")
