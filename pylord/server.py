@@ -23,12 +23,14 @@ from __future__ import annotations
 import logging
 import sqlite3
 import string
+from datetime import UTC, datetime
 from typing import Any
 
 import telnetlib3
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
 from pylord import db
+from pylord.engine import daily
 from pylord.engine.game import GameCtx, run_session
 from pylord.models import Player, PlayerRepo
 from pylord.terminal import ConnectionClosed, TelnetIO
@@ -149,6 +151,14 @@ async def handle_connection(reader, writer, *, conn, config: dict[str, Any]) -> 
     io = TelnetIO(reader, writer)
     repo = PlayerRepo(conn)
 
+    # Cheap once-per-day guard inside maintenance() itself (a single
+    # SELECT once today's pass has already run) -- see
+    # pylord/engine/daily.py's module docstring for why this is a global
+    # batch pass rather than lord.js's per-player lazy wake_up(). UTC
+    # (rather than host-local "today") avoids the game's day rollover
+    # depending on whatever timezone the server process happens to run in.
+    daily.maintenance(conn, config, datetime.now(UTC).date().isoformat())
+
     player: Player | None = None
     try:
         while player is None:
@@ -182,10 +192,15 @@ async def handle_connection(reader, writer, *, conn, config: dict[str, Any]) -> 
         try:
             await run_session(ctx, start="town")
         except KeyError:
-            # "forest" (town's F key) isn't registered until Task 10 lands
-            # -- run_session's contract (see game.py) is to let an
-            # unregistered scene key raise KeyError rather than swallow it,
-            # so the guard belongs here, not in game.py.
+            # Every town destination is now registered except the
+            # remaining "under construction" stubs (weapons shop, bank,
+            # etc. -- future tasks) -- those route to the shared `_stub`
+            # scene in town.py rather than raising, so this guard should
+            # never actually fire anymore. Left in place (not removed) per
+            # run_session's documented contract (see game.py): an
+            # unregistered scene key is a programming error that should
+            # propagate, and this is still the right place to catch it for
+            # a telnet client rather than crashing the connection handler.
             await io.write("\n`)That place is not yet built.`0\n")
     except ConnectionClosed:
         pass
