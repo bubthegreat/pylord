@@ -243,7 +243,7 @@ async def _fight_dragon(ctx: GameCtx) -> bool:
         elif action == "R":
             hp_before = fight.player_side.hp
             ran = fight.attempt_run()
-            if ran:  # reference/lord.js:15025-15028 (the dragon-specific run text)
+            if ran:  # reference/lord.js:7022-7027, try_running()'s is_dragon branch
                 await ctx.io.write(
                     "\n  `2You barely flip out of the way, as the `4Dragon`2 breathes huge\n"
                     "  amounts of fire where you were a second ago!  You run towards\n"

@@ -299,18 +299,28 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
 
 async def _win(ctx: GameCtx, target: Player, fight: Fight, from_inn: bool) -> None:
     """Port of the victory tail of ``attack_player()``.
-    reference/lord.js:7861-7966."""
+    reference/lord.js:7861-7966.
+
+    **Displayed gold/exp are the actual post-cap delta, not the raw
+    transfer amount** -- lord.js computes them the same way (``tmp =
+    player.gold; player.gold += op.gold; ...; lw(player.gold - tmp)``,
+    ``:7867-7872``/``:7873-7878``): if the attacker is already near the
+    2,000,000,000 cap, the screen shows however little actually landed,
+    not the victim's full on-hand total/half-exp."""
     p = ctx.player
-    gold_gain = target.gold
-    p.gold = min(p.gold + gold_gain, _GOLD_CAP)
-    exp_gain = target.exp // 2
-    await grant_exp(ctx, exp_gain)
+    gold_before = p.gold
+    p.gold = min(p.gold + target.gold, _GOLD_CAP)
+    gold_delta = p.gold - gold_before
+
+    exp_before = p.exp
+    await grant_exp(ctx, target.exp // 2)
+    exp_delta = p.exp - exp_before
 
     lines = [
         "",
         f"  You have killed {target.name}`%!",
         "",
-        f"  You receive `%{gold_gain}`2 gold, and `%{exp_gain}`2 experience!",
+        f"  You receive `%{gold_delta}`2 gold, and `%{exp_delta}`2 experience!",
     ]
 
     half_gems = target.gems // 2

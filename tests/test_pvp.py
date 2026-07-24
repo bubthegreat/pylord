@@ -217,6 +217,10 @@ async def test_win_transfers_exact_gold_exp_gems_and_writes_news_and_mail():
 
 
 async def test_win_gold_capped_at_two_billion():
+    """Post-review Minor 1: the win screen must show the actual post-cap
+    delta (1 gold -- all that could actually fit under the 2,000,000,000
+    cap), not the victim's raw 50 on-hand gold (reference/lord.js:7867-7872,
+    ``lw(player.gold - tmp)``, computed *after* the cap is applied)."""
     conn, repo, attacker, target = _two_players(
         attacker_overrides={"strength": 2000, "gold": 1_999_999_999},
         target_overrides={"hp": 5, "hp_max": 5, "defense": 0, "gold": 50},
@@ -225,6 +229,7 @@ async def test_win_gold_capped_at_two_billion():
     ctx.rng = _SeqRNG([0, 0])
     await pvp_mod.run_attack(ctx, target, from_inn=False)
     assert ctx.player.gold == 2_000_000_000
+    assert "You receive 1 gold" in screen(ctx.io)
 
 
 # --- run_attack() -- loss: attacker dies, victim credited synchronously ----
@@ -337,12 +342,17 @@ async def test_inn_bribe_level_gate_refuses_much_weaker_target():
 
 
 async def test_inn_bribe_return_refunds_half():
+    """Level 2: bribe cost is 3200 gold (reference/lord.js:8393/8413,
+    ``player.level * 1600``); declining to attack refunds *half* that back,
+    1600 gold (reference/lord.js:8019, ``400 * (player.level * 2)`` -- the
+    barkeep's own "here is half your money back" line). Expected numbers are
+    hardcoded here, independent of pvp.py/inn.py's own constants, so a bug
+    that scales both the cost and the refund by the same (wrong) factor
+    can't cancel itself out and hide from this test."""
     conn, repo, attacker, _target = _two_players(
         attacker_overrides={"level": 2, "gold": 100_000}
     )
     ctx = _ctx(conn, repo, attacker, ["y", "r", "x"])
     died = await inn_mod._bribe_attack(ctx)
     assert died is False
-    cost = 2 * 1600
-    refund = 800 * (2 * 2)
-    assert ctx.player.gold == 100_000 - cost + refund
+    assert ctx.player.gold == 100_000 - 3200 + 1600 == 98_400

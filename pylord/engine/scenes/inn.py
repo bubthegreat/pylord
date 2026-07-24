@@ -658,7 +658,7 @@ async def _bartender(ctx: GameCtx) -> None:
 
 
 _BRIBE_PER_LEVEL = 1600  # reference/lord.js:8393/8413 -- mirrors pvp.py's own copy
-_BRIBE_REFUND_PER_LEVEL = 800  # reference/lord.js:8019 (400 * level * 2)
+_BRIBE_REFUND_PER_LEVEL = 400  # reference/lord.js:8019 (400 * level * 2)
 
 
 async def _bribe_attack(ctx: GameCtx) -> bool:
