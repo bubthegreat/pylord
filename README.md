@@ -80,6 +80,7 @@ The sysop CLI works against the same database (`--config` points at your
 uv run pylord players                          # list everyone
 uv run pylord edit Zaphod --gold 5000          # also: --gems, --level,
                                                # --alive 0|1, --reset-password
+uv run pylord delete Zaphod --yes              # remove a character for good
 ```
 
 Daily maintenance (fight resets, bank interest, IGM daily hooks) runs

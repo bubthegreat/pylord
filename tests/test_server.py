@@ -364,3 +364,51 @@ async def test_a_player_who_rented_a_room_wakes_up_in_the_inn(tmp_path):
         finally:
             client.close()
         assert (await wait_offline(db_path, "Sleeper")).at_inn == 0
+
+
+async def test_startup_clears_stale_online_flags(tmp_path):
+    """A pod restart mid-session leaves online=1 behind, which locks the
+    player out of their own character and inflates "people on now"."""
+    db_path = tmp_path / "lord.db"
+    conn = db.connect(str(db_path))
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    ghost = repo.create("Ghost", "pw", "M")
+    ghost.online = 1
+    repo.save(ghost)
+    conn.close()
+
+    server = await start(
+        {"server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)}, "game": {}}
+    )
+    try:
+        conn = db.connect(str(db_path))
+        try:
+            assert PlayerRepo(conn).get_by_name("Ghost").online == 0
+        finally:
+            conn.close()
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def test_game_statistics_separates_enrolled_from_online(tmp_path):
+    """reference/lord.js:16269-16275 counts every registered warrior and
+    calls them "people playing"; the screen now says which is which."""
+    async with running_server(tmp_path) as (port, db_path):
+        first = await LordClient.connect("127.0.0.1", port)
+        try:
+            await first.create_character("Counter", "pw")
+        finally:
+            first.close()
+        await wait_offline(db_path, "Counter")
+
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.create_character("Watcher", "pw")
+            client.key("1")
+            stats = await client.expect("MORE")
+            assert "2 warriors in the realm" in stats, stats
+            assert "1 is playing right now" in stats, stats
+        finally:
+            client.close()

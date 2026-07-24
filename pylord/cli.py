@@ -168,6 +168,43 @@ def _cmd_edit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_delete(args: argparse.Namespace) -> int:
+    """Remove a character and everything hanging off it. Irreversible, so
+    it refuses to run without --yes."""
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"config file not found: {config_path}", file=sys.stderr)
+        return 1
+    config = load_config(config_path)
+    repo = _open_repo(config)
+
+    player = repo.get_by_name(args.name)
+    if player is None:
+        print(f"no such player: {args.name}", file=sys.stderr)
+        return 1
+    if player.online:
+        print(
+            f"{player.name} is online right now; wait for them to log off",
+            file=sys.stderr,
+        )
+        return 1
+    if not args.yes:
+        print(f"would delete {player.name} (level {player.level}); pass --yes to do it")
+        _print_player_stats(player)
+        return 1
+
+    conn = repo.conn
+    with conn:
+        conn.execute("DELETE FROM mail WHERE to_id = ?", (player.id,))
+        conn.execute("DELETE FROM players WHERE id = ?", (player.id,))
+        # Anyone married to them is single again.
+        conn.execute(
+            "UPDATE players SET married_to = NULL WHERE married_to = ?", (player.id,)
+        )
+    print(f"deleted {player.name}")
+    return 0
+
+
 def _cmd_players(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
     if not config_path.exists():
@@ -255,6 +292,18 @@ def main(argv: list[str] | None = None) -> int:
         "--reset-password", help="set a new password for this player"
     )
     edit_parser.set_defaults(func=_cmd_edit)
+
+    delete_parser = subparsers.add_parser("delete", help="delete a player")
+    delete_parser.add_argument("name", help="player name")
+    delete_parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="path to config.toml (default: ./config.toml)",
+    )
+    delete_parser.add_argument(
+        "--yes", action="store_true", help="actually delete (this is irreversible)"
+    )
+    delete_parser.set_defaults(func=_cmd_delete)
 
     players_parser = subparsers.add_parser("players", help="list players")
     players_parser.add_argument(

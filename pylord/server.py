@@ -417,6 +417,18 @@ async def start(config: dict[str, Any]):
     conn = db.connect(db_path)
     db.migrate(conn)
 
+    # No session can exist before the listener does, so any `online` flag
+    # still set here is stale -- left by a pod restart, a crash, or a
+    # machine losing power mid-session. Left alone it would both inflate
+    # "people on now" and lock that character out of their own account
+    # ("already adventuring elsewhere") until someone edited the database.
+    with conn:
+        cleared = conn.execute(
+            "UPDATE players SET online = 0 WHERE online != 0"
+        ).rowcount
+    if cleared:
+        logger.info("cleared %d stale online flag(s) from a previous run", cleared)
+
     # Discover drop-in IGM plugins once at startup; the registry is shared
     # (read-only after discovery) by every connection this server accepts.
     # Resolve ``igms/`` next to the database (which cli.load_config already

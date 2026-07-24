@@ -147,3 +147,62 @@ def test_players_lists_roster_with_created_player(tmp_path, capsys):
     assert "name" in out.lower()
     assert "level" in out.lower()
     assert "online" in out.lower()
+
+
+def _config_with_player(tmp_path, name="Doomed", **fields):
+    from pylord import db
+    from pylord.models import PlayerRepo
+
+    db_path = tmp_path / "lord.db"
+    conn = db.connect(str(db_path))
+    db.migrate(conn)
+    repo = PlayerRepo(conn)
+    player = repo.create(name, "pw", "M")
+    for key, value in fields.items():
+        setattr(player, key, value)
+    repo.save(player)
+    conn.close()
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'[server]\ndb = "{db_path}"\n\n[game]\n')
+    return config, db_path
+
+
+def test_delete_requires_yes(tmp_path, capsys):
+    config, db_path = _config_with_player(tmp_path)
+    assert main(["delete", "Doomed", "--config", str(config)]) == 1
+    assert "pass --yes" in capsys.readouterr().out
+
+    from pylord import db
+    from pylord.models import PlayerRepo
+
+    conn = db.connect(str(db_path))
+    assert PlayerRepo(conn).get_by_name("Doomed") is not None
+
+
+def test_delete_removes_the_player_and_their_mail(tmp_path):
+    from pylord import db
+    from pylord.models import PlayerRepo
+
+    config, db_path = _config_with_player(tmp_path)
+    conn = db.connect(str(db_path))
+    doomed = PlayerRepo(conn).get_by_name("Doomed")
+    conn.execute(
+        "INSERT INTO mail (to_id, from_name, text, created, read) "
+        "VALUES (?, 'Someone', 'hi', '2026-07-24', 0)",
+        (doomed.id,),
+    )
+    conn.commit()
+    conn.close()
+
+    assert main(["delete", "Doomed", "--config", str(config), "--yes"]) == 0
+
+    conn = db.connect(str(db_path))
+    assert PlayerRepo(conn).get_by_name("Doomed") is None
+    assert conn.execute("SELECT COUNT(*) FROM mail").fetchone()[0] == 0
+
+
+def test_delete_refuses_while_the_player_is_online(tmp_path, capsys):
+    config, _db_path = _config_with_player(tmp_path, online=1)
+    assert main(["delete", "Doomed", "--config", str(config), "--yes"]) == 1
+    assert "online right now" in capsys.readouterr().err

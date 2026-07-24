@@ -100,7 +100,14 @@ async def game_stats(ctx: GameCtx) -> str:
     else:
         lines.append("  `2Game is set to run indefinitely.")
     lines.append("")
-    lines.append(f"  `2There are currently `%{len(players)} `2people playing.")
+    # lord.js counts every registered warrior and calls them "people
+    # playing" (reference/lord.js:16269-16275), which reads as "online
+    # right now" -- so the two numbers are reported separately here.
+    online = sum(1 for p in players if p.online)
+    lines.append(f"  `2There are currently `%{len(players)} `2warriors in the realm.")
+    lines.append(
+        f"  `%{online} `2{'is' if online == 1 else 'are'} playing right now."
+    )
     lines.append("")
     await ctx.io.write("\n".join(lines) + "\n")
     await ctx.io.pause()
