@@ -33,7 +33,7 @@ from telnetlib3.telopt import ECHO, SGA, WILL
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
 from pylord import db, igm_loader
-from pylord.engine import daily
+from pylord.engine import daily, fights
 from pylord.engine.game import GameCtx, run_session
 from pylord.engine.scenes import mail as mail_scene
 from pylord.models import Player, PlayerRepo
@@ -234,6 +234,7 @@ async def _create_character(
     # least the flat "+1 for being a <class>" grant.
     player.skill_uses = daily.skill_uses_for(player)
     player.last_played = datetime.now(UTC).date().isoformat()
+    player.fights_regen_at = datetime.now(UTC).isoformat()
     repo.save(player)
     return player
 
@@ -312,6 +313,14 @@ async def handle_connection(
             # after login and before the player reaches the Town Square.
             # See pylord/engine/scenes/mail.py's module docstring for why
             # this replaces lord.js's constant check_mail() polling.
+            # Credit any fights earned while logged off
+            # (pylord/engine/fights.py) before anything else runs.
+            regained = fights.apply_regen(player, ctx.config)
+            if regained:
+                await io.write(
+                    f"\n  `2You feel rested: `0{regained}`2 forest "
+                    f"{'fight' if regained == 1 else 'fights'} recovered.`0\n"
+                )
             await mail_scene.apply_unread_mail(ctx)
             # A player who rented a room wakes up in the Inn
             # (reference/lord.js:16925-16930); the Inn scene itself clears

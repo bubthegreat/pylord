@@ -99,7 +99,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pylord.engine import data
+from pylord.engine import data, fights
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
 from pylord.engine.scenes import _battle, jennie, other_places
@@ -166,11 +166,13 @@ def _cap(value: int, cap: int) -> int:
     return min(value, cap)
 
 
-def _status_line(p: Player) -> str:
-    """reference/lord.js:15227-15246 -- the forest prompt's live status."""
+def _status_line(p: Player, ceiling: int) -> str:
+    """reference/lord.js:15227-15246 -- the forest prompt's live status.
+    The ``of N`` on the fight count is this project's own addition, since
+    here the maximum is trainable (pylord/engine/fights.py)."""
     return (
         f"\n  `2HitPoints: (`0{p.hp}`2 of `0{p.hp_max}`2)"
-        f"  Fights: `0{p.forest_fights}`2 Gold: `0{p.gold}"
+        f"  Fights: `0{p.forest_fights}`2 of `0{ceiling}`2 Gold: `0{p.gold}"
         f"  `2Gems: `0{p.gems}\n"
     )
 
@@ -192,8 +194,17 @@ async def _bank_gold(ctx: GameCtx) -> None:
 @scene("forest")
 async def forest(ctx: GameCtx) -> str | None:
     while True:
+        # Real time spent in the forest counts toward the next fight.
+        regained = fights.apply_regen(ctx.player, ctx.config)
+        if regained:
+            await ctx.io.write(
+                f"\n  `2You catch your breath: `0{regained}`2 forest "
+                f"{'fight' if regained == 1 else 'fights'} recovered.`0\n"
+            )
         await ctx.io.write(_MENU)
-        await ctx.io.write(_status_line(ctx.player))
+        await ctx.io.write(
+            _status_line(ctx.player, fights.max_forest_fights(ctx.player, ctx.config))
+        )
         choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT)
         if choice in ("R", "Q"):
             return "town"

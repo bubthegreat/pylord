@@ -8,6 +8,12 @@ Forest fights, the Red Dragon, Turgon's warrior training, Violet and Seth
 at the inn, player-vs-player combat, mail, daily news, and a starter set
 of six IGMs are all here, ported from the original game logic.
 
+Two things work differently on purpose, for a server people drop into
+through the day rather than call once: your forest-fight maximum is
+**trainable** (a free point per master beaten, more for sale at Turgon's),
+and one fight **comes back every 15 minutes** of real time. Both are
+documented in `docs/deviations.md` and configurable below.
+
 ## License and provenance
 
 pylord is licensed under the **GPL-3.0-or-later** (see `LICENSE`).
@@ -54,6 +60,8 @@ flirts_per_day = 1        # reserved; the romantic-mail flow it gates isn't port
 clean_mode = false        # hides the Inn's adult options
 win_deeds = 3             # dragon kills that end the realm (0 = never)
 shop_limit = true         # require the strength/defense to carry what you buy
+fight_regen_minutes = 15  # real minutes per recovered forest fight (0 = off)
+endurance_cost = 1000     # gold for the first bought forest fight at Turgon's
 
 [igms]
 # true = enabled; omitted IGMs fall back to their own default

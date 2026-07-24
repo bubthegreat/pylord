@@ -59,7 +59,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pylord.engine import data
+from pylord.engine import data, fights
 from pylord.engine.combat import Combatant, Fight
 from pylord.engine.game import scene
 from pylord.engine.scenes import _battle
@@ -114,8 +114,10 @@ async def training(ctx: GameCtx) -> str:
             # register it, because TermIO.menu() deliberately swallows a
             # stray CR for line-mode clients (see its docstring) and a
             # quit-on-Enter key would fire on every such client's input.
-            {"Q": "ask", "A": "attack", "V": "hall", "R": "town"},
-            "  `2(Q,A,V,R)`2 : ",
+            # `E` is this project's own endurance training -- see
+            # pylord/engine/fights.py and docs/deviations.md.
+            {"Q": "ask", "A": "attack", "E": "endurance", "V": "hall", "R": "town"},
+            "  `2(Q,A,E,V,R)`2 : ",
         )
         if choice == "R":
             return "town"
@@ -123,6 +125,8 @@ async def training(ctx: GameCtx) -> str:
             return "hall"
         if choice == "Q":
             await _ask(ctx, trainer)
+        elif choice == "E":
+            await _endurance(ctx)
         else:
             await _attack_master(ctx, trainer)
 
@@ -217,6 +221,50 @@ async def _attack_master(ctx: GameCtx, trainer: Master) -> None:
     # else: ran away -- lord.js falls through attack_master() silently in
     # this case (neither the `player.dead` nor the `trainer.hp < 1` branch
     # fires), so nothing further is shown here either.
+
+
+async def _endurance(ctx: GameCtx) -> None:
+    """Buy one permanent forest fight per day.
+
+    **Not a lord.js mechanic** -- lord.js's allowance is flat and refills
+    only at the daily reset. Here your master will train your stamina for
+    gold, each point dearer than the last (see
+    ``pylord/engine/fights.py``'s ``endurance_cost``), and the extra
+    capacity survives everything except a new character.
+    """
+    p = ctx.player
+    cost = fights.endurance_cost(p, ctx.config)
+    ceiling = fights.max_forest_fights(p, ctx.config)
+    await ctx.io.write(
+        "\n  `2Your master looks you over.\n\n"
+        f'  `0"You can take `%{ceiling}`0 trips into the forest a day.  Another\n'
+        f'  will cost you `%{cost}`0 gold, and a great deal of sweat."`2\n\n'
+        f"  `2You have `0{p.gold}`2 gold.\n"
+    )
+    if await ctx.io.menu({"Y": "yes", "N": "no"}, "  `2Train? [`0N`2] : `%") == "N":
+        await ctx.io.write('\n  `0"Come back when you have the stomach for it."`2\n')
+        await ctx.io.pause()
+        return
+    if p.gold < cost:
+        await ctx.io.write(
+            '\n  `0"Come back when you can pay for it,"`2 your master grunts.\n'
+        )
+        await ctx.io.pause()
+        return
+
+    p.gold -= cost
+    p.endurance_bought += 1
+    fights.grant_bonus(p)
+    p.forest_fights = min(
+        p.forest_fights + 1, fights.max_forest_fights(p, ctx.config)
+    )
+    await ctx.io.write(
+        "\n  `2Hours of drills later you can barely stand -- but you can go\n"
+        "  one trip further into the forest than you could this morning.\n\n"
+        f"  `%YOU CAN NOW TAKE {fights.max_forest_fights(p, ctx.config)} FOREST "
+        "FIGHTS A DAY.`2\n"
+    )
+    await ctx.io.pause()
 
 
 def _can_skill(p: Player) -> bool:
@@ -325,6 +373,17 @@ async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> N
     )
     lines.append("")
     lines.append(f"  `%YOU ARE NOW LEVEL {p.level}.")
+    lines.append("")
+    # Not lord.js: every master win also raises the forest-fight ceiling
+    # by one (pylord/engine/fights.py).
+    fights.grant_bonus(p)
+    p.forest_fights = min(
+        p.forest_fights + 1, fights.max_forest_fights(p, ctx.config)
+    )
+    lines.append(
+        "  `2Your stamina grows with your skill -- `0one `2more forest fight "
+        "a day."
+    )
     lines.append("")
 
     if fight.gem_found:  # reference/lord.js:6905-6924/6973-6991 -- gem

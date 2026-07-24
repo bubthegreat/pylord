@@ -86,6 +86,15 @@ MIGRATIONS = [
     ALTER TABLE players ADD COLUMN mastered_my INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE players ADD COLUMN mastered_th INTEGER NOT NULL DEFAULT 0;
     """,
+    # Trainable forest-fight capacity and the real-time fight regeneration
+    # clock. Both are deliberate departures from lord.js, which has a flat
+    # per-day allowance and no regeneration at all -- see
+    # docs/deviations.md and pylord/engine/fights.py.
+    """
+    ALTER TABLE players ADD COLUMN fight_bonus INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN endurance_bought INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN fights_regen_at TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

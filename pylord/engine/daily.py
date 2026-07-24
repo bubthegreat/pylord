@@ -20,9 +20,11 @@ Formulas ported from ``wake_up()`` (reference/lord.js:5412-5595):
   applied unconditionally -- every player wakes up at full HP, not just
   ones who died) and ``player.dead = false`` (line 5438); ported here as
   ``alive = 1`` for every player.
-- **Forest fights**: reset to 15, or ``settings.forest_fights`` if
-  configured (lines 5428, 5443-5445) -- ``config["game"]
-  ["forest_fights_per_day"]`` here, default 15.
+- **Forest fights**: reset to the player's *maximum* -- the configured
+  allowance (lines 5428, 5443-5445; ``config["game"]
+  ["forest_fights_per_day"]``, default 15) plus anything they have
+  trained. The trained part and the between-reset regeneration are this
+  project's own additions; see ``pylord/engine/fights.py``.
 - **Player (PvP) fights**: reset to ``settings.pvp_fights_per_day``
   (line 5432, default 3, reference/lord.js:1856) --
   ``config["game"]["player_fights_per_day"]`` here, default 3.
@@ -72,10 +74,10 @@ import random as _random_module
 import sqlite3
 from typing import Any
 
+from pylord.engine import fights
 from pylord.engine.persist import save_player_raw
 from pylord.models import PlayerRepo
 
-_DEFAULT_FOREST_FIGHTS = 15  # reference/lord.js:1857
 _DEFAULT_PLAYER_FIGHTS = 3  # reference/lord.js:1856
 _BANK_CAP = 2_000_000_000  # reference/lord.js:5507, 5513
 _STAT_CAP = 32_000  # reference/lord.js:5499-5501, 5578-5583
@@ -155,7 +157,6 @@ def maintenance(
         return
 
     game_cfg = (config or {}).get("game", {})
-    forest_fights = game_cfg.get("forest_fights_per_day", _DEFAULT_FOREST_FIGHTS)
     player_fights = game_cfg.get("player_fights_per_day", _DEFAULT_PLAYER_FIGHTS)
     rng = _random_module.Random() if rng is None else rng
 
@@ -184,7 +185,10 @@ def maintenance(
             player.hp = player.hp_max  # reference/lord.js:5424
             player.alive = 1  # reference/lord.js:5438 (player.dead = false)
 
-            player.forest_fights = forest_fights  # reference/lord.js:5428, 5443-5445
+            # The configured allowance plus whatever the player has
+            # trained (pylord/engine/fights.py -- not a lord.js mechanic).
+            player.forest_fights = fights.max_forest_fights(player, game_cfg)
+            player.fights_regen_at = ""  # a full tank starts the clock fresh
             if player.kids:  # reference/lord.js:5490-5505
                 player.forest_fights = min(
                     player.forest_fights + player.kids, _STAT_CAP

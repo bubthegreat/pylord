@@ -11,6 +11,12 @@ clean_mode = false
 win_deeds = 3
 # Require the strength/defense to carry what you buy (reference/lord.js:1866).
 shop_limit = true
+# Minutes of real time per recovered forest fight (0 disables). Not a
+# lord.js mechanic -- see docs/deviations.md.
+fight_regen_minutes = 15
+# Gold for the first bought endurance point at Turgon's; each further point
+# costs another multiple of this, times the buyer's level.
+endurance_cost = 1000
 
 [igms]
 # populated by bundled IGMs; true = enabled

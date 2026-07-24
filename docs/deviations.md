@@ -63,3 +63,15 @@ This document tracks intentional deviations between pylord and the reference Syn
 | `announce()` writes only to the news log | reference/lord.js:9397-9432 does the same (`log_line`), but its own screen offers no length cap beyond 75 characters per line; this port keeps that cap and adds no other limit. Recorded because an announcement is the one place a player writes free text every other player will read. |
 | Dark Cloak Tavern, the romantic reply-mail mini-game, horse trading, the "Examine The Dirt" graffiti wall and `tournament_check()` remain unported | Each is a self-contained sub-game or multiplayer side-channel (reference/lord.js:8459-8574, :3820-4209, :14620-14778, :16517-16590, :3362-3420). None is reachable from any screen this port implements, and each would need state pylord does not model (a shared rumour file, romantic mail types, `player.horse` trading, `dirt.lrd`, tournament settings). |
 | RIP graphics, inter-BBS play, and the LADY script interpreter are out of scope | Per the design spec's own "Out of scope v1" list. lord.js's `rip` branches are skipped wherever they appear. |
+
+## Deliberate design changes (not fidelity gaps)
+
+The rows above record where this port *differs while trying to match*
+lord.js. The two below are changes the owner asked for, made with eyes
+open, because a persistent telnet server is played differently from a
+once-a-day BBS door call.
+
+| Change | Rationale |
+|--------|-----------|
+| **Forest-fight capacity is trainable.** lord.js gives every player the same flat allowance each morning (`settings.forest_fights`, reference/lord.js:5428, :5443-5445). Here that figure is the *base*: beating a master adds one permanent fight, and Turgon's new `(E)ndurance` key sells more for gold at a rising price (`pylord/engine/fights.py`). The daily reset fills to the trained maximum. | Gives long-lived characters something to spend gold on and makes progression visible in the one resource that actually limits play. The trained bonus survives the Dragon reset, like the class skill ranks do; only a brand-new character starts from the base. |
+| **One forest fight regenerates every 15 minutes of real time**, up to the player's maximum (`fight_regen_minutes`, 0 disables). lord.js only refills at the daily rollover. | Players drop in for a few minutes at a time rather than calling the BBS once a day; without this, an evening session ends the day's play entirely. The clock is stored on the player (`fights_regen_at`), so it runs while they are logged off, advances in whole intervals so partial progress isn't lost, and banks nothing once a player is topped up. |

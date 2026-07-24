@@ -89,6 +89,11 @@ class Player:
     mastered_dk: int = 0
     mastered_my: int = 0
     mastered_th: int = 0
+    # Migration 3 -- trainable fight capacity and the regeneration clock.
+    # See pylord/engine/fights.py.
+    fight_bonus: int = 0
+    endurance_bought: int = 0
+    fights_regen_at: str = ""
 
 
 _COLUMNS = [f.name for f in fields(Player)]
