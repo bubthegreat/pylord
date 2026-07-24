@@ -18,6 +18,12 @@ import asyncio
 import telnetlib3
 
 from pylord import db
+from pylord.e2e import (
+    LordClient,
+    edit_player,
+    running_server,
+    wait_offline,
+)
 from pylord.models import PlayerRepo
 from pylord.server import start
 
@@ -259,3 +265,102 @@ async def test_wrong_password_three_times_disconnects(tmp_path):
     finally:
         server.close()
         await server.wait_closed()
+
+
+# --- Name rules, first-day skill uses, quest-over gate, inn resume --------
+
+
+async def test_reserved_name_is_refused_at_creation(tmp_path):
+    """reference/lord.js:4766-4834 (check_name)."""
+    async with running_server(tmp_path) as (port, _db_path):
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.expect("warrior?")
+            client.line("Turgon")
+            refused = await client.expect("warrior?")
+            assert "Turgon has muscles" in refused
+        finally:
+            client.close()
+
+
+async def test_short_name_is_refused_at_creation(tmp_path):
+    """reference/lord.js:6092-6096."""
+    async with running_server(tmp_path) as (port, _db_path):
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.expect("warrior?")
+            client.line("Al")
+            refused = await client.expect("warrior?")
+            assert "Try a longer name" in refused
+        finally:
+            client.close()
+
+
+async def test_new_character_can_use_a_skill_attack_on_day_one(tmp_path):
+    """Today's maintenance pass has already run by the time a character is
+    created, so creation has to grant the daily use points itself
+    (reference/lord.js's wake_up() always runs for a brand-new player)."""
+    async with running_server(tmp_path) as (port, db_path):
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.create_character("Fresh", "pw")
+        finally:
+            client.close()
+        player = await wait_offline(db_path, "Fresh")
+        assert player.skill_uses >= 1
+
+
+async def test_quest_over_redirects_every_login_to_pay_homage(tmp_path):
+    """reference/lord.js:17293-17324 (check_gameover)."""
+    async with running_server(tmp_path) as (port, db_path):
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.create_character("Winner", "pw")
+        finally:
+            client.close()
+        winner = await wait_offline(db_path, "Winner")
+
+        conn = db.connect(str(db_path))
+        try:
+            conn.execute(
+                "INSERT INTO game_state (key, value) VALUES ('won_by', ?)",
+                (str(winner.id),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.expect("warrior?")
+            client.line("Winner")
+            await client.expect("Password:")
+            client.line("pw")
+            homage = await client.expect("MORE")
+            assert "PAY HOMAGE" in homage
+            assert "Winner" in homage
+        finally:
+            client.close()
+
+
+async def test_a_player_who_rented_a_room_wakes_up_in_the_inn(tmp_path):
+    """reference/lord.js:16925-16930."""
+    async with running_server(tmp_path) as (port, db_path):
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.create_character("Sleeper", "pw")
+        finally:
+            client.close()
+        await edit_player(db_path, "Sleeper", at_inn=1)
+
+        client = await LordClient.connect("127.0.0.1", port)
+        try:
+            await client.expect("warrior?")
+            client.line("Sleeper")
+            await client.expect("Password:")
+            client.line("pw")
+            screen = await client.expect("eturn\n")
+            assert "Red Dragon Inn" in screen
+        finally:
+            client.close()
+        assert (await wait_offline(db_path, "Sleeper")).at_inn == 0

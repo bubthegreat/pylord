@@ -21,6 +21,7 @@ not reachable from this flow).
 from __future__ import annotations
 
 import logging
+import random
 import sqlite3
 import string
 from datetime import UTC, datetime
@@ -39,10 +40,53 @@ from pylord.models import Player, PlayerRepo
 from pylord.terminal import ConnectionClosed, TelnetIO
 
 NAME_MAXLEN = 20
+NAME_MINLEN = 3  # reference/lord.js:6092-6096 ("Try a longer name!")
+NAME_LIMIT = 18  # reference/lord.js:6088-6091 ("Try a shorter name!")
 PASSWORD_MAXLEN = 30
-# Letters, digits, and spaces only -- per this task's brief. Filtered
-# character-by-character by TelnetIO.readline()/FakeIO.readline().
+# Letters, digits, and spaces only. Filtered character-by-character by
+# TelnetIO.readline()/FakeIO.readline().
 NAME_CHARSET = string.ascii_letters + string.digits + " "
+
+# reference/lord.js:4766-4834 (check_name()) -- names the game refuses,
+# each with its own retort. Keys are upper-cased for comparison.
+RESERVED_NAMES: dict[str, str] = {
+    "BARAK": "Naw, the real Barak would decapitate you if he found out.",
+    "SETH": "You are not Seth Able!  Don't take his name in vain!",
+    "SETH ABLE": "You are not God!",
+    "TURGON": "Haw.  Hardly - Turgon has muscles.",
+    "VIOLET": "Haw.  Hardly - Violet has breasts.",
+    "RED DRAGON": "Oh go plague some other land!",
+    "DRAGON": "You ain't Bruce Lee, so get out!",
+    "JENNIE GARTH": "You are not a goddess, don't use her name!",
+    "KIRSTEN DUNST": "Hardly! You only wish you were in a movie with Wynona!",
+    "BUSH": "Lower my taxes!",
+    "BAGGIO": "Darius sucks!",
+    "DAVID FOLLEY": "You rule, dude - but use a handle or you will mobbed!",
+    "ARNOLD PALMER": "Ha!  You're too old to be playing games.",
+    "BARTENDER": "Nah, the bartender is smarter than you!",
+    "CHANCE": "Why not go take a chance with a rattlesnake?",
+    "MICHAEL PRESLAR": "You want to be a small town kid?",
+    "GOD": "Why arent you in church?",
+    "JESUS": "Why arent you in church?",
+}
+
+# reference/lord.js:6132-6172 -- one of five lines after the gender pick.
+_GENDER_FLAVOR = {
+    "M": (
+        'With a name like "{name}", no one is going to believe it.',
+        "ALL RIGHT!!  A member of the more ADVANCED sex.  You had better win.",
+        "Good.  Men rule this earth.  We own and run EVERYTHING.",
+        "Then don't be wearing any dresses, eh.",
+        "Very good.  If a woman ever beats you in battle, go into exile.",
+    ),
+    "F": (
+        "Good.  Teach those men that they do NOT rule the world.",
+        "ALL RIGHT!!  A member of the more ADVANCED sex.  You had better win.",
+        "Excellent.  Taunt the men, tease them, and break their hearts!",
+        "Be warned, you are going to have to fight, kill and maim here.",
+        "Good.  There are way too many men in this land..",
+    ),
+}
 
 _NAME_PROMPT = "`0What be thy name, warrior? `%"
 
@@ -76,13 +120,37 @@ logger = logging.getLogger(__name__)
 
 
 async def _prompt_name(io: TelnetIO) -> str:
-    """Read a non-empty name, re-prompting until one is given."""
+    """Read a usable name, re-prompting until one is given.
+
+    Applies lord.js's own new-character name rules: 3..18 characters
+    (reference/lord.js:6088-6096) and ``check_name()``'s reserved-name
+    list (:4766-4834), each with the original's retort. An *existing*
+    character of any name can still log in -- the rules gate creation, and
+    ``handle_connection`` only reaches them for a name that isn't in the
+    database.
+    """
     while True:
         name = await io.readline(_NAME_PROMPT, maxlen=NAME_MAXLEN, charset=NAME_CHARSET)
-        name = name.strip()
-        if name:
-            return name
-        await io.write("\n`)You must give a name.`0\n")
+        name = " ".join(name.split())
+        if not name:
+            await io.write("\n`)You must give a name.`0\n")
+            continue
+        return name
+
+
+async def _name_is_allowed(io: TelnetIO, name: str) -> bool:
+    """False (with lord.js's own message) if this name can't be created."""
+    if len(name) > NAME_LIMIT:  # reference/lord.js:6088-6091
+        await io.write("\n  Try a shorter name!\n")
+        return False
+    if len(name) < NAME_MINLEN:  # reference/lord.js:6092-6096
+        await io.write("\n  Try a longer name!\n")
+        return False
+    retort = RESERVED_NAMES.get(name.upper())
+    if retort is not None:  # reference/lord.js:4827-4832
+        await io.write(f"\n  `)** `%{retort} `)**`2\n\n")
+        return False
+    return True
 
 
 async def _prompt_password(io: TelnetIO, prompt: str) -> str:
@@ -121,6 +189,9 @@ async def _create_character(
     15/3 defaults (``pylord/db.py``) instead of the sysop's configured
     values until the next day's reset -- a config-consumption gap found in
     Task 14's audit."""
+    if not await _name_is_allowed(io, name):
+        return None
+
     confirm = await io.menu({"Y": "yes", "N": "no"}, f"  `0{name}`2? `2[`0Y`2] : `%")
     if confirm == "N":
         return None
@@ -128,6 +199,9 @@ async def _create_character(
     await io.write(_WELCOME_SPLASH)
 
     gender = await io.menu(_GENDER_OPTIONS, _GENDER_PROMPT)
+    # reference/lord.js:6132-6172 -- a random remark on the choice.
+    flavor = random.choice(_GENDER_FLAVOR[gender])
+    await io.write(f"\n  `2{flavor.format(name=name)}`0\n")
 
     await io.write(_CLASS_MENU)
     class_letter = await io.menu(_CLASS_OPTIONS, _CLASS_PROMPT)
@@ -151,6 +225,15 @@ async def _create_character(
     player.class_type = _CLASS_TYPES[class_letter]
     player.forest_fights = game_config.get("forest_fights_per_day", player.forest_fights)
     player.player_fights = game_config.get("player_fights_per_day", player.player_fights)
+    # Today's maintenance() pass already ran (see handle_connection), so
+    # this character would otherwise start with the schema default of 0
+    # skill uses and be unable to use a skill attack until tomorrow. In
+    # lord.js a brand-new player always passes through wake_up() on their
+    # first login (player.time defaults to a sentinel that never equals
+    # state.days, reference/recorddefs.js:124-129), so they always have at
+    # least the flat "+1 for being a <class>" grant.
+    player.skill_uses = daily.skill_uses_for(player)
+    player.last_played = datetime.now(UTC).date().isoformat()
     repo.save(player)
     return player
 
@@ -209,6 +292,9 @@ async def handle_connection(
             else:
                 player = await _create_character(io, repo, name, config.get("game", {}))
 
+        if await _check_gameover(io, conn, repo, player):
+            return
+
         player.online = 1
         repo.save(player)
 
@@ -227,7 +313,12 @@ async def handle_connection(
             # See pylord/engine/scenes/mail.py's module docstring for why
             # this replaces lord.js's constant check_mail() polling.
             await mail_scene.apply_unread_mail(ctx)
-            await run_session(ctx, start="town")
+            # A player who rented a room wakes up in the Inn
+            # (reference/lord.js:16925-16930); the Inn scene itself clears
+            # at_inn on the way in (:9920). Starting at the Town Square
+            # instead would leave them flagged as sleeping -- and so
+            # attackable in their bed -- indefinitely.
+            await run_session(ctx, start="inn" if player.at_inn else "town")
         except KeyError:
             # Every town destination is now registered except the
             # remaining "under construction" stubs (weapons shop, bank,
@@ -255,6 +346,49 @@ async def handle_connection(
         # TelnetWriter.close() is idempotent and swallows its own internal
         # errors (see telnetlib3.stream_writer.TelnetWriter.close()).
         writer.close()
+
+
+async def _check_gameover(io: TelnetIO, conn, repo: PlayerRepo, player: Player) -> bool:
+    """Port of ``check_gameover()``. reference/lord.js:17293-17324.
+
+    Once someone has finished the quest (``settings.win_deeds`` dragon
+    kills -- ``pylord/engine/scenes/dragon.py`` records the winner in
+    ``game_state['won_by']``), the realm is over: every login is redirected
+    to a "PAY HOMAGE" screen instead of being allowed to play. Returns
+    ``True`` when the session was ended this way.
+    """
+    row = conn.execute(
+        "SELECT value FROM game_state WHERE key = 'won_by'"
+    ).fetchone()
+    if row is None:
+        return False
+    try:
+        winner = repo.get(int(row["value"]))
+    except (TypeError, ValueError):
+        return False
+    if winner is None:
+        return False
+
+    await io.write(
+        "\n`c                      `%PAY HOMAGE TO YOUR BETTER!\n\n"
+        "  `0The incredible warrior whose deeds will grace every tongue of\n"
+        "  every minstrel in every town every song of every day is the master\n"
+        f"  warrior known as `%{winner.name}`2.\n\n"
+    )
+    if winner.id == player.id:
+        await io.write(
+            "  `0You smile modestly.  If only people knew, that incredible\n"
+            "  warrior was you.\n\n"
+        )
+    else:
+        await io.write(
+            "  `2You bow your head in reverence - vowing to follow the teachings\n"
+            "  of this great person - to learn whatever this Godlike wonder can\n"
+            "  show you.\n\n"
+            "  `#(ASK YOUR SYSOP TO RESET THE REALM)`2\n\n"
+        )
+    await io.pause()
+    return True
 
 
 async def start(config: dict[str, Any]):

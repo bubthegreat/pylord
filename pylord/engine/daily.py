@@ -81,7 +81,7 @@ _BANK_CAP = 2_000_000_000  # reference/lord.js:5507, 5513
 _STAT_CAP = 32_000  # reference/lord.js:5499-5501, 5578-5583
 
 
-def _skill_uses_for(player) -> int:
+def skill_uses_for(player) -> int:
     """reference/lord.js:5448-5469 -- daily use-point formula for
     whichever class the player actually is (the other two skill_* fields
     are always 0 for a player of a different class, so this only ever
@@ -199,7 +199,7 @@ def maintenance(
             player.seen_dragon = 0  # reference/lord.js:5436
             player.seen_violet = 0  # reference/lord.js:5437
             player.seen_bard = 0  # reference/lord.js:5429
-            player.skill_uses = _skill_uses_for(player)
+            player.skill_uses = skill_uses_for(player)
             # 2-in-3 chance of high spirits, which is what unlocks the
             # forest's JENNIE codeword (reference/lord.js:5565-5573).
             player.high_spirits = 1 if rng.randrange(3) + 1 > 1 else 0

@@ -240,6 +240,25 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
         await server.wait_closed()
 
 
+async def wait_offline(db_path: Path, name: str, timeout: float = 5.0):
+    """Block until ``name`` exists and is logged off, then return the row.
+
+    The server writes a player's row in its disconnect ``finally``, so a
+    test that closes the socket and reads immediately can race it."""
+    conn = db.connect(str(db_path))
+    try:
+        repo = PlayerRepo(conn)
+
+        async def _offline():
+            while (p := repo.get_by_name(name)) is None or p.online:
+                await asyncio.sleep(0.05)
+            return p
+
+        return await asyncio.wait_for(_offline(), timeout)
+    finally:
+        conn.close()
+
+
 async def edit_player(db_path: Path, name: str, **fields) -> None:
     """Apply field changes straight to the database, once the character is
     logged off (the server writes the row on disconnect, so editing while
