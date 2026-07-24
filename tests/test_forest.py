@@ -309,3 +309,73 @@ def test_pick_monster_wildcard_case_reaches_a_lower_level_block():
     ctx = _ctx(overrides={"level": 5}, rng=_SeqRNG([2, 0, 3]))
     monster = forest_mod._pick_monster(ctx)
     assert monster == data.MONSTERS[1][3]
+
+
+# --- Post-audit forest keys: (B)ank, (J)ENNIE, flavor, status line --------
+
+
+async def test_vulture_banks_all_gold():
+    """reference/lord.js:15260-15272 -- the hidden `B` key."""
+    ctx = _ctx(overrides={"gold": 750, "bank": 100}, keys=["b", "r"])
+    await forest_mod.forest(ctx)
+    assert ctx.player.gold == 0
+    assert ctx.player.bank == 850
+    assert "UGLY VULTURE" in screen(ctx.io)
+
+
+async def test_forest_menu_shows_the_status_line():
+    """reference/lord.js:15227-15246."""
+    ctx = _ctx(overrides={"gold": 42, "gems": 7}, keys=["r"])
+    await forest_mod.forest(ctx)
+    text = screen(ctx.io)
+    assert "HitPoints: (" in text
+    assert "Gold: 42" in text
+    assert "Gems: 7" in text
+
+
+async def test_class_flavor_keys_just_print_a_line():
+    """reference/lord.js:15319-15352."""
+    ctx = _ctx(keys=["t", "r"])
+    await forest_mod.forest(ctx)
+    assert "Thieving skills cannot help you here" in screen(ctx.io)
+
+
+async def test_jennie_codeword_grants_an_extra_forest_fight():
+    """reference/lord.js:15396-15419 -- J, then E-N-N-I-E, then BABE."""
+    ctx = _ctx(
+        overrides={"high_spirits": 1, "forest_fights": 5},
+        keys=["j", "e", "n", "n", "i", "e", "BABE", " ", "r"],
+    )
+    await forest_mod.forest(ctx)
+    assert ctx.player.forest_fights == 6
+    assert ctx.player.high_spirits == 0  # spent for the day
+    assert "EXTRA FOREST FIGHT" in screen(ctx.io)
+
+
+async def test_jennie_needs_high_spirits():
+    """reference/lord.js:15397 -- a low-spirits player gets nothing."""
+    ctx = _ctx(overrides={"high_spirits": 0, "forest_fights": 5}, keys=["j", "r"])
+    await forest_mod.forest(ctx)
+    assert ctx.player.forest_fights == 5
+    assert "Jennie" not in screen(ctx.io)
+
+
+async def test_jennie_wrong_answer_gets_the_shrug():
+    ctx = _ctx(
+        overrides={"high_spirits": 1},
+        keys=["j", "e", "n", "n", "i", "e", "ZZZZ", " ", "r"],
+    )
+    await forest_mod.forest(ctx)
+    assert "You do not understand her" in screen(ctx.io)
+
+
+async def test_jennie_ugly_answer_ends_the_session():
+    """reference/lord.js:15488-15497."""
+    ctx = _ctx(
+        overrides={"high_spirits": 1, "hp": 20, "hp_max": 20},
+        keys=["j", "e", "n", "n", "i", "e", "UGLY", " "],
+    )
+    result = await forest_mod.forest(ctx)
+    assert result is None
+    assert ctx.player.hp == 1
+    assert ctx.player.alive == 0

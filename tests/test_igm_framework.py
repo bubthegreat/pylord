@@ -548,7 +548,7 @@ async def test_clean_visit_flushes_everything():
     )
 
 
-async def test_other_places_empty_registry_returns_forest():
+async def test_other_places_empty_registry_returns_to_town():
     conn, repo = _db()
     p = repo.create("Hero", "pw", "M")
     ctx = _ctx(conn, repo, p, keys=[" "], igms=None)
@@ -556,7 +556,7 @@ async def test_other_places_empty_registry_returns_forest():
     from pylord.engine.scenes.other_places import other_places
 
     nxt = await other_places(ctx)
-    assert nxt == "forest"
+    assert nxt == "town"
     assert "overgrown" in "".join(ctx.io.output)
 
 
@@ -566,13 +566,16 @@ async def test_other_places_lists_and_visits():
     conn, repo = _db()
     p = repo.create("Hero", "pw", "M")
     reg = igm_loader.IgmRegistry([_CleanIGM()])
-    # 'A' selects the single IGM, then a key for the visit's internal pause
-    ctx = _ctx(conn, repo, p, keys=["A", " "], igms=reg)
+    # lord.js numbers the places (reference/lord.js:17020-17064): "1"
+    # selects the single IGM, " " answers the visit's internal pause, then
+    # "Q" leaves the (looping) hub.
+    ctx = _ctx(conn, repo, p, keys=["1", " ", "Q"], igms=reg)
 
     from pylord.engine.scenes.other_places import other_places
 
     nxt = await other_places(ctx)
-    assert nxt == "forest"
+    assert nxt == "town"
+    assert "Other Places" in "".join(ctx.io.output)
 
 
 # --- contract check runs against the sample fixture -------------------
@@ -592,12 +595,15 @@ async def test_sample_igm_passes_contract():
 # --- forest menu wiring ----------------------------------------------
 
 
-def test_forest_menu_has_other_places():
+def test_town_menu_has_other_places_and_the_forest_does_not():
+    """reference/lord.js has Other Places only in main() (:17003); the
+    forest switch (:15258-15420) has no such key."""
     from pylord.engine.scenes import forest as forest_mod
+    from pylord.engine.scenes import town as town_mod
 
-    assert "O" in forest_mod._MENU_OPTIONS
-    assert forest_mod._MENU_OPTIONS["O"] == "other_places"
-    assert "Other places" in forest_mod._MENU or "ther places" in forest_mod._MENU
+    assert town_mod._DESTINATIONS["O"] == "other_places"
+    assert "ther places" in town_mod._MENU
+    assert "O" not in forest_mod._MENU_OPTIONS
 
 
 class _StubIGM(IGM):

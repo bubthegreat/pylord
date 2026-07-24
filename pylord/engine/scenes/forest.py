@@ -106,7 +106,7 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
-from pylord.engine.scenes import _battle
+from pylord.engine.scenes import _battle, jennie
 
 if TYPE_CHECKING:
     from pylord.engine.data import Monster
@@ -122,25 +122,38 @@ _MENU_LINES = (
     "",
     "`5  The Forest",
     "`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-",
-    "  `2(`0L`2)ook for something to kill",
-    "  `2(`0H`2)ealer's Hut",
-    "  `2(`0O`2)ther places",
-    "  `2(`0R`2)eturn to town",
-    "  `2(`0V`2)iew your stats",
+    "  `2(`0L`2)ook for something to kill       (`0H`2)ealer's Hut",
+    "  `2(`0R`2)eturn to town                 (`0V`2)iew your stats",
     "",
 )
 _MENU = "\n".join(_MENU_LINES)
 _PROMPT = "`2Your choice`0? `2"
 
-# (O)ther places -> the IGM plugin hub (reference/lord.js puts Other Places
-# in the forest; Task 12). Town's own (O) is Dark Cloak Tavern territory and
-# stays a stub for now.
+# lord.js's forest switch (reference/lord.js:15258-15420). "Other Places"
+# is *not* here -- it is a Town Square key (:17003), which is where this
+# port now puts it too. `B` is the vulture that banks your gold (:15260),
+# and `J` opens the JENNIE codeword easter egg (:15396) for a player in
+# high spirits.
 _MENU_OPTIONS = {
     "L": "look",
     "H": "healer",
-    "O": "other_places",
     "R": "town",
+    "Q": "town",
     "V": "stats",
+    "B": "bank_gold",
+    "J": "jennie",
+    "T": "thief_flavor",
+    "M": "mystic_flavor",
+    "D": "dk_flavor",
+    "A": "brandish",
+}
+
+# reference/lord.js:15319-15352 -- flavor-only keys that just print a line.
+_FLAVOR_LINES = {
+    "T": "  Your Thieving skills cannot help you here.",
+    "M": "  Your Mystical skills cannot help you here.",
+    "D": "  Your Death Knight skills cannot help you here.",
+    "A": "  You brandish your weapon dramatically.",
 }
 
 # class_type -> (skill_points field, skill_attack() 'kind', display label).
@@ -157,19 +170,52 @@ def _cap(value: int, cap: int) -> int:
     return min(value, cap)
 
 
+def _status_line(p: Player) -> str:
+    """reference/lord.js:15227-15246 -- the forest prompt's live status."""
+    return (
+        f"\n  `2HitPoints: (`0{p.hp}`2 of `0{p.hp_max}`2)"
+        f"  Fights: `0{p.forest_fights}`2 Gold: `0{p.gold}"
+        f"  `2Gems: `0{p.gems}\n"
+    )
+
+
+async def _bank_gold(ctx: GameCtx) -> None:
+    """The hidden `B` key: a vulture carries your purse to the bank.
+    reference/lord.js:15260-15272."""
+    p = ctx.player
+    if p.gold <= 0:
+        return
+    await ctx.io.write(
+        "\n\n  You throw your gold pouch up into the air gleefully.\n\n"
+        "  `0AN UGLY VULTURE `)GRABS `0IT IN MID AIR!`2\n"
+    )
+    p.bank = min(p.bank + p.gold, _GOLD_CAP)  # reference/lord.js:15267-15270
+    p.gold = 0
+
+
 @scene("forest")
 async def forest(ctx: GameCtx) -> str | None:
     while True:
         await ctx.io.write(_MENU)
+        await ctx.io.write(_status_line(ctx.player))
         choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT)
-        if choice == "R":
+        if choice in ("R", "Q"):
             return "town"
         if choice == "V":
             return "stats"
         if choice == "H":
             return "healer"
-        if choice == "O":
-            return "other_places"
+        if choice in _FLAVOR_LINES:
+            await ctx.io.write(f"\n\n{_FLAVOR_LINES[choice]}\n")
+            continue
+        if choice == "B":
+            await _bank_gold(ctx)
+            continue
+        if choice == "J":
+            await jennie.run(ctx)
+            if not ctx.player.alive:  # the UGLY answer ends the session
+                return None
+            continue
         # choice == "L"
         died = await _look_to_kill(ctx)
         if died:

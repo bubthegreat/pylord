@@ -436,7 +436,7 @@ async def _step_forest_fight(c: LordClient) -> None:
     character is buffed beforehand, so the fight cannot be lost; the loop
     reacts to whichever random branch actually happened."""
     c.key("F")
-    await c.expect(FOREST_MENU)
+    await c.forest()
     for _ in range(60):
         c.key("L")
         branch = await c.expect_any(
@@ -470,14 +470,13 @@ async def _step_forest_fight(c: LordClient) -> None:
 
 
 async def _step_other_places(c: LordClient) -> None:
-    """The IGM hub, and one full visit to Barak's House."""
-    c.key("F")
-    await c.forest()
+    """The IGM hub (a Town Square key, reference/lord.js:17003), and one
+    full visit to Barak's House."""
     c.key("O")
     hub = await c.expect("Your choice")
     assert "Other Places" in hub, hub
     assert "Barak's House" in hub, hub
-    c.key("A")
+    c.line("1")
     await c.expect("couch cushions")
     c.key("S")
     await c.expect("gold!")
@@ -486,8 +485,9 @@ async def _step_other_places(c: LordClient) -> None:
     await c.expect("couch cushions")
     c.key("L")
     await c.expect("Barak waves")
-    await c.forest()
-    c.key("R")
+    # The hub loops (reference/lord.js:17017-17077) -- Q leaves it.
+    await c.expect("Your choice")
+    c.line("Q")
     await c.town()
 
 

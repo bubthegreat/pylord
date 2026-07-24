@@ -57,22 +57,38 @@ async def test_unknown_key_reprompts_then_accepts_valid_key():
     assert player.name == "Tester"
 
 
-async def test_stub_scene_shows_under_construction_and_returns_to_town():
-    io, _player = await play(["o", "q"])
+async def test_other_places_is_reachable_from_town():
+    """reference/lord.js:17003-17077 -- Other Places is a Town Square key
+    (it used to route to an "Under construction" stub here, leaving the
+    IGM hub reachable only from a forest key lord.js doesn't have)."""
+    io, _player = await play(["o", "x", "q", "y"])
+    # No IGMs are wired into this session, so the hub says so and returns
+    # to town rather than the old "Under construction" stub.
+    assert "path is overgrown" in screen(io)
+
+
+async def test_quit_asks_for_confirmation_and_says_goodbye():
+    """reference/lord.js:16853-16871 (do_quit) and :16832-16841 (goodbye)."""
+    io, _player = await play(["q", "n", "q", "y"])
     text = screen(io)
-    assert "Under construction" in text
-    assert text.count("Town Square") == 2
+    assert "Quit game?" in text
+    assert "Quitting To The Fields" in text
+    assert text.count("Town Square") == 2  # the "n" put us back
 
 
-async def test_every_stub_destination_reachable():
-    # K/A/H/T/Y are real scenes now (Task 11: shops, healer, bank, training).
-    # I/L/W/D/C are real scenes now too (Task 13a: inn, list, mail, news,
-    # conjugality). S/X are real scenes now too (Task 13b: pvp, dragon) --
-    # see test_every_task_13b_destination_reachable below.
-    stub_keys = ["o"]
-    for key in stub_keys:
-        io, _player = await play([key, "q"])
-        assert "Under construction" in screen(io)
+async def test_new_town_keys_reach_their_scenes():
+    """M/P/1/R -- reference/lord.js:17110, :17113, :17120, :16950."""
+    io, _player = await play(["m", "n", "q", "y"])
+    assert "Make Announcement?" in screen(io)
+
+    io, _player = await play(["p", "x", "q", "y"])
+    assert "Warriors in the Realm Now" in screen(io)
+
+    io, _player = await play(["1", "x", "q", "y"])
+    assert "GAME STATISTICS" in screen(io)
+
+    io, _player = await play(["r", "x", "q", "y"])
+    assert "You have no mail" in screen(io)
 
 
 async def test_every_task_13b_destination_reachable():

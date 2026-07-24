@@ -13,6 +13,7 @@ from pylord.engine.scenes import (
     hall,
     healer,
     inn,
+    jennie,
     list_warriors,
     mail,
     news,
@@ -21,6 +22,7 @@ from pylord.engine.scenes import (
     shops,
     stats,
     town,
+    town_extras,
     training,
 )
 
@@ -32,6 +34,7 @@ __all__ = [
     "hall",
     "healer",
     "inn",
+    "jennie",
     "list_warriors",
     "mail",
     "news",
@@ -40,5 +43,6 @@ __all__ = [
     "shops",
     "stats",
     "town",
+    "town_extras",
     "training",
 ]

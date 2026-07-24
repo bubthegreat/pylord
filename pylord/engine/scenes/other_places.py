@@ -1,4 +1,4 @@
-"""The forest's "Other Places" menu -- the entry point into IGM plugins.
+"""The Town Square's "Other Places" menu -- the entry point into IGM plugins.
 
 This is the runtime counterpart to :mod:`pylord.igm_loader` (discovery) and
 :mod:`pylord.hooks` (the plugin surface). It lists every enabled IGM and,
@@ -109,32 +109,37 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
 
 @scene("other_places")
 async def other_places(ctx: GameCtx) -> str:
-    registry = ctx.igms
-    places = registry.other_places() if registry is not None else []
-    if not places:
-        await ctx.io.write(
-            "\n  `2The path is overgrown... nothing here yet.`0\n"
-        )
-        return "forest"
+    """The IGM hub, reached from the Town Square's ``O``
+    (reference/lord.js:17003-17077).
 
-    # A..Z, one letter per IGM (capped at 26 -- far more than any realm
-    # would ever enable), plus (R)eturn.
-    places = places[:26]
-    options: dict[str, str] = {}
-    lines = [_HEADER]
-    for idx, igm in enumerate(places):
-        letter = chr(ord("A") + idx)
-        options[letter] = igm.key
-        lines.append(f"  `2(`0{letter}`2){igm.name}")
-    options["R"] = "return"
-    lines.append("  `2(`0R`2)eturn to forest")
-    lines.append("")
-    await ctx.io.write("\n".join(lines))
+    lord.js numbers the places (1..N) and loops until ``Q``, so several
+    can be visited in one trip; both are reproduced here. lord.js reads
+    the list length to decide between a single keypress and a typed
+    number -- this port always takes a typed number, since ``menu()`` is
+    single-key and a realm with ten or more IGMs is normal.
+    """
+    while True:
+        registry = ctx.igms
+        places = registry.other_places() if registry is not None else []
+        if not places:
+            await ctx.io.write(
+                "\n  `2The path is overgrown... nothing here yet.`0\n"
+            )
+            await ctx.io.pause()
+            return "town"
 
-    choice = await ctx.io.menu(options, _PROMPT)
-    if choice == "R":
-        return "forest"
+        lines = [_HEADER]
+        for idx, igm in enumerate(places, start=1):
+            lines.append(f"  `2(`0{idx}`2) {igm.name}")
+        lines.append("  `2(`0Q`2) Return to town")
+        lines.append("")
+        await ctx.io.write("\n".join(lines))
 
-    igm = places[ord(choice) - ord("A")]
-    await _visit(ctx, igm)
-    return "forest"
+        raw = (await ctx.io.readline(_PROMPT, maxlen=3)).strip().upper()
+        if raw in ("", "Q"):  # reference/lord.js:17039-17041, blank == Q
+            return "town"
+        if not raw.isdigit():
+            continue
+        choice = int(raw)
+        if 1 <= choice <= len(places):  # reference/lord.js:17061-17066
+            await _visit(ctx, places[choice - 1])
