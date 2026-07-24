@@ -15,11 +15,11 @@ using the same backtick color-code conventions (`` `2`` green body text,
 
 Destinations not yet implemented by an earlier/this task (``O`` other places
 from the town menu -- the Forest menu has its own working route to
-``other_places``, Task 12 -- and ``X`` the Red Dragon) route to a single
-shared "coming soon" stub scene (see ``_stub`` below) until Dragon lands.
-Task 13a wired up ``I``\\ nn, ``L``\\ ist Warriors, ``W``\\ rite Mail,
-``D``\\ aily News, and ``C``\\ onjugality List. Task 13b wires up ``S``
-(Slaughter Other Players, ``pvp.py``).
+``other_places``, Task 12) route to a single shared "coming soon" stub scene
+(see ``_stub`` below). Task 13a wired up ``I``\\ nn, ``L``\\ ist Warriors,
+``W``\\ rite Mail, ``D``\\ aily News, and ``C``\\ onjugality List. Task 13b
+wires up ``S`` (Slaughter Other Players, ``pvp.py``) and ``X`` (The Red
+Dragon, ``dragon.py``).
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ _DESTINATIONS: dict[str, str | None] = {
     "D": "news",
     "C": "conjugality",
     "O": "other_stub",
-    "X": "dragon_stub",
+    "X": "dragon",
     "Q": None,
 }
 
@@ -99,5 +99,5 @@ async def _stub(ctx: GameCtx) -> str:
     return "town"
 
 
-for _key in ("other_stub", "dragon_stub"):
+for _key in ("other_stub",):
     SCENES[_key] = _stub
