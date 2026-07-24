@@ -7,18 +7,16 @@ handler -- forest events + monster encounter), and the shared combat-loop
 wiring in ``battle_prompt()``/``do_attack()``/``handle_hit()`` (already
 ported onto ``pylord.engine.combat`` in Task 7).
 
-Menu letters/destinations: the top-level task brief's "Produce" section
-(the authoritative, most specific source -- see also the module-level
-"Deviations" note below) asks for **(L)ook for something to kill,
-(H)ealer's Hut -> "healer", (R)eturn to town -> "town", (V)iew your
-stats -> "stats"**. ``(L)``/``(H)``/``(R)`` text matches lord.js's own
-persistent forest menu verbatim (``:15210-15216``); ``(V)`` is a
-reconstruction matching Town Square's own "(V)iew your stats" wording
-(``pylord/engine/scenes/town.py:39``) since lord.js's forest menu itself
-has no stats option at all (it's on the *battle* prompt instead, as `S`
--- lord.js ``:15382-15395``; see the "Deviations" note for why this
-project drops that and uses `S` for skill-attacks in-battle instead, per
-this task's own explicit instruction).
+Menu letters: ``(L)``/``(H)``/``(R)`` match lord.js's own persistent forest
+menu verbatim (``:15210-15216``), and the hidden keys it also accepts are
+here too -- ``(B)`` (the vulture that banks your purse, ``:15260-15272``),
+``(J)`` (the JENNIE codeword, ``:15396-15566``, in ``jennie.py``),
+``(Q)``, and the ``T``/``M``/``D``/``A`` flavour lines (``:15319-15352``).
+``(V)iew your stats`` is a reconstruction matching Town Square's own
+wording, since lord.js's forest ``V`` (``:15280-15281``) calls
+``show_stats()`` inline rather than routing anywhere. Other Places is
+**not** a forest key -- lord.js has it on the Town Square (``:17003``),
+which is where this port puts it.
 
 Deviations from lord.js (also mirrored into ``docs/deviations.md``):
 
@@ -52,13 +50,11 @@ Deviations from lord.js (also mirrored into ``docs/deviations.md``):
    levelw/levelm/levelt -- never the permanent rank** (menu visibility:
    ``:6858``, ``:6861``, ``:6864``; eligibility inside
    ``use_death_knight()``/``use_thief_skill()``: implicit, no rank check
-   at all; Mystical tier auto-selection: ``:7251-7267``, gated on
-   ``player.levelm`` primarily, with a ``player.skillm`` check that's
-   provably redundant given ``levelm <= skillm`` always holds after
-   ``wake_up()``'s ``levelm = skillm`` reset). So this module passes
-   ``p.skill_uses`` -- never the rank field -- into ``skill_attack()`` as
-   its ``skill_points`` argument (see ``_can_skill()`` and the "S" branch
-   of ``_run_fight()``), for all three classes. Cost: DK/Thief always cost
+   at all). The **Mystical** tiers are the exception: lord.js gates each on
+   the daily counter *and* the permanent rank (``:7247-7268``), so this
+   module passes both -- ``p.skill_uses`` as ``skill_points`` and the
+   class's rank field as ``skill_rank`` (see the "S" branch of
+   ``_run_fight()``). Death Knight and Thief read the counter alone. Cost: DK/Thief always cost
    a flat 1 use point (lord.js ``:7107``, ``:7183``); Mystical costs the
    chosen tier's real price (1/4/8/12/16/20) -- see
    ``pylord.engine.combat.Fight.last_spell_cost``, which

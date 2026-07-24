@@ -34,8 +34,10 @@ Metropolis in 1998). The canonical open-source reference is Synchronet's GPL
   numbers, no drop files — the original's `INFO.<node>` / `3RDPARTY.DAT` /
   subprocess mechanism is replaced by in-process Python plugin classes. Fidelity
   target is player-visible behavior, not file formats.
-- **Daily reset**: lazy — first activity after local midnight triggers maintenance
-  (reset daily counters, bank interest, news rollover), like original LORDBOOT maint.
+- **Daily reset**: a global batch pass, triggered by the first connection of each
+  **UTC** day (reset daily counters, bank interest, news rollover), like the original
+  LORDBOOT maint. See `docs/deviations.md` for how this differs from lord.js's
+  per-player lazy `wake_up()`.
 
 ### Layout
 
@@ -47,9 +49,10 @@ pylord/
     game.py        # session game loop: town square dispatch
     daily.py       # daily reset / maintenance
     combat.py      # fight engine: forest, master, PvP, dragon (formulas from lord.js)
-    data/          # weapons.py, armor.py, masters.py, monsters.py, events.py — ported tables
-    scenes/        # town, forest, inn, healer, bank, weapons, armor, training, hall,
-                   # mail, flirt, marriage, dark_cloak, other_places ...
+    data/          # weapons.py, armor.py, levels.py, masters.py, monsters.py — ported tables
+    scenes/        # town, town_extras, forest, jennie, inn, healer, bank, shops,
+                   # training, hall, mail, news, list_warriors, conjugality,
+                   # stats, pvp, dragon, other_places
   hooks.py         # hook registry + IGM base class + IGM-facing API
   igm_loader.py    # scans igms/, validates, registers enabled IGMs
   models.py        # Player dataclass mirroring player_info record
@@ -67,18 +70,20 @@ config.toml        # sysop settings incl. [igms] enable flags
 - **Character**: 3 skill classes (Death Knight / Mystical / Thieving), 12 levels,
   masters Halder→Turgon (exact stats/quotes), gender, exp thresholds from lord.js.
 - **Town Square**: Forest, Inn, Turgon's training, King Arthur's weapons, Abdul's
-  armor, healer, bank (interest + robbery), Ye Old Mail, Hall of Honors, warrior
-  list, daily news, view stats, Conjugality List (marriage), Dark Cloak Tavern.
+  armor, healer, bank (interest; the thief robbery needs the unmodelled fairy flag),
+  Ye Old Mail, Hall of Honors, warrior list, daily news, view stats, Conjugality
+  List (marriage), Other Places, announcements, who's-on, game statistics.
 - **Forest**: per-level monster tables, exact combat math (attack/skill/run),
   gold/exp drops, base-game forest events (fairy, old man, gems, etc.),
   **Other Places** menu → IGM hook.
 - **Inn**: Violet / Seth Able the bard (charm-gated flirt chain through marriage),
   bard songs, room rental, attack players sleeping at the inn.
 - **PvP**: attack offline or inn-sleeping players; kills yield gold/exp/news.
-- **Dragon**: level-12 + gear gates, dragon fight, victory → game reset cycle,
-  king count, children mechanic.
+- **Dragon**: level-12 gate, dragon fight, victory → game reset cycle, king count,
+  quest-over ending. (lord.js gates on level alone; there is no gear check.)
 - **Dailies**: forest fights/day, PvP fights/day, flirts, skill uses, bank
-  interest, daily news, JENNIE codes.
+  interest, daily news, high-spirits/weird rolls (the JENNIE codeword is a forest
+  key, not an Inn one).
 - **Sysop**: config.toml knobs (fights/day, clean mode, IGM toggles), player
   editor CLI (`pylord edit`).
 
@@ -90,15 +95,16 @@ original .DAT import/export.
 - `players` — mirrors `player_info`: stats, gear ids, gold/bank, flags
   (seen_dragon, married_to, king count…), skill points/uses, daily counters,
   password hash (scrypt via stdlib `hashlib`).
-- `game_state` — current game day, dragon status, current king.
+- `game_state` — game day, last maintenance date, NPC marriages, latest hero,
+  and the quest winner (`won_by`).
 - `daily_news` — append-only rows rendered as the news screen.
-- `mail` — player mail plus **async effect events**: typed records
-  (`{"type": "gold", "amount": n}`) applied at login — the modern equivalent of
-  the original backtick mail-codes (`` `b `` gold, `` `E `` exp, …).
+- `mail` — player mail plus **async effect events**: a flat `{stat: delta}` dict
+  (`{"gold": 500, "exp": 100}`) applied at login — the modern equivalent of the
+  original backtick mail-codes (`` `b `` gold, `` `E `` exp, …).
 - `igm_data` — namespaced per-IGM key/value JSON store; IGMs never touch core
   tables directly except through the API.
 
-Migrations: numbered SQL files applied at boot.
+Migrations: a numbered list of SQL scripts in `pylord/db.py`, applied at boot.
 
 ## Section C — IGM Plugin API
 
@@ -114,20 +120,21 @@ class IGM:                      # subclass in igms/<name>/igm.py
     # hook methods (all optional except enter):
     async def enter(self, ctx): ...          # player enters from Other Places
     async def daily_maint(self, ctx): ...    # once per game day
-    def forest_event(self) -> Event | None   # weighted random forest event
-    def inn_event(self) -> Event | None      # weighted random inn event
+    def forest_event(self, rng) -> ForestEvent | None  # weighted forest event
+    def inn_event(self, rng) -> InnEvent | None        # extra Inn menu key
 ```
 
 `ctx` (IgmContext) exposes:
-- `ctx.player` — live Player record; mutations validated (floors/caps enforced,
-  e.g. gold ≥ 0, no level > 12) and saved on exit — the PLAYER.DAT contract.
+- `ctx.player` — live Player record; mutations validated (floors/caps enforced
+  per lord.js's own `check_fields()`; `level` is immutable, not clamped) and
+  saved on exit — the PLAYER.DAT contract.
 - `ctx.term` — screen I/O: write with LORD color codes, menus, prompts, pauses.
 - `ctx.store` — per-IGM KV storage (igm_data).
 - `ctx.mail(player_name_or_id, text=None, effect=None)` — mail + async effects
   on other players (the backtick-code replacement).
 - `ctx.news(text)` — append to daily news.
-- `ctx.players` — read-only roster queries (for casinos/graveyards that
-  reference other warriors).
+- `ctx.other_players()` — read-only roster summaries (for casinos/graveyards
+  that reference other warriors).
 
 Discovery: `igm_loader` scans `igms/*/igm.py`, imports, validates class,
 registers if enabled in `config.toml` `[igms]` (unknown IGMs default disabled;
@@ -146,9 +153,10 @@ the server down.
 
 ## Error Handling
 
-- Session coroutine wrapped: disconnect mid-anything → player state saved at
-  last transaction boundary; combat in progress resolves as flee-with-penalty
-  (matches original carrier-drop handling).
+- Session coroutine wrapped: disconnect mid-anything → the player is saved at the
+  last transaction boundary by the connection handler's `finally`. A drop mid-combat
+  keeps whatever the fight had already done (spent fight, current HP); there is no
+  flee-with-penalty resolution.
 - IGM exceptions: caught at hook boundary, logged, player returned to Forest
   with a flavor message; IGM data rolled back for that visit.
 - DB: every player mutation in a transaction; WAL + busy timeout.

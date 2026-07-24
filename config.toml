@@ -7,6 +7,10 @@ forest_fights_per_day = 15
 player_fights_per_day = 3
 flirts_per_day = 1
 clean_mode = false
+# Dragon kills that finish the realm (reference/lord.js:1852). 0 = never.
+win_deeds = 3
+# Require the strength/defense to carry what you buy (reference/lord.js:1866).
+shop_limit = true
 
 [igms]
 # populated by bundled IGMs; true = enabled

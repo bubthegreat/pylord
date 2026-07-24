@@ -1,13 +1,15 @@
 # IGMs -- In-Game Modules (pylord plugins)
 
 An **IGM** is a drop-in mini-game or feature that a player reaches from the
-Forest's **(O)ther places** menu. This is pylord's replacement for the
+Town Square's **(O)ther places** menu. This is pylord's replacement for the
 original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-This directory is intentionally empty except for this README -- the bundled
-"starter six" IGMs land in later tasks. Drop your own in here to add one.
+Six bundled IGMs ship here as working examples -- `baraks_house`,
+`sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`
+and `lord_casino` -- from a few screens each to a full mini-game. Drop your
+own alongside them to add one.
 
 ## Writing an IGM
 
@@ -73,12 +75,16 @@ You never touch the raw game context. `ctx` gives you a safe subset:
 
 Writes through `ctx.player` are validated so a bug can't corrupt a character:
 
-- `gold`, `gems` -> floored at `0`
+- `gold`, `bank` -> floored at `0`, capped at `2,000,000,000`
 - `exp` -> floored at `0`, capped at `2,000,000,000`
 - `hp` -> clamped to `[0, hp_max]` (raise `hp_max` first if you want a bigger pool)
-- `hp_max`, `strength`, `defense`, `charm` -> floored at `1`
+- `hp_max`, `strength`, `defense`, `charm`, `gems`, `lays`, `kids`,
+  `forest_fights`, `player_fights` -> floored at `0`, capped at `32,000`
 - `level` -> **forbidden** (raises `IgmViolation`; grant `exp` instead)
 - `id`, `name`, `password_hash` -> **forbidden** (identity is immutable)
+
+These are lord.js's own bounds, ported from its `check_fields()`
+normaliser (`reference/lord.js:16603-16679`).
 
 Any other field passes through unvalidated -- IGMs are semi-trusted.
 
@@ -103,11 +109,18 @@ everything at once.
     def forest_event(self, rng):
         # Return a pylord.hooks.ForestEvent(weight, run) to inject a random
         # forest encounter, or None. `run` is an async (IgmContext) -> None.
+        # `weight` buys that many slots alongside the base game's own 15
+        # forest events.
+        return None
+
+    def inn_event(self, rng):
+        # Return a pylord.hooks.InnEvent(label, run) to add a numbered key
+        # to the Inn's menu, or None.
         return None
 ```
 
-(An `inn_event` hook mirroring `forest_event` arrives with the Inn in a later
-task.)
+Both event hooks run behind the same sandbox as `enter()`: one transaction,
+and the player restored in place if your code raises.
 
 ## Testing your IGM
 

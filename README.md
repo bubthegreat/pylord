@@ -50,8 +50,10 @@ port = 2323
 [game]
 forest_fights_per_day = 15
 player_fights_per_day = 3
-flirts_per_day = 1
-clean_mode = false
+flirts_per_day = 1        # reserved; the romantic-mail flow it gates isn't ported
+clean_mode = false        # hides the Inn's adult options
+win_deeds = 3             # dragon kills that end the realm (0 = never)
+shop_limit = true         # require the strength/defense to carry what you buy
 
 [igms]
 # true = enabled; omitted IGMs fall back to their own default
@@ -94,7 +96,7 @@ from pylord.hooks import IGM, IgmContext
 
 class CrystalCave(IGM):
     key = "crystal_cave"          # unique id; also the config.toml toggle name
-    name = "The Crystal Cave"     # shown in the forest's Other Places menu
+    name = "The Crystal Cave"     # shown in the Other Places menu
     author = "You"
     default_enabled = True
 
@@ -109,7 +111,7 @@ class CrystalCave(IGM):
 ```
 
 Enable it with `crystal_cave = true` under `[igms]` in `config.toml` and
-it appears under **(O)ther places** in the forest.
+it appears under **(O)ther places** on the Town Square.
 
 The `ctx` façade gives you:
 
@@ -124,9 +126,10 @@ The `ctx` façade gives you:
   async stat effects applied at the recipient's next login.
 - `ctx.other_players()` / `ctx.rng` — everyone else, and the session RNG.
 
-Optional overrides: `daily_maint()` (once per game day) and
-`forest_event()` (contribute a random forest encounter). A crashing IGM
-is contained — its visit rolls back and the player returns to the forest.
+Optional overrides: `daily_maint()` (once per game day), `forest_event()`
+(contribute a random forest encounter) and `inn_event()` (add a key to the
+Inn's menu). A crashing IGM is contained — its visit rolls back and the
+player returns to where they were.
 
 The six bundled IGMs in `igms/` are working examples, from small
 (`baraks_house`) to a full mini-game (`lord_casino`).
