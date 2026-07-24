@@ -116,8 +116,10 @@ spec:
             - --interface
             - "0.0.0.0"
             - --writable
-            - --title-format
-            - {{ .Values.web.title | quote }}
+            # ttyd 1.7 takes browser-side settings through --client-option
+            # (there is no --title-format).
+            - --client-option
+            - {{ printf "titleFixed=%s" .Values.web.title | quote }}
             {{- with .Values.web.credential }}
             - --credential
             - {{ . | quote }}
