@@ -4,7 +4,7 @@
 # here is hand-maintained.
 
 image:
-  tag: 4fbc75f
+  tag: 0fdd325
   pullPolicy: Always
 
 service:
