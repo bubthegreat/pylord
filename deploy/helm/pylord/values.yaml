@@ -26,6 +26,36 @@ service:
   loadBalancerIP: ""
   annotations: {}
 
+# Browser terminal (ttyd, a sidecar from the same image, wired to the game
+# over localhost). This is how the realm is reachable from outside the LAN:
+# an HTTP Ingress can't carry telnet, but it can carry this.
+web:
+  enabled: true
+  port: 7681
+  # ttyd's own title on the browser tab.
+  title: "Legend of the Red Dragon"
+  # Optional basic auth in front of the terminal, e.g. "sysop:hunter2".
+  # Empty means anyone who reaches the host can play, which is the point.
+  credential: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    # Defaults to <fullname>-tls when blank.
+    secretName: ""
+
 persistence:
   enabled: true
   # Retain, because this volume holds every character in the realm.

@@ -14,6 +14,16 @@ service:
   # keeps it for the life of the Service.
   loadBalancerIP: ""
 
+# Reachable from outside the LAN at https://lord.bubtaylor.com -- the
+# wildcard DNS already points there, and cert-manager issues the cert.
+# Telnet clients on the LAN still use the MetalLB address on 2323.
+web:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: lord.bubtaylor.com
+
 persistence:
   enabled: true
   storageClass: longhorn-retain

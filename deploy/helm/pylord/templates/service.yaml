@@ -20,3 +20,9 @@ spec:
       protocol: TCP
       port: {{ .Values.service.port }}
       targetPort: telnet
+    {{- if .Values.web.enabled }}
+    - name: http
+      protocol: TCP
+      port: {{ .Values.web.port }}
+      targetPort: web
+    {{- end }}

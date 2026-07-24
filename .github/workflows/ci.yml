@@ -108,6 +108,39 @@ jobs:
           sys.exit("no name prompt from the container within 30s")
           PY
 
+      - name: The browser terminal serves the game
+        run: |
+          set -e
+          # Same shape as the pod: the sidecar shares the game container's
+          # network namespace and reaches it over loopback.
+          web_args=$(uv run --with pyyaml python - <<'PY'
+          import pathlib, shlex, yaml
+          docs = [d for d in yaml.safe_load_all(pathlib.Path("/tmp/render.yaml").read_text()) if d]
+          dep = next(d for d in docs if d["kind"] == "Deployment")
+          web = next(c for c in dep["spec"]["template"]["spec"]["containers"] if c["name"] == "web")
+          assert web["command"] == ["ttyd"], web["command"]
+          print(shlex.join(str(a) for a in web["args"]))
+          PY
+          )
+          echo "chart web args: $web_args"
+          docker run -d --name pylord-web \
+            --network "container:pylord-ci" \
+            --entrypoint ttyd \
+            pylord:ci $web_args
+
+          for _ in $(seq 1 20); do
+            body=$(docker exec pylord-ci sh -c 'exec 3<>/dev/tcp/127.0.0.1/7681; printf "GET / HTTP/1.0\r\n\r\n" >&3; cat <&3' 2>/dev/null || true)
+            case "$body" in
+              *"200 OK"*) echo "terminal served:"; echo "$body" | head -3; exit 0 ;;
+            esac
+            sleep 2
+          done
+          echo "the browser terminal never answered"
+          docker logs pylord-web || true
+          exit 1
+
       - name: Container logs
         if: always()
-        run: docker logs pylord-ci || true
+        run: |
+          docker logs pylord-ci || true
+          docker logs pylord-web || true

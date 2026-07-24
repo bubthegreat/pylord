@@ -20,15 +20,37 @@ COPY pylord/ ./pylord/
 RUN uv sync --frozen --no-dev
 
 
+# ttyd serves the browser terminal (deployed as a sidecar from this same
+# image -- see deploy/helm/pylord). Pinned by version and checksum: this is
+# a binary from a GitHub release, so an unpinned fetch would let the build
+# change under us.
+FROM debian:bookworm-slim AS ttyd
+ARG TTYD_VERSION=1.7.7
+ARG TTYD_SHA256=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -fsSL -o /tmp/ttyd \
+      "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" \
+ && echo "${TTYD_SHA256}  /tmp/ttyd" | sha256sum -c - \
+ && chmod +x /tmp/ttyd \
+ && rm -rf /var/lib/apt/lists/*
+
+
 FROM python:3.12-slim-bookworm AS runtime
 
 # The game writes nothing outside /data; run as a non-root user that owns it.
+# telnet is the client ttyd drives; nothing in the game container uses it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends telnet \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 10001 pylord \
  && useradd --uid 10001 --gid pylord --create-home --shell /usr/sbin/nologin pylord \
  && mkdir -p /data && chown pylord:pylord /data
 
 WORKDIR /app
 
+COPY --from=ttyd /tmp/ttyd /usr/local/bin/ttyd
 COPY --from=builder --chown=pylord:pylord /app/.venv /app/.venv
 COPY --chown=pylord:pylord pylord/ ./pylord/
 # The bundled IGMs are seeded into the data volume at startup (the loader

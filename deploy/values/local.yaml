@@ -9,6 +9,11 @@ service:
   type: ClusterIP
   port: 2323
 
+# The browser terminal runs locally too (Tilt forwards it on 7681); no
+# Ingress, since there's no cert-manager or DNS on a local cluster.
+web:
+  enabled: true
+
 persistence:
   enabled: true
   # Whatever the local cluster's default class is.

@@ -100,6 +100,53 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+        {{- if .Values.web.enabled }}
+        # The browser terminal: ttyd runs a telnet client against the game
+        # over the pod's loopback, so the only thing exposed over HTTP is a
+        # session of the game itself.
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["ttyd"]
+          args:
+            - --port
+            - {{ .Values.web.port | quote }}
+            - --interface
+            - "0.0.0.0"
+            - --writable
+            - --title-format
+            - {{ .Values.web.title | quote }}
+            {{- with .Values.web.credential }}
+            - --credential
+            - {{ . | quote }}
+            {{- end }}
+            - telnet
+            - 127.0.0.1
+            - {{ .Values.service.port | quote }}
+          ports:
+            - name: web
+              containerPort: {{ .Values.web.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: web
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

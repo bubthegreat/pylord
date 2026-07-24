@@ -16,6 +16,19 @@ deploy/
 - **One chart, values per environment.** The previous convention in this
   homelab was kustomize overlays (see `kbk`); this is the Helm equivalent,
   and Argo renders it the same way.
+- **A browser terminal is how the realm is reachable from outside.** An
+  HTTP `Ingress` cannot carry telnet -- nginx Ingress objects route
+  HTTP(S) only -- and this cluster's only externally-reachable address is
+  the ingress-nginx LoadBalancer on 80/443. So the pod runs a `ttyd`
+  sidecar (from the same image) driving a telnet client against the game
+  over loopback, and the Ingress points at that: `https://lord.bubtaylor.com`,
+  TLS from `letsencrypt-prod`. Telnet clients still connect directly to
+  the MetalLB address on the LAN.
+
+  (Worth knowing: `kbk`'s `tcp-services` ConfigMap is inert -- the
+  controller has no `--tcp-services-configmap` argument and its Service
+  exposes only 80/443 -- so that pattern does not currently reach the
+  outside world either.)
 - **LoadBalancer, not the shared nginx TCP ConfigMap.** Telnet needs a raw
   TCP port. `kbk` routes it through `ingress-nginx`'s `tcp-services`
   ConfigMap, which means editing a cluster-wide object owned by another
@@ -55,13 +68,16 @@ deploy/
    kubectl -n argocd get application pylord-prod -w
    ```
 
-3. **Find the address and play**:
+3. **Play**:
 
-   ```sh
-   kubectl -n pylord-prod get svc pylord \
-     -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-   telnet <that address> 2323
-   ```
+   - From anywhere: <https://lord.bubtaylor.com>
+   - From the LAN, with a real telnet client:
+
+     ```sh
+     kubectl -n pylord-prod get svc pylord \
+       -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+     telnet <that address> 2323
+     ```
 
 ## Day-to-day
 

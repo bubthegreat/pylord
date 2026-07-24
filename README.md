@@ -158,6 +158,10 @@ Characters live on a retained volume at `/data`, config comes from a
 ConfigMap, and CI builds `bubthegreat/pylord` and points production at the
 new tag — ArgoCD does the rest.
 
+The pod also runs a `ttyd` sidecar so the realm is playable in a browser
+over HTTPS (an HTTP Ingress can't carry telnet); telnet clients connect
+straight to the service's own address on 2323.
+
 ## Development
 
 ```sh

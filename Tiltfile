@@ -35,7 +35,9 @@ k8s_yaml(
 
 k8s_resource(
     workload='pylord',
-    port_forwards='2323:2323',
+    # 2323 for a telnet client, 7681 for the browser terminal the homelab
+    # serves over HTTPS.
+    port_forwards=['2323:2323', '7681:7681'],
     labels=['game'],
 )
 
