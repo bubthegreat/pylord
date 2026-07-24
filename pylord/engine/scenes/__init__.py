@@ -7,8 +7,14 @@ before calling ``run_session``.
 
 from pylord.engine.scenes import (
     bank,
+    conjugality,
     forest,
+    hall,
     healer,
+    inn,
+    list_warriors,
+    mail,
+    news,
     other_places,
     shops,
     stats,
@@ -18,8 +24,14 @@ from pylord.engine.scenes import (
 
 __all__ = [
     "bank",
+    "conjugality",
     "forest",
+    "hall",
     "healer",
+    "inn",
+    "list_warriors",
+    "mail",
+    "news",
     "other_places",
     "shops",
     "stats",

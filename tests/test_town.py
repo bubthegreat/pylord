@@ -51,7 +51,28 @@ async def test_stub_scene_shows_under_construction_and_returns_to_town():
 
 async def test_every_stub_destination_reachable():
     # K/A/H/T/Y are real scenes now (Task 11: shops, healer, bank, training).
-    stub_keys = ["s", "i", "l", "w", "d", "c", "o", "x"]
+    # I/L/W/D/C are real scenes now too (Task 13a: inn, list, mail, news,
+    # conjugality) -- see test_every_task_13a_destination_reachable below.
+    stub_keys = ["s", "o", "x"]
     for key in stub_keys:
         io, _player = await play([key, "q"])
         assert "Under construction" in screen(io)
+
+
+async def test_every_task_13a_destination_reachable():
+    """I/L/W/D/C route to real scenes (not KeyError'ing on an unregistered
+    name) and eventually land back at the Town Square."""
+    io, _player = await play(["i", "q"])
+    assert "Red Dragon Inn" in screen(io)
+
+    io, _player = await play(["l", "r"])
+    assert "Player Rankings" in screen(io)
+
+    io, _player = await play(["w", "nobody-matches", "x"])
+    assert "No matching names found" in screen(io)
+
+    io, _player = await play(["d", "c"])
+    assert "Daily Happenings" in screen(io)
+
+    io, _player = await play(["c", "x"])
+    assert "CONJUGALITY LIST" in screen(io)
