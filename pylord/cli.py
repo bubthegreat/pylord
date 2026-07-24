@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -35,7 +36,18 @@ def load_config(config_path: Path) -> dict[str, Any]:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
+    import logging
+
     from pylord.server import start
+
+    # Without this, every logger.* call in the engine -- a crashing IGM, a
+    # database error during session cleanup, stale login flags cleared at
+    # startup -- is discarded, which leaves `kubectl logs` showing nothing
+    # but the banner. PYLORD_LOG_LEVEL tunes it.
+    logging.basicConfig(
+        level=os.environ.get("PYLORD_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+    )
 
     config_path = Path(args.config)
     if not config_path.exists():

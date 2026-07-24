@@ -206,3 +206,23 @@ def test_delete_refuses_while_the_player_is_online(tmp_path, capsys):
     config, _db_path = _config_with_player(tmp_path, online=1)
     assert main(["delete", "Doomed", "--config", str(config), "--yes"]) == 1
     assert "online right now" in capsys.readouterr().err
+
+
+def test_serve_configures_logging(tmp_path, monkeypatch):
+    """Engine logs (crashing IGMs, DB errors) are invisible without this."""
+    import logging
+
+    config, _db_path = _config_with_player(tmp_path)
+    logging.getLogger().handlers.clear()
+
+    started = {}
+
+    async def _fake_start(config):
+        started["config"] = config
+        raise KeyboardInterrupt  # unwind before the server really runs
+
+    monkeypatch.setattr("pylord.server.start", _fake_start)
+    main(["serve", "--config", str(config)])
+
+    assert logging.getLogger().handlers, "no logging handler was installed"
+    assert logging.getLogger().level == logging.INFO
