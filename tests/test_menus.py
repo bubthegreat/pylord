@@ -96,3 +96,16 @@ async def test_enter_in_a_battle_takes_the_default_attack():
 
     text = screen(io)
     assert "You hit" in text or "You miss" in text, text[-400:]
+
+
+async def test_enter_in_the_forest_hunts_rather_than_leaving():
+    """The owner's call: holding Enter should keep the fights coming.
+    lord.js leaves the forest on Enter (:15274-15277)."""
+    io, player = await play(
+        ["f", "\r", "x", "x", "x", "r", "q", "y"],
+        overrides={"forest_fights": 5, "hp": 3000, "hp_max": 3000},
+    )
+    text = screen(io)
+    assert "[L]" in text  # the default is advertised
+    # Something happened in the forest: a fight, or one of its events.
+    assert player.forest_fights < 5 or "Event In The Forest" in text or "NOTICED" in text

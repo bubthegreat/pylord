@@ -379,3 +379,97 @@ async def test_jennie_ugly_answer_ends_the_session():
     assert result is None
     assert ctx.player.hp == 1
     assert ctx.player.alive == 0
+
+
+# --- Newly ported forest events (reference/lord.js cases 1, 7, 8, 13) ------
+
+
+async def test_hag_heals_for_a_gem():
+    """reference/lord.js:14524-14570."""
+    ctx = _ctx(overrides={"gems": 2, "hp": 5, "hp_max": 40}, keys=["y", "x"])
+    await forest_mod._event_hag(ctx)
+    assert ctx.player.gems == 1
+    assert ctx.player.hp == 40
+    assert "YOU FEEL BETTER" in screen(ctx.io)
+
+
+async def test_hag_raises_max_hp_when_you_are_already_whole():
+    ctx = _ctx(overrides={"gems": 1, "hp": 40, "hp_max": 40}, keys=["y", "x"])
+    await forest_mod._event_hag(ctx)
+    assert ctx.player.hp_max == 41
+
+
+async def test_hag_punishes_a_promise_you_cannot_keep():
+    ctx = _ctx(overrides={"gems": 0, "hp": 40, "hp_max": 40}, keys=["y", "x"])
+    await forest_mod._event_hag(ctx)
+    assert ctx.player.hp == 1
+    assert "no gems, fool" in screen(ctx.io)
+
+
+async def test_pretty_stick_grants_charm():
+    """reference/lord.js:14638-14661 -- random(2)+1 charm, on random(3)==1."""
+    ctx = _ctx(overrides={"charm": 5}, rng=_SeqRNG([1, 1]), keys=["x"])
+    await forest_mod._event_stick(ctx)
+    assert ctx.player.charm == 7  # 5 + (1 + 1)
+    assert "YOU GET 2 CHARM" in screen(ctx.io)
+
+
+async def test_ugly_stick_costs_charm_but_never_below_zero():
+    ctx = _ctx(overrides={"charm": 1}, rng=_SeqRNG([1, 0]), keys=["x"])
+    await forest_mod._event_stick(ctx)
+    assert ctx.player.charm == 0
+    assert "LOSE 2 CHARM" in screen(ctx.io)
+
+
+async def test_horse_trader_sells_you_a_horse():
+    """reference/lord.js:14682-14738 -- level * 10000."""
+    ctx = _ctx(overrides={"level": 2, "gold": 50_000}, keys=["b", "y", "x"])
+    await forest_mod._event_horse_trader(ctx)
+    assert ctx.player.horse == 1
+    assert ctx.player.gold == 30_000
+
+
+async def test_horse_trader_buys_it_back_for_half():
+    """reference/lord.js:14747 -- level * 5000."""
+    ctx = _ctx(overrides={"level": 2, "horse": 1, "gold": 0}, keys=["s", "y", "x"])
+    await forest_mod._event_horse_trader(ctx)
+    assert ctx.player.horse == 0
+    assert ctx.player.gold == 10_000
+
+
+async def test_troll_wounds_a_warrior():
+    """reference/lord.js:14975-14996."""
+    ctx = _ctx(
+        overrides={"class_type": 1, "hp": 50, "hp_max": 50},
+        rng=_SeqRNG([4]),
+        keys=["x"],
+    )
+    await forest_mod._event_troll(ctx)
+    assert ctx.player.hp == 45
+    assert ctx.player.alive == 1
+
+
+async def test_troll_never_touches_a_thief():
+    ctx = _ctx(overrides={"class_type": 3, "hp": 50, "hp_max": 50}, keys=["x"])
+    await forest_mod._event_troll(ctx)
+    assert ctx.player.hp == 50
+    assert "thieving instincts" in screen(ctx.io)
+
+
+async def test_troll_can_kill_and_takes_everything():
+    ctx = _ctx(
+        overrides={"class_type": 1, "hp": 3, "hp_max": 50, "gold": 900, "gems": 4},
+        rng=_SeqRNG([9]),
+        keys=["x"],
+    )
+    await forest_mod._event_troll(ctx)
+    p = ctx.player
+    assert (p.hp, p.gold, p.gems, p.alive) == (0, 0, 0, 0)
+    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    assert row is not None and "troll" in row["text"]
+
+
+def test_most_event_slots_now_do_something():
+    """The table used to fill 5 of 15 slots, so two thirds of the events
+    that fired were silent and players reported "no random encounters"."""
+    assert len(forest_mod._EVENT_TABLE) >= 9

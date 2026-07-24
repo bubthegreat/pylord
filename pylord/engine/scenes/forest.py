@@ -114,6 +114,14 @@ if TYPE_CHECKING:
 _GOLD_CAP = 2_000_000_000
 _EXP_CAP = 2_000_000_000
 
+# The two banners lord.js puts above forest events (`:14486` and the
+# "MEGA EVENT" variant at `:14652`/`:14985`).
+_EVENT_HEADER = "\n\n`%Event In The Forest`0\n\n"
+_MEGA_HEADER = (
+    "\n\n  `%MEGA EVENT IN THE FOREST\n"
+    "`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n\n"
+)
+
 _MENU_LINES = (
     "",
     "`5  The Forest",
@@ -123,7 +131,11 @@ _MENU_LINES = (
     "",
 )
 _MENU = "\n".join(_MENU_LINES)
-_PROMPT = "`2Your choice`0? `2"
+# The default is advertised in the prompt, which is also where menu() reads
+# it from. lord.js leaves the forest on Enter (:15274-15277); here Enter
+# hunts instead, so a player can keep pressing it to burn through the day's
+# fights -- see docs/deviations.md.
+_PROMPT = "`2Your choice`0? `2[`0L`2] : "
 
 # lord.js's forest switch (reference/lord.js:15258-15420). "Other Places"
 # is *not* here -- it is a Town Square key (:17003), which is where this
@@ -205,8 +217,9 @@ async def forest(ctx: GameCtx) -> str | None:
         await ctx.io.write(
             _status_line(ctx.player, fights.max_forest_fights(ctx.player, ctx.config))
         )
-        # reference/lord.js:15274-15277 -- 'R', 'Q' and Enter all leave.
-        choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT, default="R")
+        # 'R' and 'Q' leave (reference/lord.js:15274-15277); Enter takes
+        # the advertised [L] instead of lord.js's "leave".
+        choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT, default="L")
         if choice in ("R", "Q"):
             return "town"
         if choice == "V":
@@ -590,12 +603,192 @@ async def _event_fairy(ctx: GameCtx) -> None:
     await ctx.io.pause()
 
 
+
+
+async def _event_hag(ctx: GameCtx) -> None:
+    """Case 1: the old hag heals you -- for a gem.
+    reference/lord.js:14524-14570."""
+    p = ctx.player
+    await ctx.io.write(_EVENT_HEADER)
+    if p.hp == p.hp_max:
+        await ctx.io.write(
+            "  `2You come across an ugly old hag.  `5\"Give me a gem!  You won't be sorry\n"
+            '  my pet!"`2 she screeches.\n\n'
+        )
+    else:
+        await ctx.io.write(
+            "  `2You come across an ugly old hag.  `5\"Give me a gem and I will completely\n"
+            '  heal you warrior!"`2 she screeches.\n\n'
+        )
+    if await ctx.io.menu(
+        {"Y": "yes", "N": "no"}, "  Give her the gem? [`0N`2] : "
+    ) == "N":
+        await ctx.io.write(
+            '\n  `5"Hurumph!" `2 the old woman grunts sourly as you leave.\n'
+        )
+        await ctx.io.pause()
+        return
+
+    if p.gems < 1:  # reference/lord.js:14546-14550
+        await ctx.io.write(
+            '\n  `5"You have no gems, fool!"`2  the old woman screams at you.  She then\n'
+            "   hits you in a sensitive spot with her cane, and you feel VERY weak.\n"
+        )
+        p.hp = 1
+    else:
+        p.gems -= 1
+        await ctx.io.write(
+            "\n  You give her a gem.  She waves her wand strangely.\n"
+            "  `%YOU FEEL BETTER`2\n"
+        )
+        if p.hp < p.hp_max:  # reference/lord.js:14556-14561
+            p.hp = p.hp_max
+        else:
+            p.hp_max += 1
+    await ctx.io.pause()
+
+
+async def _event_stick(ctx: GameCtx) -> None:
+    """Case 7: an old man and a stick, pretty or ugly.
+    reference/lord.js:14638-14681 (the randomised `new_ugly_stick`
+    variant, which is lord.js's own default)."""
+    p = ctx.player
+    amount = ctx.rng.randrange(2) + 1  # lord.js:14645
+    await ctx.io.write(_MEGA_HEADER)
+    if ctx.rng.randrange(3) == 1:  # lord.js:14646
+        p.charm += amount
+        await ctx.io.write(
+            "  `2You are whacked with a pretty stick by an old man!\n"
+            "  He giggles and runs away!\n\n"
+            f"  `%YOU GET {amount} CHARM!`2\n"
+        )
+    else:
+        p.charm = max(0, p.charm - amount)
+        await ctx.io.write(
+            "  `2You are wacked with an `4ugly`2 stick by an old man!\n"
+            "  He giggles and runs away!\n\n"
+            f"  `4YOU LOSE {amount} CHARM!`2\n"
+        )
+    await ctx.io.pause()
+
+
+async def _event_horse_trader(ctx: GameCtx) -> None:
+    """Case 8: the hairyfoot's horse market.
+    reference/lord.js:14682-14778. A horse adds a quarter to tomorrow's
+    forest fights (``pylord/engine/daily.py``)."""
+    p = ctx.player
+    buy_price = p.level * 10000  # lord.js:14685
+    sell_price = p.level * 5000  # lord.js:14747
+    await ctx.io.write(_EVENT_HEADER)
+    await ctx.io.write(
+        "  `2Walking through the forest, you stumble across a clearing in the woods.\n"
+        "  Looking around, you see a small man and a lot of horses. The man walks up\n"
+        '  to you and asks you, "`0What can I do for you, mmhmm?`2"\n\n'
+        "  `2(`0B`2)uy a horse\n  `2(`0S`2)ell your horse\n"
+        "  `2(`0G`2)o back to the forest\n\n"
+    )
+    choice = await ctx.io.menu(
+        {"B": "buy", "S": "sell", "G": "go"}, "  `0Your command `2[`0G`2] : "
+    )
+    if choice == "B":
+        if p.horse:  # lord.js:14717-14719
+            await ctx.io.write(
+                '\n  `2"`0Now, now. You already have a horse and I cannot sell you another.`2"\n'
+            )
+        elif p.gold < buy_price:  # lord.js:14724
+            await ctx.io.write(
+                '\n  `2Chuckling, the hairyfoot says to you "`0I am sorry, mmhmm, but I cannot\n'
+                '  make a deal with someone that does not have enough money.`2"\n'
+            )
+        else:
+            await ctx.io.write(
+                f'\n  `2"`0A fine horse for`% {buy_price}`0 gold?`2" \n'
+            )
+            if await ctx.io.menu(
+                {"Y": "yes", "N": "no"}, "  `2Buy it? [`0Y`2] : `%"
+            ) == "Y":
+                p.gold -= buy_price
+                p.horse = 1
+                await ctx.io.write(
+                    '\n  `2"`0Ride her well, mmhmm."`2  She is yours.\n'
+                )
+    elif choice == "S":
+        if not p.horse:  # lord.js:14739-14742
+            await ctx.io.write(
+                '\n  `2The happy look on the gnome\'s face goes sour. "`0I am sorry, mmhmm,\n'
+                '  but I cannot make a deal with someone that does not have a horse.`2"\n'
+            )
+        else:
+            await ctx.io.write(
+                f'\n  `2"`0Sell your horse for`% {sell_price}`0?`2" \n'
+            )
+            if await ctx.io.menu(
+                {"Y": "yes", "N": "no"}, "  `2Sell? [`0Y`2] : `%"
+            ) == "Y":
+                p.gold = _cap(p.gold + sell_price, _GOLD_CAP)
+                p.horse = 0
+                await ctx.io.write(
+                    f'\n  `2"`0Thank you, kind person. Here is the `%{sell_price}`0 gold '
+                    'I promised.`2"\n'
+                )
+    else:
+        await ctx.io.write(
+            '\n  `0"Good day, kind person. May the Beast not play a deadly part in\n'
+            '  your future, mmhmm."`2\n'
+        )
+    await ctx.io.pause()
+
+
+async def _event_troll(ctx: GameCtx) -> None:
+    """Case 13: the purse-snatching troll, who can kill you outright.
+    reference/lord.js:14975-15025. Thieves take no damage at all."""
+    p = ctx.player
+    damage = 0 if p.class_type == 3 else ctx.rng.randrange(10) + 1  # lord.js:14977-14982
+    await ctx.io.write(_MEGA_HEADER)
+    await ctx.io.write(
+        "  `2An ugly troll jumps out from behind and tries to steal\n"
+        "  your coin purse!\n\n"
+    )
+    p.hp -= damage  # lord.js:14990
+    if p.hp > 0:
+        if p.class_type == 3:  # lord.js:14992-14996
+            await ctx.io.write(
+                "  Your thieving instincts save you -- you catch his wrist before\n"
+                "  he catches your purse, and he flees empty-handed.\n"
+            )
+        else:
+            await ctx.io.write(
+                f"  You fend him off, but you lose `%{damage}`2 hitpoints!\n"
+            )
+        await ctx.io.pause()
+        return
+
+    # lord.js:15005-15018 -- purse, gems and life.
+    p.hp = 0
+    p.gold = 0
+    p.gems = 0
+    p.alive = 0
+    await ctx.io.write(
+        "  You valiantly try to fend off the little troll, but at the\n"
+        "  last he is stronger than you.\n\n"
+        "  `2The troll made off with you coin purse and gem sack!\n\n"
+        "  `4You have been killed by the troll!`2\n"
+    )
+    ctx.news(f"`0{p.name} `2was killed by a troll in the forest!")
+    ctx.save()
+    await ctx.io.pause()
+
+
 _EVENT_TABLE = {
     0: _event_old_man,
+    1: _event_hag,
     2: _event_find_gold,
     3: _event_merry_men,
     4: _event_find_gem,
+    7: _event_stick,
+    8: _event_horse_trader,
     9: _event_fairy,
+    13: _event_troll,
 }
 
 
