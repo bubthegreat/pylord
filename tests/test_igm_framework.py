@@ -113,7 +113,11 @@ def test_registry_forest_events_collection():
     reg = igm_loader.IgmRegistry([EventIGM()])
     events = reg.forest_events(random.Random(0))
     assert len(events) == 1
-    assert events[0].weight == 3
+    # Each entry is (owning IGM, event) -- the forest needs the owner to
+    # build that plugin's guardrailed context.
+    igm, event = events[0]
+    assert igm.key == "ev"
+    assert event.weight == 3
 
 
 def test_daily_maint_exception_contained(caplog):
@@ -645,3 +649,74 @@ async def test_maint_repo_save_does_not_commit_the_registrys_transaction():
     registry.run_daily_maint(conn, {})
 
     assert repo.get(player.id).gold == 500  # rolled back, not committed
+
+
+# --- The two event hooks are actually consumed ----------------------------
+
+
+async def test_igm_forest_event_can_fire_in_the_forest():
+    """The hook used to be collected and never consulted: forest.py rolled
+    only its own table, while README/igms/README advertised the hook."""
+    from pylord import igm_loader
+    from pylord.engine.scenes import forest as forest_mod
+
+    fired = []
+
+    async def _run(ctx):
+        fired.append(ctx.player.name)
+        await ctx.term.write("\n  A plugin event fires!\n")
+
+    class EventIGM(IGM):
+        key = "ev"
+        name = "Eventful"
+
+        async def enter(self, ctx):  # pragma: no cover -- unused here
+            pass
+
+        def forest_event(self, rng):
+            return ForestEvent(weight=100, run=_run)
+
+    conn, repo = _db()
+    p = repo.create("Hero", "pw", "M")
+    ctx = _ctx(conn, repo, p, keys=[" "])
+    ctx.igms = igm_loader.IgmRegistry([EventIGM()])
+    # weight 100 against 15 base slots: pick a roll inside the plugin range.
+    ctx.rng = random.Random(3)
+    for _ in range(20):
+        await forest_mod._forest_event(ctx)
+        if fired:
+            break
+    assert fired == ["Hero"]
+
+
+async def test_igm_inn_event_appears_on_the_inn_menu():
+    from pylord import igm_loader
+    from pylord.engine.scenes import inn as inn_mod
+    from pylord.hooks import InnEvent
+
+    visited = []
+
+    async def _run(ctx):
+        visited.append(True)
+        await ctx.term.write("\n  You slip into the back room.\n")
+
+    class InnIGM(IGM):
+        key = "backroom"
+        name = "Back Room"
+
+        async def enter(self, ctx):  # pragma: no cover -- unused here
+            pass
+
+        def inn_event(self, rng):
+            return InnEvent(label="Slip into the back room", run=_run)
+
+    conn, repo = _db()
+    p = repo.create("Hero", "pw", "M")
+    ctx = _ctx(conn, repo, p, keys=["1", "R"])
+    ctx.igms = igm_loader.IgmRegistry([InnIGM()])
+
+    await inn_mod.inn(ctx)
+
+    text = "".join(ctx.io.output)
+    assert "Slip into the back room" in text
+    assert visited == [True]

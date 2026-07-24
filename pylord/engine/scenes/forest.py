@@ -106,7 +106,7 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
-from pylord.engine.scenes import _battle, jennie
+from pylord.engine.scenes import _battle, jennie, other_places
 
 if TYPE_CHECKING:
     from pylord.engine.data import Monster
@@ -588,7 +588,33 @@ _EVENT_TABLE = {
 
 
 async def _forest_event(ctx: GameCtx) -> None:
+    """Roll one forest event.
+
+    lord.js picks uniformly over its own 15 (16 mounted) cases
+    (reference/lord.js:14482). Enabled IGMs may contribute events too --
+    ``IGM.forest_event(rng)`` returns a weighted ``ForestEvent``
+    (``pylord/hooks.py``) -- so a plugin's ``weight`` buys it that many
+    extra slots alongside the base table. With no plugins contributing,
+    the distribution is exactly lord.js's.
+    """
     slots = 16 if ctx.player.horse else 15  # reference/lord.js:14482
-    roll = ctx.rng.randrange(slots)
-    handler = _EVENT_TABLE.get(roll, _event_nothing)
-    await handler(ctx)
+    igm_events = (
+        ctx.igms.forest_events(ctx.rng) if ctx.igms is not None else []
+    )
+    igm_weight = sum(max(0, event.weight) for _igm, event in igm_events)
+
+    roll = ctx.rng.randrange(slots + igm_weight)
+    if roll < slots:
+        await _EVENT_TABLE.get(roll, _event_nothing)(ctx)
+        return
+
+    # Land in whichever IGM event's weight range the roll fell into, then
+    # run it behind the same guardrails an "Other Places" visit uses.
+    offset = roll - slots
+    for igm, event in igm_events:
+        weight = max(0, event.weight)
+        if offset < weight:
+            await other_places.run_guarded(ctx, igm, event.run)
+            return
+        offset -= weight
+    await _event_nothing(ctx)

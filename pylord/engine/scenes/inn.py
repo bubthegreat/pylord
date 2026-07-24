@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING
 
 from pylord.engine import data, npc_state
 from pylord.engine.game import grant_exp, scene
+from pylord.engine.scenes import other_places
 from pylord.engine.scenes import pvp as pvp_mod
 
 if TYPE_CHECKING:
@@ -863,14 +864,24 @@ async def inn(ctx: GameCtx) -> str | None:
     ctx.player.at_inn = 0  # reference/lord.js:9920 -- walking in clears it.
     while True:
         await ctx.io.write(_MENU)
-        choice = await ctx.io.menu(
-            {
-                "F": "flirt", "H": "bard", "G": "room", "T": "bartender",
-                "W": "mail", "D": "news", "V": "stats",
-                "R": "town", "Q": "town",
-            },
-            "  `2Your choice`0? `2",
-        )
+        # Enabled IGMs may add their own numbered keys here
+        # (``IGM.inn_event``, pylord/hooks.py).
+        igm_events = ctx.igms.inn_events(ctx.rng) if ctx.igms is not None else []
+        igm_events = igm_events[:9]
+        options = {
+            "F": "flirt", "H": "bard", "G": "room", "T": "bartender",
+            "W": "mail", "D": "news", "V": "stats",
+            "R": "town", "Q": "town",
+        }
+        for index, (_igm, event) in enumerate(igm_events, start=1):
+            options[str(index)] = f"igm:{index}"
+            await ctx.io.write(f"  `2(`0{index}`2) {event.label}\n")
+
+        choice = await ctx.io.menu(options, "  `2Your choice`0? `2")
+        if choice.isdigit():
+            igm, event = igm_events[int(choice) - 1]
+            await other_places.run_guarded(ctx, igm, event.run)
+            continue
         if choice in ("R", "Q"):
             return "town"
         if choice in ("W", "D", "V"):

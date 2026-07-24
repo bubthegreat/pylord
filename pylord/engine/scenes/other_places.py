@@ -76,6 +76,15 @@ def _restore_in_place(player: Player, snapshot: Player) -> None:
 
 async def _visit(ctx: GameCtx, igm: IGM) -> None:
     """Run one IGM visit under the transactional sandbox (see module doc)."""
+    await run_guarded(ctx, igm, igm.enter)
+
+
+async def run_guarded(ctx: GameCtx, igm: IGM, run) -> None:
+    """Run ``run(igm_ctx)`` -- an ``IGM.enter`` or a hook callable such as
+    a ``ForestEvent``/``InnEvent``'s ``run`` -- inside the visit sandbox:
+    one transaction, a player snapshot restored in place on any failure,
+    and buffered news/store writes flushed only on a clean return.
+    """
     conn = ctx.conn
     # Close any implicit transaction from earlier this session so our
     # rollback can only affect this visit.
@@ -84,7 +93,7 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
     igm_ctx = IgmContext(ctx, igm)
 
     try:
-        await igm.enter(igm_ctx)
+        await run(igm_ctx)
     except (ConnectionClosed, OutOfKeys):
         conn.rollback()
         _restore_in_place(ctx.player, snapshot)
@@ -92,7 +101,7 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
     except Exception:
         conn.rollback()
         _restore_in_place(ctx.player, snapshot)
-        logger.exception("IGM %s crashed during enter()", igm.key)
+        logger.exception("IGM %s crashed during a hook", igm.key)
         await ctx.io.write(
             "\n  `%A strange force pushes you back to the forest...`0\n"
         )

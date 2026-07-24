@@ -23,9 +23,12 @@ Hook methods an IGM may override:
   maintenance (:mod:`pylord.engine.daily`).
 * ``forest_event(rng)`` -- optional. Returns a :class:`ForestEvent` (or
   ``None``) to inject into the forest's random-event table.
+* ``inn_event(rng)`` -- optional. Returns an :class:`InnEvent` (or
+  ``None``) to add a numbered key to the Inn's menu.
 
-TODO(Task 13): an ``inn_event(rng)`` hook (mirroring ``forest_event``) lands
-with the Inn scene; not part of this task's surface.
+Every hook runs behind the same sandbox as ``enter`` (one transaction, the
+player restored in place if it raises -- see
+``pylord/engine/scenes/other_places.py``'s ``run_guarded``).
 """
 
 from __future__ import annotations
@@ -49,6 +52,11 @@ if TYPE_CHECKING:
 # selection weight within the collected event pool; ``run`` is an
 # ``async (IgmContext) -> None`` coroutine invoked when the event fires.
 ForestEvent = namedtuple("ForestEvent", "weight run")
+
+# The Inn's counterpart, offered to the player as an extra key on the Inn
+# menu rather than rolled at random: ``label`` is the menu line, ``run`` an
+# ``async (IgmContext) -> None``.
+InnEvent = namedtuple("InnEvent", "label run")
 
 # A read-only view of another player handed to IGMs via
 # ``IgmContext.other_players()``.
@@ -93,7 +101,17 @@ class IGM:
         """Optional once-per-game-day hook. Default: no-op."""
 
     def forest_event(self, rng: random.Random) -> ForestEvent | None:
-        """Optional forest random-event contribution. Default: none."""
+        """Optional forest random-event contribution. Default: none.
+
+        The returned event's ``weight`` buys it that many slots alongside
+        lord.js's own 15 (16 mounted) forest-event cases -- see
+        ``pylord/engine/scenes/forest.py``'s ``_forest_event``.
+        """
+        return None
+
+    def inn_event(self, rng: random.Random) -> InnEvent | None:
+        """Optional Inn contribution: an extra numbered key on the Inn's
+        menu (``pylord/engine/scenes/inn.py``). Default: none."""
         return None
 
 

@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pylord.hooks import IGM, ForestEvent, IgmMaintContext
+from pylord.hooks import IGM, ForestEvent, IgmMaintContext, InnEvent
 
 if TYPE_CHECKING:
     import random
@@ -137,21 +137,32 @@ class IgmRegistry:
         """Enabled IGMs, sorted by display name (the 'Other Places' menu)."""
         return sorted(self.enabled, key=lambda igm: igm.name)
 
-    def forest_events(self, rng: random.Random) -> list[ForestEvent]:
-        """Collect every enabled IGM's forest event (``None`` filtered out).
+    def forest_events(
+        self, rng: random.Random
+    ) -> list[tuple[IGM, ForestEvent]]:
+        """Collect every enabled IGM's forest event (``None`` filtered out),
+        paired with the IGM that produced it -- the caller needs the owner
+        to build that plugin's guardrailed context.
 
         Each IGM's ``forest_event(rng)`` may consult ``rng`` to decide
         whether/what to contribute this session.
         """
-        events: list[ForestEvent] = []
+        return self._collect(rng, "forest_event")
+
+    def inn_events(self, rng: random.Random) -> list[tuple[IGM, InnEvent]]:
+        """Same, for the Inn (``IGM.inn_event``)."""
+        return self._collect(rng, "inn_event")
+
+    def _collect(self, rng: random.Random, hook: str) -> list[tuple[IGM, Any]]:
+        events: list[tuple[IGM, Any]] = []
         for igm in self.enabled:
             try:
-                event = igm.forest_event(rng)
+                event = getattr(igm, hook)(rng)
             except Exception:
-                logger.exception("IGM %s forest_event() failed", igm.key)
+                logger.exception("IGM %s %s() failed", igm.key, hook)
                 continue
             if event is not None:
-                events.append(event)
+                events.append((igm, event))
         return events
 
     def run_daily_maint(
