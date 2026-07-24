@@ -205,7 +205,8 @@ async def forest(ctx: GameCtx) -> str | None:
         await ctx.io.write(
             _status_line(ctx.player, fights.max_forest_fights(ctx.player, ctx.config))
         )
-        choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT)
+        # reference/lord.js:15274-15277 -- 'R', 'Q' and Enter all leave.
+        choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT, default="R")
         if choice in ("R", "Q"):
             return "town"
         if choice == "V":
@@ -327,7 +328,11 @@ async def _run_fight(ctx: GameCtx, monster: Monster) -> bool:
 
     while not fight.over:
         await _battle_prompt(ctx, fight, monster)
-        action = await ctx.io.menu(_battle_options(p), "")
+        action = await ctx.io.menu(
+            # _battle_prompt() already wrote the prompt (which
+            # advertises [A]), so name the default here.
+            _battle_options(p), "", default="A"
+        )
 
         if action == "A":
             last_round = fight.player_attack()

@@ -264,7 +264,11 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
 
     while not fight.over:
         await _battle_prompt(ctx, fight, target.name)
-        action = await ctx.io.menu(_battle_options(p), "")
+        action = await ctx.io.menu(
+            # _battle_prompt() already wrote the prompt (which
+            # advertises [A]), so name the default here.
+            _battle_options(p), "", default="A"
+        )
 
         if action == "A":
             last_round = fight.player_attack()
@@ -396,7 +400,8 @@ async def _maybe_steal_weapon(ctx: GameCtx, target: Player) -> bool:
         f"\n  `2Do you wish to trade your {my_weapon} `2for {pronoun}\n"
         f"  `%{their_weapon}`2? `0[N] : `%"
     )
-    choice = await ctx.io.menu({"Y": "yes", "N": "no"}, "")
+    # The [N] default is advertised in the question written just above.
+    choice = await ctx.io.menu({"Y": "yes", "N": "no"}, "", default="N")
     if choice != "Y":
         return False
 

@@ -235,7 +235,11 @@ async def _fight_dragon(ctx: GameCtx) -> bool:
 
     while not fight.over:
         await _battle_prompt(ctx, fight)
-        action = await ctx.io.menu(_battle_options(p), "")
+        action = await ctx.io.menu(
+            # _battle_prompt() already wrote the prompt (which
+            # advertises [A]), so name the default here.
+            _battle_options(p), "", default="A"
+        )
 
         if action == "A":
             round_ = fight.player_attack()

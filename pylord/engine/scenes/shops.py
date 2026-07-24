@@ -153,6 +153,11 @@ async def weapons(ctx: GameCtx) -> str:
             f"  `2Current weapon: `0{_weapon_name(p)}\n"
             f"  `2Gold: `0{p.gold}\n\n"
         )
+        await ctx.io.write(
+            "\n  `2(`0B`2)uy a weapon\n"
+            "  `2(`0S`2)ell your weapon\n"
+            "  `2(`0R`2)eturn to the square\n\n"
+        )
         choice = await ctx.io.menu(
             # Q also leaves, as it does in lord.js (:10281-10284).
             {"B": "buy", "S": "sell", "R": "town", "Q": "town"},
@@ -183,8 +188,9 @@ async def _buy_weapon(ctx: GameCtx) -> None:
         f"  `2Note: It takes `%{need} `2strength points to weild this weapon.\n"
         f"  `2You currently have `%{p.strength - old_power} `2strength points.\n\n"
     )
-    pressed = (await ctx.io.readkey()).upper()
-    ich = "Y" if pressed == "Y" else "N"
+    ich = await ctx.io.menu(
+        {"Y": "yes", "N": "no"}, "  `2Buy it?  [`0N`2] : `%"
+    )  # reference/lord.js:10173
     if ich == "N":
         await ctx.io.write(
             '\n  `2"`0Fine..You will come back...`2" the man grunts.\n\n'
@@ -241,8 +247,9 @@ async def _sell_weapon(ctx: GameCtx) -> None:
     await ctx.io.write(
         f'  `2"`0Hmmm I will buy your `%{oldw.name}`0 for `%{price}`0, Agreed?`2"\n\n'
     )
-    pressed = (await ctx.io.readkey()).upper()
-    ich = "Y" if pressed == "Y" else "N"
+    ich = await ctx.io.menu(
+        {"Y": "yes", "N": "no"}, "   Sell it?  [`0N`2] : `%"
+    )  # reference/lord.js:10079
     if ich != "Y":
         await ctx.io.write(
             "\n  `2\"`0You don't want to sell?!  Fine!  I don't want your stinken' weapon!`2\"\n\n"
@@ -282,6 +289,11 @@ async def armor(ctx: GameCtx) -> str:
             f"  `2Current armour: `0{_armor_name(p)}\n"
             f"  `2Gold: `0{p.gold}\n\n"
         )
+        await ctx.io.write(
+            "\n  `2(`0B`2)uy armour\n"
+            "  `2(`0S`2)ell your armour\n"
+            "  `2(`0R`2)eturn to the square\n\n"
+        )
         choice = await ctx.io.menu(
             # Q also leaves, as it does in lord.js (:10557-10560).
             {"B": "buy", "S": "sell", "R": "town", "Q": "town"},
@@ -313,8 +325,9 @@ async def _buy_armor(ctx: GameCtx) -> None:
         f"  Note: It takes `%{need}`2 defense points to wear this armor.\n"
         f"  `2You currently have `%{p.defense - old_power} `2defense points.\n\n"
     )
-    pressed = (await ctx.io.readkey()).upper()
-    ich = "Y" if pressed == "Y" else "N"
+    ich = await ctx.io.menu(
+        {"Y": "yes", "N": "no"}, "   `2Buy it?  [`0N`2] : `%"
+    )  # reference/lord.js:10395
 
     if ich == "N":
         await ctx.io.write('\n`2  "`0Ok!  No rush!`2" the girl smiles.\n')
@@ -366,8 +379,9 @@ async def _sell_armor(ctx: GameCtx) -> None:
         f'  `2"`0Hmmm I will buy your `%{olda.name} `0for `%{price}`0 gold.\n'
         '  Agreed, friend?`2"\n\n'
     )
-    pressed = (await ctx.io.readkey()).upper()
-    ich = "Y" if pressed == "Y" else "N"
+    ich = await ctx.io.menu(
+        {"Y": "yes", "N": "no"}, "  `2Sell it?  [`0N`2] : `%"
+    )  # reference/lord.js:10472
     if ich == "N":
         await ctx.io.write(
             '\n  `2"`0Thats ok.  Your armour probably has sentimental value to you.`2"\n'

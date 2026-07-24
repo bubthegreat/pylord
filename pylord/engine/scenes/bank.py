@@ -50,6 +50,13 @@ async def bank(ctx: GameCtx) -> str:
         await ctx.io.write(
             f"\n  `2Gold In Hand: `0{p.gold}\n  `2Gold In Bank: `0{p.bank}\n"
         )
+        # Reconstructed option lines -- lord.js's own bank screen comes
+        # from an external asset not present in this repo (see town.py).
+        await ctx.io.write(
+            "\n  `2(`0D`2)eposit gold\n"
+            "  `2(`0W`2)ithdraw gold\n"
+            "  `2(`0R`2)eturn to the square\n\n"
+        )
         choice = await ctx.io.menu(
             # Q also leaves (reference/lord.js:16098-16100).
             {"W": "withdraw", "D": "deposit", "R": "town", "Q": "town"},

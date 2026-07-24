@@ -106,6 +106,15 @@ async def training(ctx: GameCtx) -> str:
             await ctx.io.pause()
             return "town"
 
+        # Reconstructed option lines (lord.js draws Turgon's screen from an
+        # external asset, as with town.py's MAIN menu).
+        await ctx.io.write(
+            "\n  `2(`0Q`2)uestion your master\n"
+            "  `2(`0A`2)ttack your master\n"
+            "  `2(`0E`2)ndurance training\n"
+            "  `2(`0V`2)iew the rankings\n"
+            "  `2(`0R`2)eturn to the square\n\n"
+        )
         choice = await ctx.io.menu(
             # `V` is lord.js's own "View the rankings" key
             # (reference/lord.js:15870-15881), which shows rank_king()'s
@@ -317,7 +326,11 @@ async def _run_master_fight(ctx: GameCtx, trainer: Master):
 
     while not fight.over:
         await _battle_prompt(ctx, fight, trainer)
-        action = await ctx.io.menu(_battle_options(p), "")
+        action = await ctx.io.menu(
+            # _battle_prompt() already wrote the prompt (which
+            # advertises [A]), so name the default here.
+            _battle_options(p), "", default="A"
+        )
 
         if action == "H":
             last_round = await _battle.fairy_lore_heal(ctx, fight)

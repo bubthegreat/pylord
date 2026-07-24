@@ -246,3 +246,57 @@ async def test_menu_still_reprompts_on_genuinely_wrong_key():
     result = await io.menu({"F": "Forest"}, "Where to?")
     assert result == "F"
     assert io.output.count("Where to?") == 2
+
+
+# --- Enter takes the prompt's advertised default ---------------------------
+
+
+async def test_enter_selects_the_bracketed_default():
+    """reference/lord.js writes the default into the prompt and maps
+    anything else onto it (e.g. `if (ch !== 'N') ch = 'Y'` behind [Y])."""
+    io = FakeIO(["\r"])
+    choice = await io.menu({"Y": "yes", "N": "no"}, "  Quit game?  [Y] : ")
+    assert choice == "Y"
+
+
+async def test_enter_reads_the_default_through_colour_codes():
+    io = FakeIO(["\r"])
+    choice = await io.menu({"A": "attack", "R": "run"}, "  Your command? [`5A`2] : ")
+    assert choice == "A"
+
+
+async def test_enter_can_be_named_explicitly():
+    io = FakeIO(["\r"])
+    choice = await io.menu({"L": "look", "R": "town"}, "Your choice? ", default="R")
+    assert choice == "R"
+
+
+async def test_enter_is_ignored_when_no_default_is_offered():
+    """Without a default, Enter must not pick something at random -- it is
+    swallowed and the prompt is left alone."""
+    io = FakeIO(["\r", "L"])
+    choice = await io.menu({"L": "look", "R": "town"}, "Your choice? ")
+    assert choice == "L"
+
+
+async def test_line_mode_clients_still_have_their_stray_cr_swallowed():
+    """A line-mode client sends "t\\r\\n": the "t" answers one prompt and the
+    CR arrives at the next, where it must not fire that prompt's default."""
+
+    class _LineModeIO(FakeIO):
+        char_mode = False
+
+    io = _LineModeIO(["\r", "N"])
+    choice = await io.menu({"Y": "yes", "N": "no"}, "  Quit game?  [Y] : ")
+    assert choice == "N"
+
+
+def test_telnet_io_reports_character_mode_from_negotiation():
+    class _Writer:
+        mode = "kludge"
+
+    class _LineWriter:
+        mode = "local"
+
+    assert TelnetIO(None, _Writer()).char_mode is True
+    assert TelnetIO(None, _LineWriter()).char_mode is False

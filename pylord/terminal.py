@@ -70,6 +70,7 @@ requirement):
 
 from __future__ import annotations
 
+import re
 from abc import ABC
 
 CLEAR_SEQ = "\x1b[2J\x1b[H"
@@ -229,6 +230,16 @@ def strip(text: str) -> str:
     return "".join(literal for _kind, _ansi, literal in _tokens(text))
 
 
+_DEFAULT_RE = re.compile(r"\[([A-Za-z0-9])\]")
+
+
+def _default_from_prompt(prompt: str) -> str | None:
+    """The key a prompt advertises as its default: the last ``[X]`` in it,
+    read after colour codes are stripped (screens write ``[`0Y`2]``)."""
+    matches = _DEFAULT_RE.findall(strip(prompt))
+    return matches[-1] if matches else None
+
+
 class OutOfKeys(Exception):
     """Raised by FakeIO when a scripted input queue is exhausted."""
 
@@ -262,13 +273,36 @@ class TermIO(ABC):
         await self.write("`2<`0MORE`2>")
         await self.readkey()
 
-    async def menu(self, options: dict[str, str], prompt: str) -> str:
+    #: True when the client is character-at-a-time, so a CR really is the
+    #: player pressing Enter (see TelnetIO.char_mode).
+    char_mode = True
+
+    async def menu(
+        self, options: dict[str, str], prompt: str, default: str | None = None
+    ) -> str:
         """Single-key, case-insensitive dispatch. Re-prompts on invalid keys.
 
         Returns the matching key exactly as given in ``options`` (not the
         raw pressed key, which may differ in case).
+
+        **Enter takes the default.** lord.js writes the default into the
+        prompt in brackets and maps anything else onto it (e.g.
+        ``ch = getkey(); if (ch !== 'N') ch = 'Y';`` behind ``[Y]``,
+        reference/lord.js:16856-16863). ``default`` names the key
+        explicitly; when omitted it is read from the last ``[X]`` in the
+        prompt, which is where every ported screen already advertises it.
+
+        A CR from a *line-mode* client is not a keypress -- it's the tail
+        of the line whose first character answered the previous prompt
+        (Mudlet sends "t\r\n") -- so Enter is only honoured when the
+        client negotiated character-at-a-time. Otherwise it is swallowed,
+        as before, or every prompt would fire its own default.
         """
         lookup = {key.upper(): key for key in options}
+        if default is None:
+            default = _default_from_prompt(prompt)
+        default_key = lookup.get(default.upper()) if default else None
+
         if prompt:
             await self.write(prompt)
         while True:
@@ -276,10 +310,8 @@ class TermIO(ABC):
             if pressed in lookup:
                 return lookup[pressed]
             if pressed in ("\r", "\n"):
-                # Stray Enter -- typically the CR/LF tail of a line-mode
-                # client's previous input (e.g. Mudlet sends "t\r\n"; the
-                # "t" answered the previous menu). Ignore it without
-                # re-printing, otherwise every prompt shows doubled.
+                if default_key is not None and self.char_mode:
+                    return default_key
                 continue
             if prompt:
                 await self.write(prompt)
@@ -364,6 +396,14 @@ class TelnetIO(TermIO):
         # real clients. Normalize first so an already-CRLF string isn't
         # doubled into CR CR LF.
         self.writer.write(render(text).replace("\r\n", "\n").replace("\n", "\r\n"))
+
+    @property
+    def char_mode(self) -> bool:
+        """True once the client has acknowledged WILL ECHO + WILL SGA, which
+        telnetlib3 reports as "kludge" mode -- the character-at-a-time
+        arrangement every BBS door expects (ttyd and real telnet clients do
+        this; Mudlet-style line-mode clients stay "local")."""
+        return getattr(self.writer, "mode", "local") == "kludge"
 
     async def readkey(self) -> str:
         return await self._raw_read()

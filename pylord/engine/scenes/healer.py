@@ -55,6 +55,15 @@ async def healer(ctx: GameCtx) -> str:
             f"  `2Gold: `0{p.gold}\n"
             f"  `2(it costs `%{_cost_per_hp(p)}`2 to heal 1 hitpoint)\n\n"
         )
+        # lord.js draws this menu from an external asset (lrdfile('HEAL'),
+        # reference/lord.js:10899-10901) that isn't in this repo, so the
+        # option lines are reconstructed here -- the same situation, and
+        # the same convention, as town.py's MAIN menu.
+        await ctx.io.write(
+            "  `2(`0H`2)eal all wounds\n"
+            "  `2(`0C`2)hoose an amount to heal\n"
+            "  `2(`0R`2)eturn to the square\n\n"
+        )
         choice = await ctx.io.menu(
             # Q also leaves (reference/lord.js:10971's 'RQ\r' set).
             {"H": "heal_all", "C": "heal_some", "R": "town", "Q": "town"},
