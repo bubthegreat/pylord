@@ -6,9 +6,10 @@ from __future__ import annotations
 import pytest
 
 from pylord import db
-from pylord.engine.game import SCENES, GameCtx, run_session, scene
+from pylord.engine.game import SCENES, GameCtx, grant_exp, run_session, scene
 from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
+from tests.harness import screen
 
 
 def _ctx(keys=None):
@@ -116,3 +117,39 @@ def test_ctx_defaults():
     assert ctx.igms is None
     assert ctx.config == {}
     assert ctx.rng is not None
+
+
+async def test_grant_exp_credits_amount():
+    ctx = _ctx()
+    ctx.player.exp = 1
+    ctx.player.level = 1
+    await grant_exp(ctx, 5)
+    assert ctx.player.exp == 6
+
+
+async def test_grant_exp_announces_when_next_level_threshold_is_crossed():
+    """EXP_FOR_LEVEL[2] == 100 (pylord/engine/data/levels.py)."""
+    ctx = _ctx()
+    ctx.player.exp = 95
+    ctx.player.level = 1
+    await grant_exp(ctx, 10)  # 95 -> 105, crosses 100
+    assert ctx.player.exp == 105
+    text = screen(ctx.io)
+    assert "reach level 2" in text
+    assert "Go see your master" in text
+
+
+async def test_grant_exp_silent_when_threshold_not_crossed():
+    ctx = _ctx()
+    ctx.player.exp = 10
+    ctx.player.level = 1
+    await grant_exp(ctx, 5)
+    assert ctx.player.exp == 15
+    assert screen(ctx.io) == ""
+
+
+async def test_grant_exp_caps_at_two_billion():
+    ctx = _ctx()
+    ctx.player.exp = 2_000_000_000
+    await grant_exp(ctx, 500)
+    assert ctx.player.exp == 2_000_000_000

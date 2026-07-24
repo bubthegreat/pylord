@@ -54,7 +54,14 @@ their point of use below):
    decrements ``player.levelw``/``levelm``/``levelt`` itself after a
    successful cast (e.g. lord.js:7107, 7183, 7295/7310/7321/7334/7345/7360).
    The caller is responsible for persisting the decremented value back onto
-   whichever ``Player`` field the ``kind`` maps to.
+   whichever ``Player`` field the ``kind`` maps to. For ``kind='dk'``/
+   ``'th'`` the cost is always a flat 1 use point (lord.js:7107, 7183). For
+   ``kind='my'`` the cost varies by tier (1/4/8/12/16/20) and isn't knowable
+   to the caller in advance (auto-selection picks the highest tier the
+   passed-in ``skill_points`` affords) -- ``Fight.last_spell_cost`` is set
+   to the real cost of whatever was actually cast (0 if the cast failed)
+   so the caller can decrement the right amount. See ``Fight``'s field
+   docstring and ``_mystical_attack()``.
 """
 
 from __future__ import annotations
@@ -198,6 +205,18 @@ class Fight:
     light_shield: bool = False
     gem_found: bool = False
     bonus_gold: bool = False
+    # Set by skill_attack(..., kind='my') to the use-point cost (1/4/8/12/
+    # 16/20, see _MYSTICAL_COST) of whichever Mystical tier was actually
+    # cast on the *most recent* call -- 0 if the cast failed outright (not
+    # enough points for even the cheapest tier). lord.js decrements
+    # player.levelm by the chosen spell's real cost, not a flat 1
+    # (reference/lord.js:7295, 7310, 7321, 7334, 7345, 7360); unlike
+    # do_attack()/handle_hit()'s Round, there's no existing return value
+    # that carries this, so it's exposed as Fight state instead (same
+    # pattern already used for gem_found/bonus_gold). Irrelevant/untouched
+    # for kind='dk'/'th' (those always cost a flat 1 use point per
+    # lord.js:7107, 7183 -- no tiers to choose from).
+    last_spell_cost: int = 0
 
     @property
     def over(self) -> bool:
@@ -428,6 +447,7 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
     M      20    no damage; heals player to hp_max                (7350-7362)
     =====  ====  ==========================================================
     """
+    fight.last_spell_cost = 0  # reset; only set once a cast actually happens
     if choice is not None:
         if choice not in _MYSTICAL_COST or skill_points < _MYSTICAL_COST[choice]:
             return Round(
@@ -450,6 +470,8 @@ def _mystical_attack(fight: Fight, skill_points: int, choice: str | None) -> Rou
                 killed=False,
                 text="You reach for the power, but it just isn't there.",
             )
+
+    fight.last_spell_cost = _MYSTICAL_COST[choice]
 
     # lord.js:7225, flavor-text switch(random(7)) -- drawn unconditionally
     # once per cast, before the menu/spell dispatch, regardless of which

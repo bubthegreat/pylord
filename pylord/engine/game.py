@@ -18,6 +18,8 @@ import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from pylord.engine import data
+
 if TYPE_CHECKING:
     from pylord.models import Player, PlayerRepo
     from pylord.terminal import TermIO
@@ -25,6 +27,10 @@ if TYPE_CHECKING:
 SceneFn = Callable[["GameCtx"], Awaitable["str | None"]]
 
 SCENES: dict[str, SceneFn] = {}
+
+# lord.js caps exp at 2,000,000,000 everywhere it's credited (e.g.
+# reference/lord.js:15108-15110).
+_EXP_CAP = 2_000_000_000
 
 
 def scene(name: str) -> Callable[[SceneFn], SceneFn]:
@@ -84,6 +90,39 @@ class GameCtx:
         """Persist ``self.player`` inside a transaction."""
         with self.conn:
             self.repo.save(self.player)
+
+
+async def grant_exp(ctx: GameCtx, amount: int) -> None:
+    """Credit ``amount`` experience to ``ctx.player``, capped at
+    2,000,000,000 (same cap lord.js applies everywhere exp is credited,
+    e.g. reference/lord.js:15108-15110), and announce it when the player
+    has just crossed the threshold for their *next* level
+    (``pylord.engine.data.EXP_FOR_LEVEL``).
+
+    **Not a lord.js port**: lord.js has no forest-side "you can level up
+    now" hint at all -- exp is simply credited
+    (reference/lord.js:15107-15112) and the player only learns whether
+    they're ready by visiting their master, where ``turgons()``'s own
+    dialogue (reference/lord.js:15590-15606) tells them either how much
+    more exp they still need, or (if they already have enough) the
+    master's flavor lines. No "enough experience"/"go see your master"
+    string exists anywhere in ``reference/lord.js`` (searched). This
+    announcement is an invented, documented UX addition (see
+    ``docs/deviations.md``) so a player isn't left guessing -- actual
+    leveling only happens at Turgon's (Task 11), which is expected to
+    reuse this helper for master-fight exp gains too.
+    """
+    p = ctx.player
+    exp_before = p.exp
+    p.exp = min(p.exp + amount, _EXP_CAP)
+
+    next_level = p.level + 1
+    threshold = data.EXP_FOR_LEVEL.get(next_level)
+    if threshold is not None and exp_before < threshold <= p.exp:
+        await ctx.io.write(
+            f"\n  `%You have gained enough experience to reach level "
+            f"{next_level}! Go see your master.`0\n"
+        )
 
 
 async def run_session(ctx: GameCtx, start: str = "town") -> None:

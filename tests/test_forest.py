@@ -100,6 +100,26 @@ async def test_kill_flow_grants_exact_gold_and_exp():
     assert player.gems == 0
 
 
+async def test_healer_option_routes_to_healer_stub():
+    io, _player = await play(["f", "h", "q"])
+    text = screen(io)
+    assert "Under construction" in text
+
+
+async def test_view_stats_option_routes_to_stats_then_town():
+    """See docs/deviations.md: (V) bounces to the shared ``stats`` scene,
+    which always returns to Town Square afterward, not back to the
+    forest -- ``stats.py`` isn't owned by this task. "Town Square" appears
+    twice: once on the initial entry (before `f`), once more after stats
+    hands back to `"town"` (mirrors tests/test_town.py's own
+    ``test_view_stats_shows_name_level_and_returns_to_town``)."""
+    io, player = await play(["f", "v", "q"])
+    text = screen(io)
+    assert "Experience" in text  # stats.py's own screen
+    assert player.name in text
+    assert text.count("Town Square") == 2
+
+
 async def test_no_fights_left_shows_message_and_stays_in_forest():
     ctx = _ctx(overrides={"forest_fights": 0}, keys=["l", "z", "r"])
     result = await forest_mod.forest(ctx)
@@ -175,6 +195,50 @@ async def test_skill_attack_decrements_skill_uses():
     assert ctx.player.gems == 1
     text = screen(ctx.io)
     assert monster.death_phrase in text
+
+
+async def test_mystical_multi_point_spell_decrements_exact_cost():
+    """Regression test for review Important-1: Mystical casts must
+    decrement ``skill_uses`` by the *chosen tier's* real cost
+    (1/4/8/12/16/20 -- reference/lord.js:7286-7362), not a flat 1.
+
+    ``skill_uses=4`` (passed in as ``skill_attack()``'s ``skill_points``,
+    per module docstring deviation 3) auto-selects the highest affordable
+    tier -- "D" (Disappear, cost 4). "D" is damage-free and RNG-independent
+    (it only draws the discarded flavor-text roll, ``:7225``), so the
+    seed here is arbitrary and the outcome is fully deterministic:
+    ``fight.ran_away`` is set unconditionally (``:7311-7312``).
+    """
+    monster = data.MONSTERS[1][0]  # Small Thief
+    ctx = _ctx(
+        overrides={"class_type": 2, "skill_my": 4, "skill_uses": 4},
+        rng=random.Random(0),
+        keys=["s", "z"],
+    )
+    died = await forest_mod._run_fight(ctx, monster)
+    assert died is False
+    assert ctx.player.skill_uses == 0  # 4 - cost('D')=4, not 4 - 1
+    text = screen(ctx.io)
+    assert "You disappear into a cool glade" in text
+
+
+async def test_mystical_cast_fails_when_uses_below_cheapest_tier():
+    """``skill_uses=0`` reaching ``skill_attack()`` (which cannot happen
+    through the real battle menu -- ``_can_skill()`` already hides `S` in
+    that case, see the next test) still refuses to cast and costs
+    nothing, via ``_mystical_attack``'s own ``skill_points < cost`` guard
+    (reference/lord.js's menu never offers a tier it can't afford)."""
+    fight_rng = random.Random(0)
+    from pylord.engine.combat import Combatant, Fight, skill_attack
+
+    player_side = Combatant(
+        name="Hero", hp=20, hp_max=20, strength=10, defense=1, weapon_name="Fists"
+    )
+    enemy = Combatant.from_monster(data.MONSTERS[1][0])
+    fight = Fight(player_side, enemy, fight_rng, pfight=False)
+    round_ = skill_attack(fight, "my", 0)
+    assert round_.damage == 0
+    assert fight.last_spell_cost == 0
 
 
 async def test_skill_option_hidden_when_no_uses_left():

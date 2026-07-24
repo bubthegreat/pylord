@@ -45,13 +45,26 @@ Deviations from lord.js (also mirrored into ``docs/deviations.md``):
    recomputed every ``wake_up()`` and decremented per use --
    ``:7107``/``:7183``/``:7295`` etc.). This project's ``Player`` model
    collapses that to ``skill_dk``/``skill_my``/``skill_th`` (the permanent
-   rank -- passed as combat's ``skill_points`` argument, per Task 7's
-   interface, and never decremented by combat) plus a single shared
-   ``skill_uses`` (the daily budget, decremented here on every skill-attack
-   use regardless of class -- safe because a player only ever has one
-   class, so "shared" and "per-class" are equivalent in practice). See
-   ``pylord/engine/daily.py`` for the ``skill_uses`` daily-reset formula
-   (ported from lord.js ``:5448-5469``).
+   rank, used *only* by ``pylord/engine/daily.py``'s once-a-day
+   ``skill_uses`` formula -- ``:5448-5469``) plus a single shared
+   ``skill_uses`` (the daily budget). **Everywhere combat actually reads a
+   "how much can I still spend" value, lord.js reads the daily
+   levelw/levelm/levelt -- never the permanent rank** (menu visibility:
+   ``:6858``, ``:6861``, ``:6864``; eligibility inside
+   ``use_death_knight()``/``use_thief_skill()``: implicit, no rank check
+   at all; Mystical tier auto-selection: ``:7251-7267``, gated on
+   ``player.levelm`` primarily, with a ``player.skillm`` check that's
+   provably redundant given ``levelm <= skillm`` always holds after
+   ``wake_up()``'s ``levelm = skillm`` reset). So this module passes
+   ``p.skill_uses`` -- never the rank field -- into ``skill_attack()`` as
+   its ``skill_points`` argument (see ``_can_skill()`` and the "S" branch
+   of ``_run_fight()``), for all three classes. Cost: DK/Thief always cost
+   a flat 1 use point (lord.js ``:7107``, ``:7183``); Mystical costs the
+   chosen tier's real price (1/4/8/12/16/20) -- see
+   ``pylord.engine.combat.Fight.last_spell_cost``, which
+   ``skill_attack(..., kind='my')`` sets to whatever was actually cast, so
+   the caller here decrements ``skill_uses`` by the right amount instead
+   of a flat 1.
 4. **Forest events implemented**: lord.js's event table
    (``look_to_kill()``'s ``switch(random(15+horse))``, ``:14482-15041``)
    has up to 16 cases, several of which are entire sub-minigames (a horse
@@ -92,7 +105,7 @@ from typing import TYPE_CHECKING
 
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
-from pylord.engine.game import scene
+from pylord.engine.game import grant_exp, scene
 
 if TYPE_CHECKING:
     from pylord.engine.data import Monster
@@ -197,11 +210,14 @@ def _pick_monster(ctx: GameCtx) -> Monster:
 
 
 def _can_skill(p: Player) -> bool:
-    entry = _SKILL_BY_CLASS.get(p.class_type)
-    if entry is None:
-        return False
-    field, _kind, _label = entry
-    return getattr(p, field) > 0 and p.skill_uses > 0
+    """Gate purely on the remaining daily budget (``skill_uses``), matching
+    lord.js's own in-battle gate -- ``player.levelw``/``levelm``/``levelt``
+    > 0 (reference/lord.js:6858, 6861, 6864), *not* the permanent rank
+    (``skillw``/``skillm``/``skillt``). A rank-0 player of a skilled class
+    still gets a nonzero daily budget from the flat "+1 for being a
+    <class>" bonus (``pylord/engine/daily.py``), so a rank check here
+    would wrongly hide the option in that case."""
+    return p.class_type in _SKILL_BY_CLASS and p.skill_uses > 0
 
 
 def _battle_options(p: Player) -> dict[str, str]:
@@ -251,10 +267,20 @@ async def _run_fight(ctx: GameCtx, monster: Monster) -> bool:
                 enemy_round = fight.enemy_attack()
                 await ctx.io.write(f"  {enemy_round.text}\n")
         elif action == "S":
-            field, kind, _label = _SKILL_BY_CLASS[p.class_type]
-            skill_points = getattr(p, field)
-            p.skill_uses -= 1  # module docstring deviation 3
-            last_round = skill_attack(fight, kind, skill_points)
+            _field, kind, _label = _SKILL_BY_CLASS[p.class_type]
+            # `skill_points` gates *both* eligibility and (for Mystical)
+            # which tier auto-selects -- lord.js's real gate is always the
+            # remaining daily budget (levelw/levelm/levelt), never the
+            # permanent rank (see _can_skill's docstring), so p.skill_uses
+            # is what's passed here, not the class's rank field.
+            last_round = skill_attack(fight, kind, p.skill_uses)
+            # DK/Thief always cost a flat 1 use point (lord.js:7107, 7183).
+            # Mystical costs vary by tier (1/4/8/12/16/20); skill_attack()
+            # records the real cost of whatever was actually cast (0 if
+            # the cast failed) on fight.last_spell_cost -- see combat.py's
+            # Fight docstring. Module docstring deviation 3.
+            cost = fight.last_spell_cost if kind == "my" else 1
+            p.skill_uses -= cost
             await ctx.io.write(f"\n  {last_round.text}\n")
             if not fight.over:
                 enemy_round = fight.enemy_attack()
@@ -324,23 +350,15 @@ async def _victory(ctx: GameCtx, monster: Monster, fight: Fight, last_round) -> 
         lines.append(f"  You receive {gained} gold, and")
     lines.append(f" {monster.exp} experience!")
 
-    exp_before = p.exp
-    p.exp = _cap(p.exp + monster.exp, _EXP_CAP)
-
     if fight.gem_found:
         p.gems += 1
 
-    next_level = p.level + 1
-    threshold = data.EXP_FOR_LEVEL.get(next_level)
-    if threshold is not None and exp_before < threshold <= p.exp:
-        lines.append("")
-        lines.append(
-            f"  `%You have gained enough experience to reach level "
-            f"{next_level}! Go see your master.`0"
-        )
-
     lines.append("")
     await ctx.io.write("\n".join(lines))
+    # grant_exp() (pylord/engine/game.py) owns crediting the exp itself
+    # (capped, same as gold above) plus the level-threshold announcement
+    # -- shared with Turgon's master-fight exp gains (Task 11).
+    await grant_exp(ctx, monster.exp)
     await ctx.io.pause()
 
 
