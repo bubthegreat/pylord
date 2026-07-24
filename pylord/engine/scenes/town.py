@@ -13,12 +13,13 @@ in-game function names (``king_arthurs()``, ``abduls_armour()``,
 using the same backtick color-code conventions (`` `2`` green body text,
 `` `0`` bright-green highlight) the rest of lord.js's screens use.
 
-Destinations not yet implemented by an earlier/this task (``S`` slaughter
-other players, ``O`` other places from the town menu -- the Forest menu has
-its own working route to ``other_places``, Task 12 -- and ``X`` the Red
-Dragon) route to a single shared "coming soon" stub scene (see ``_stub``
-below) until Task 13b lands. Task 13a wires up ``I``\\ nn, ``L``\\ ist
-Warriors, ``W``\\ rite Mail, ``D``\\ aily News, and ``C``\\ onjugality List.
+Destinations not yet implemented by an earlier/this task (``O`` other places
+from the town menu -- the Forest menu has its own working route to
+``other_places``, Task 12 -- and ``X`` the Red Dragon) route to a single
+shared "coming soon" stub scene (see ``_stub`` below) until Dragon lands.
+Task 13a wired up ``I``\\ nn, ``L``\\ ist Warriors, ``W``\\ rite Mail,
+``D``\\ aily News, and ``C``\\ onjugality List. Task 13b wires up ``S``
+(Slaughter Other Players, ``pvp.py``).
 """
 
 from __future__ import annotations
@@ -61,7 +62,7 @@ _PROMPT = "`2Your choice`0? `2"
 # its own task lands.
 _DESTINATIONS: dict[str, str | None] = {
     "F": "forest",
-    "S": "pvp_stub",
+    "S": "pvp",
     "K": "weapons",
     "A": "armor",
     "H": "healer",
@@ -98,9 +99,5 @@ async def _stub(ctx: GameCtx) -> str:
     return "town"
 
 
-for _key in (
-    "pvp_stub",
-    "other_stub",
-    "dragon_stub",
-):
+for _key in ("other_stub", "dragon_stub"):
     SCENES[_key] = _stub

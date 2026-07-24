@@ -47,11 +47,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pylord.engine import npc_state
+from pylord.engine import data, npc_state
 from pylord.engine.game import grant_exp, scene
+from pylord.engine.scenes import pvp as pvp_mod
 
 if TYPE_CHECKING:
     from pylord.engine.game import GameCtx
+    from pylord.models import Player
 
 _ROOM_COST_PER_LEVEL = 400  # reference/lord.js:6395
 _FREE_ROOM_CHARM = 99  # reference/lord.js:6410 (`player.cha > 99`)
@@ -603,12 +605,12 @@ async def _rent_room(ctx: GameCtx) -> bool:
 
 
 async def _bartender(ctx: GameCtx) -> None:
-    """Port of the non-PvP, non-shop parts of ``talk_with_bartender()``.
-    reference/lord.js:8090-8437. Only the Violet/Seth gossip (`` `V`/`S` ``)
-    and the dragon hint (`` `D`, `` level 12) survive here; the elixir shop
-    (`` `G` ``, gem currency), rename (`` `C` ``), and bribe-to-attack-
-    sleepers (`` `B` ``) are dropped -- see this module's docstring for
-    ``C``/``M``, and the TODO below for ``B``."""
+    """Port of the non-shop parts of ``talk_with_bartender()``.
+    reference/lord.js:8090-8437. The Violet/Seth gossip (`` `V`/`S` ``), the
+    dragon hint (`` `D`, `` level 12), and the bribe-to-attack-sleepers
+    (`` `B` ``, Task 13b) survive here; the elixir shop (`` `G` ``, gem
+    currency) and rename (`` `C` ``) are dropped -- see this module's
+    docstring for why."""
     p = ctx.player
     if p.level == 1:  # reference/lord.js:8149-8156
         await ctx.io.write(
@@ -622,19 +624,20 @@ async def _bartender(ctx: GameCtx) -> None:
         await ctx.io.write(
             '\n  "Well?" the bartender inquires.  (`0? for menu`2)\n'
         )
-        options = {"R": "return"}
+        options = {"R": "return", "B": "bribe"}
         if p.gender == "M":
             options["V"] = "gossip_violet"
         else:
             options["S"] = "gossip_seth"
         if p.level == 12:
             options["D"] = "dragon_hint"
-        # TODO(13b/PvP): lord.js's `B` bribes the barkeep for a room key
-        # and attacks a sleeping player (attack_in_inn(),
-        # reference/lord.js:8388-8418, :7979-8089) -- that's PvP, Task 13b.
         choice = await ctx.io.menu(options, "  `2Your choice? : ")
         if choice == "R":
             return
+        if choice == "B":
+            if await _bribe_attack(ctx):
+                return
+            continue
         if choice == "V":
             await ctx.io.write(
                 '\n\n  "Ya want to know about `#Violet`5 do ya?  She only '
@@ -652,6 +655,150 @@ async def _bartender(ctx: GameCtx) -> None:
                 'might try Searching..."\n'
             )
         await ctx.io.pause()
+
+
+_BRIBE_PER_LEVEL = 1600  # reference/lord.js:8393/8413 -- mirrors pvp.py's own copy
+_BRIBE_REFUND_PER_LEVEL = 800  # reference/lord.js:8019 (400 * level * 2)
+
+
+async def _bribe_attack(ctx: GameCtx) -> bool:
+    """Port of the bartender's ``B`` bribe (reference/lord.js:8388-8418)
+    plus ``attack_in_inn()`` itself (``:7979-8088``). Returns ``True`` if
+    the attacking player died (caller ends the session, same convention as
+    every other death path in this project)."""
+    p = ctx.player
+    cost = p.level * _BRIBE_PER_LEVEL
+    await ctx.io.write(
+        '\n\n  "Ahh.. Bribe.. Now you are speaking my language friend!\n'
+        "  I will let you borrow my room keys.. on one condition..\n"
+        f'  That ya pay me {cost} gold!!"\n'
+    )
+    choice = await ctx.io.menu({"Y": "yes", "N": "no"}, '  `2Deal?  [`0N`2] : `%')
+    if choice == "N":
+        await ctx.io.write('\n\n  "Fine.. Forget I offered that deal to you.."\n')
+        await ctx.io.pause()
+        return False
+    if p.gold < cost:
+        await ctx.io.write(
+            '\n\n  "Hey! You slobbering idiot! You don\'t have that much gold!"\n'
+        )
+        await ctx.io.pause()
+        return False
+    p.gold -= cost
+
+    while True:
+        sleepers = [
+            pl
+            for pl in ctx.repo.all_players()
+            if pl.at_inn and pl.alive and pl.id != p.id
+        ]
+        await ctx.io.write(
+            '\n\n  "What next, kid?"\n'
+            "  `2(`5L`2)ist Warriors in the Inn   (`5S`2)laughter Warriors "
+            "in the Inn   (`5R`2)eturn to Bar\n"
+        )
+        choice = await ctx.io.menu(
+            {"L": "list", "S": "slaughter", "R": "return"}, "  `2Your choice`0? `2"
+        )
+        if choice == "R":  # reference/lord.js:8014-8023 -- half the bribe back
+            refund = _BRIBE_REFUND_PER_LEVEL * (p.level * 2)
+            p.gold += refund
+            await ctx.io.write(
+                '\n\n  "So ya aren\'t going to attack anyone?  Here is half your money '
+                "back...\n"
+                '   The other half will cover my time!" `2the bartender laughs harshly.\n'
+            )
+            await ctx.io.pause()
+            return False
+        if choice == "L":
+            await ctx.io.write("\n")
+            for pl in sleepers:
+                await ctx.io.write(f"  `2{pl.name:<22}`2{pl.exp:>13}    `%{pl.level:>2}`2\n")
+            await ctx.io.pause()
+            continue
+
+        # choice == "S"
+        await ctx.io.write("\n  Who would you like to attack?\n")
+        target = await pvp_mod.find_attackable(ctx)
+        if target is None:
+            await ctx.io.write("\n  No warriors found.\n")
+            await ctx.io.pause()
+            continue
+        if target.id == p.id:
+            await ctx.io.write(
+                "\n  You wish to attack yourself?!!  You decide against it.\n"
+            )
+            await ctx.io.pause()
+            continue
+        if not target.alive:  # reference/lord.js:8038-8041 (different wording than the field flow)
+            pronoun = "he" if target.gender == "M" else "she"
+            await ctx.io.write(
+                "\n  That warrior isn't at the Inn at the moment.\n"
+                f"  You recall seeing in the news that {pronoun} was dead..\n"
+            )
+            await ctx.io.pause()
+            continue
+        if not target.at_inn:  # reference/lord.js:8043-8046
+            pronoun = "he" if target.gender == "M" else "she"
+            await ctx.io.write(
+                "\n  That warrior is not staying at the Inn today,\n"
+                f"  {pronoun} is probably in the fields.\n"
+            )
+            await ctx.io.pause()
+            continue
+        if target.level + 1 < p.level:  # reference/lord.js:8048-8051
+            await ctx.io.write(
+                "\n  A child could beat that wimp!  Attack someone else!\n"
+            )
+            await ctx.io.pause()
+            continue
+
+        # reference/lord.js:8052-8071 -- confirm. A decline (`N`) just
+        # loops back to "What next, kid?" (the bribe is already spent, but
+        # not wasted -- you can pick a different sleeping target).
+        subj = "He" if target.gender == "M" else "She"
+        poss = "his" if target.gender == "M" else "her"
+        obj = "him" if target.gender == "M" else "her"
+        weapon = "Fists" if target.weapon_num == 0 else data.weapon(target.weapon_num).name
+        await ctx.io.write(
+            f"\n  You enter {target.name}`2s room...{subj} is sleeping.\n"
+            f"  You notice {poss} has a dangerous looking {weapon} "
+            f"`2by {poss} bed..\n"
+            f"  Are you sure you want to attack {obj}?\n\n"
+        )
+        choice = await ctx.io.menu(
+            {"Y": "yes", "N": "no"}, f"  `2Attack `5{target.name} `2[`0Y`2] :`0"
+        )
+        if choice == "N":
+            continue
+
+        return await _sneak_attack(ctx, target, subj)
+
+
+async def _sneak_attack(ctx: GameCtx, target: Player, subj: str) -> bool:
+    """Port of the immediate "broken into your room" mail
+    (reference/lord.js:8072-8085) then delegates the actual fight to
+    :func:`pvp.run_attack` (``attack_player(op, true)``, shared engine --
+    see ``pvp.py``'s module docstring)."""
+    p = ctx.player
+    await ctx.io.write(
+        f"\n  Being a trained warrior, {subj.lower()} jumps up suddenly, aware of your\n"
+        "  presence!\n"
+    )
+    mail_body = (
+        "  `%YOU HAVE BEEN ATTACKED IN YOUR ROOM!\n"
+        "`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n"
+        f"  `0{p.name}`2 has broken into your room at the Inn!"
+    )  # reference/lord.js:8079-8081 -- sent immediately, before the fight,
+    # regardless of its outcome (unlike run_attack()'s own win/loss-only mail).
+    with ctx.conn:
+        ctx.conn.execute(
+            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
+            "VALUES (?, ?, ?, NULL, datetime('now'), 0)",
+            (target.id, p.name, mail_body),
+        )
+    await ctx.io.pause()
+    return await pvp_mod.run_attack(ctx, target, from_inn=True)
 
 
 @scene("inn")
@@ -677,5 +824,7 @@ async def inn(ctx: GameCtx) -> str | None:
             await _bard_menu(ctx)
         elif choice == "T":
             await _bartender(ctx)
+            if not ctx.player.alive:  # a bribed attack can kill the player
+                return None
         elif choice == "G" and await _rent_room(ctx):
             return None

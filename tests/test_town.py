@@ -43,7 +43,7 @@ async def test_unknown_key_reprompts_then_accepts_valid_key():
 
 
 async def test_stub_scene_shows_under_construction_and_returns_to_town():
-    io, _player = await play(["s", "q"])
+    io, _player = await play(["o", "q"])
     text = screen(io)
     assert "Under construction" in text
     assert text.count("Town Square") == 2
@@ -52,11 +52,19 @@ async def test_stub_scene_shows_under_construction_and_returns_to_town():
 async def test_every_stub_destination_reachable():
     # K/A/H/T/Y are real scenes now (Task 11: shops, healer, bank, training).
     # I/L/W/D/C are real scenes now too (Task 13a: inn, list, mail, news,
-    # conjugality) -- see test_every_task_13a_destination_reachable below.
-    stub_keys = ["s", "o", "x"]
+    # conjugality). S is a real scene now too (Task 13b: pvp) -- see
+    # test_pvp_destination_reachable below. X (dragon) is still pending.
+    stub_keys = ["o", "x"]
     for key in stub_keys:
         io, _player = await play([key, "q"])
         assert "Under construction" in screen(io)
+
+
+async def test_pvp_destination_reachable():
+    """S routes to a real scene (not KeyError'ing on an unregistered name)
+    and eventually lands back at the Town Square."""
+    io, _player = await play(["s", "r"])
+    assert "Slaughter Other Players" in screen(io)
 
 
 async def test_every_task_13a_destination_reachable():
