@@ -21,6 +21,7 @@ from igms.sunshines_fairy_land.igm import (
     NUMBER_GAME_GEM_PRIZE,
     NUMBER_GAME_GOLD_PRIZE,
     NUMBER_GAME_RANGE,
+    PRICE_HIT_POINTS,
     PRICE_HORSE,
     PRICE_KIDS,
     PRICE_MASTER_FIGHT,
@@ -163,6 +164,28 @@ async def test_sell_hit_points_reclamps_current_hp_down():
     assert p.hp == 5  # reclamped down from 20
 
 
+async def test_sell_hit_points_cannot_zero_out_hp_max():
+    """A live player with hp_max == 0 is a nonsense state -- selling all 20
+    units is refused outright rather than clamped/partial-filled."""
+    _gctx, ctx, p, _db = await _visit(
+        ["G", "H", "S", "20", "\r", "L", "L"], hp=20, hp_max=20
+    )
+    await SunshinesFairyLand().enter(ctx)
+    assert p.hp_max == 20  # refused -- unchanged
+    assert p.gold == 500  # nothing paid out
+
+
+async def test_sell_hit_points_down_to_the_floor_of_one():
+    """One less than the full stack is the most that can ever be sold."""
+    _gctx, ctx, p, _db = await _visit(
+        ["G", "H", "S", "19", "\r", "L", "L"], hp=20, hp_max=20
+    )
+    await SunshinesFairyLand().enter(ctx)
+    assert p.hp_max == 1
+    assert p.hp == 1  # reclamped down alongside hp_max
+    assert p.gold == 500 + int(19 * PRICE_HIT_POINTS * SELL_PRICE_FRACTION)
+
+
 async def test_buy_experience_is_scaled_by_exp_unit():
     _gctx, ctx, p, _db = await _visit(
         ["G", "E", "B", "2", "\r", "L", "L"], gold=1_000_000
@@ -178,6 +201,28 @@ async def test_buy_forest_fights_credits_today_only_not_permanent_bonus():
     await SunshinesFairyLand().enter(ctx)
     assert p.forest_fights == 15 + 2
     assert p.fight_bonus == 0  # the permanent capacity system is untouched
+
+
+async def test_forest_fights_cannot_be_sold_back():
+    """Fixed post-review: selling forest_fights back would combine with the
+    engine's own free real-time regen (pylord/engine/fights.py's
+    apply_regen) for unbounded gold. The store's Buy/Sell submenu simply
+    never offers "S" for this ware -- pressing it is an invalid key the
+    menu ignores and re-prompts on."""
+    _gctx, ctx, p, _db = await _visit(["G", "F", "S", "L", "L", "L"])
+    await SunshinesFairyLand().enter(ctx)
+    assert p.forest_fights == 15
+    assert p.gold == 500
+
+
+async def test_player_fights_cannot_be_sold_back():
+    """Same buy-only restriction, kept consistent with forest_fights even
+    though player_fights has no free regen of its own -- see module
+    docstring."""
+    _gctx, ctx, p, _db = await _visit(["G", "P", "S", "L", "L", "L"])
+    await SunshinesFairyLand().enter(ctx)
+    assert p.player_fights == 3
+    assert p.gold == 500
 
 
 # --- General Store: one-time wares ------------------------------------------

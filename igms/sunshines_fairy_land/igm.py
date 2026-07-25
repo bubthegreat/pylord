@@ -88,24 +88,44 @@ share one doc lineage rather than v2.6 being independently rewritten.
   buying one unit grants. Eight of them (attack strength, charm, defense
   points, experience, forest fights, gem, hit points, player fights) share
   the "a point of X" framing and are modelled uniformly as a per-unit
-  price against an established ``Player`` field, buyable *and* (per the
-  recorded halving rule) sellable in any quantity -- the same
-  quantity-prompt shape ``igms/gem_trader/igm.py``'s ``_sell`` already
-  uses. "Hit Points" reads onto ``hp_max`` (a permanent ceiling raise,
-  consistent with the other seven being permanent character-stat
-  increases) rather than a one-off partial heal, which ``igms/apothecary/
-  igm.py``'s Salve already covers far more cheaply. "Forest Fights" /
-  "Player Fights" credit *today's* count directly (apothecary's Tonic of
-  Vigour precedent) rather than this project's own permanent
-  ``fight_bonus``/``endurance_cost`` capacity system
-  (``pylord/engine/fights.py``) -- that system already has its own
-  escalating price for exactly this, and a flat 35,000-gold buy-in would
-  make it pointless. "Experience" alone is scaled by ``EXP_UNIT`` (1,000
-  exp per unit bought/sold) rather than a literal +1 -- a raw single point
-  of exp would make the one recorded price for it a complete no-op against
-  an ``exp`` field that starts at 1 and is measured in the thousands
-  everywhere else in this project (e.g. the forest's own fairy blessing
-  grants ``10 * level * level``).
+  price against an established ``Player`` field -- the same quantity-prompt
+  shape ``igms/gem_trader/igm.py``'s ``_sell`` already uses. "Hit Points"
+  reads onto ``hp_max`` (a permanent ceiling raise, consistent with the
+  other seven being permanent character-stat increases) rather than a
+  one-off partial heal, which ``igms/apothecary/igm.py``'s Salve already
+  covers far more cheaply -- a sale can never take ``hp_max`` to 0 (a live
+  player with no hit-point ceiling is a state nothing else in this
+  project's engine expects); the sale is refused outright rather than
+  silently clamped, the same all-or-nothing shape every other insufficient-
+  quantity refusal in this store already uses. "Experience" alone is
+  scaled by ``EXP_UNIT`` (1,000 exp per unit bought/sold) rather than a
+  literal +1 -- a raw single point of exp would make the one recorded
+  price for it a complete no-op against an ``exp`` field that starts at 1
+  and is measured in the thousands everywhere else in this project (e.g.
+  the forest's own fairy blessing grants ``10 * level * level``).
+* **Sellable vs. buy-only.** Six of the eight point-wares (attack strength,
+  charm, defense points, experience, gem, hit points) are sellable at the
+  recorded half-price, in any quantity, per the doc's own halving rule.
+  "Forest Fights" and "Player Fights" are **buy-only** -- fixed in review
+  (see "Fix pass" in ``.superpowers/sdd/task-sfairy-report.md``): both
+  credit *today's* count directly (apothecary's Tonic of Vigour precedent)
+  rather than this project's own permanent ``fight_bonus``/
+  ``endurance_cost`` capacity system (``pylord/engine/fights.py``) -- that
+  system already has its own escalating price, and a flat 35,000-gold
+  buy-in would make it pointless. ``forest_fights`` specifically also
+  regenerates for free in real time (``fights.py``'s ``apply_regen``, run
+  on nearly every scene transition, refills toward
+  ``max_forest_fights`` every ``fight_regen_minutes``) -- a sell-back at
+  this store's flat half-price rate would let a player sell, wait for the
+  free regen to top back up, and sell again, for unbounded gold (~70k/hr
+  at prod's 15-minute regen). The sell side of this table was always this
+  port's own invention, not a recorded mechanic (the archive records buy
+  prices only), so removing it for these two violates nothing recorded.
+  ``player_fights`` has no such regen and is individually bounded, but it
+  is priced/shaped identically to ``forest_fights`` in the recorded cfg
+  (both "most choices" style daily-fight resources) -- keeping the two
+  consistent with each other, rather than carving an exception only the
+  regen bug strictly requires, is the smaller line to draw.
 * **The remaining six wares are one-time, non-quantity purchases**, each
   mapped onto the one existing ``Player``/game mechanic its label most
   plainly names:
@@ -276,16 +296,33 @@ NUMBER_GAME_GOLD_PRIZE = 5_000
 NUMBER_GAME_GEM_PRIZE = 5
 NUMBER_GAME_EXP_PER_LEVEL = 500
 
-# ware key -> (Player field, label, unit price, units per purchase).
-_POINT_WARES: dict[str, tuple[str, str, int, int]] = {
-    "S": ("strength", "Attack Strength", PRICE_STRENGTH, 1),
-    "C": ("charm", "Charm", PRICE_CHARM, 1),
-    "D": ("defense", "Defense Points", PRICE_DEFENSE, 1),
-    "E": ("exp", "Experience", PRICE_EXPERIENCE, EXP_UNIT),
-    "F": ("forest_fights", "Forest Fights", PRICE_FOREST_FIGHTS, 1),
-    "G": ("gems", "Gems", PRICE_GEM, 1),
-    "H": ("hp_max", "Hit Points", PRICE_HIT_POINTS, 1),
-    "P": ("player_fights", "Player Fights", PRICE_PLAYER_FIGHTS, 1),
+# ware key -> (Player field, label, unit price, units per purchase, sellable).
+#
+# Forest Fights / Player Fights are buy-only -- fixed post-review (see
+# "Fix pass" in .superpowers/sdd/task-sfairy-report.md). The sell side of
+# this table is entirely this port's own invention (the archive only
+# records buy prices, see the module docstring's "What each store category
+# actually does" note), so restricting it violates nothing recorded.
+# ``forest_fights`` specifically also regenerates for free in real time
+# (``pylord/engine/fights.py``'s ``apply_regen``, run on nearly every scene
+# transition, refills toward ``max_forest_fights`` every
+# ``fight_regen_minutes``) -- selling it back at this store's flat
+# half-price rate would let a player sell, wait for the free regen to top
+# back up, and sell again, for unbounded gold. ``player_fights`` has no
+# such regen and is individually bounded, but it is priced/shaped
+# identically to ``forest_fights`` in the recorded cfg (both "most choices"
+# style daily-fight resources) -- keeping the two consistent with each
+# other, rather than carving out an exception only the regen bug strictly
+# requires, is the smaller and more defensible line to draw.
+_POINT_WARES: dict[str, tuple[str, str, int, int, bool]] = {
+    "S": ("strength", "Attack Strength", PRICE_STRENGTH, 1, True),
+    "C": ("charm", "Charm", PRICE_CHARM, 1, True),
+    "D": ("defense", "Defense Points", PRICE_DEFENSE, 1, True),
+    "E": ("exp", "Experience", PRICE_EXPERIENCE, EXP_UNIT, True),
+    "F": ("forest_fights", "Forest Fights", PRICE_FOREST_FIGHTS, 1, False),
+    "G": ("gems", "Gems", PRICE_GEM, 1, True),
+    "H": ("hp_max", "Hit Points", PRICE_HIT_POINTS, 1, True),
+    "P": ("player_fights", "Player Fights", PRICE_PLAYER_FIGHTS, 1, False),
 }
 
 _BANK_CAP = 2_000_000_000
@@ -405,12 +442,19 @@ class SunshinesFairyLand(IGM):
         return int(digits) if digits else 0
 
     async def _trade_point_ware(self, ctx: IgmContext, key: str) -> None:
-        attr, label, price, unit = _POINT_WARES[key]
+        attr, label, price, unit, sellable = _POINT_WARES[key]
         p = ctx.player
-        choice = await ctx.term.menu(
-            {"B": "buy", "S": "sell", "L": "leave"},
-            f"\n  `2(`0B`2)uy or (`0S`2)ell {label}, or (`0L`2)eave? : `%",
-        )
+        if sellable:
+            options = {"B": "buy", "S": "sell", "L": "leave"}
+            prompt = f"\n  `2(`0B`2)uy or (`0S`2)ell {label}, or (`0L`2)eave? : `%"
+        else:
+            # Buy-only -- see the module docstring's "Forest/Player Fights
+            # are buy-only" note (post-review fix: selling these back would
+            # combine with the engine's own free real-time regen for
+            # unbounded gold).
+            options = {"B": "buy", "L": "leave"}
+            prompt = f"\n  `2(`0B`2)uy {label}, or (`0L`2)eave? : `%"
+        choice = await ctx.term.menu(options, prompt)
         if choice == "L":
             return
         if choice == "B":
@@ -435,6 +479,8 @@ class SunshinesFairyLand(IGM):
             await ctx.term.pause()
             return
 
+        # choice == "S" -- only reachable when sellable is True (the menu
+        # above never offers "S" otherwise).
         sell_price = int(price * SELL_PRICE_FRACTION)
         qty = await self._ask_quantity(
             ctx,
@@ -444,6 +490,12 @@ class SunshinesFairyLand(IGM):
         if qty < 1:
             return
         have_units = getattr(p, attr) // unit
+        if attr == "hp_max":
+            # Never let a sell take hp_max to 0 -- fixed post-review (see
+            # "Fix pass" in .superpowers/sdd/task-sfairy-report.md). A live
+            # player with hp_max == 0 is a nonsense state nothing else in
+            # this project's engine expects.
+            have_units = max(0, have_units - 1)
         if qty > have_units:
             await ctx.term.write(f'\n  `0"You have not got that much {label} to sell."`2\n')
             await ctx.term.pause()
