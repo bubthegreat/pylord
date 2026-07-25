@@ -100,13 +100,12 @@ def test_transaction_rolls_everything_back_together():
     db = _db()
     hero = db.players.create("Hero", "pw", "M")
 
-    with pytest.raises(RuntimeError):
-        with db.transaction() as tx:
-            tx.players.save_in_transaction(hero)
-            tx.mail.send(hero.id, "Someone", text="hi")
-            tx.state.set("day", 5)
-            hero.gold = 1
-            raise RuntimeError("something went wrong mid-turn")
+    with pytest.raises(RuntimeError), db.transaction() as tx:
+        tx.players.save_in_transaction(hero)
+        tx.mail.send(hero.id, "Someone", text="hi")
+        tx.state.set("day", 5)
+        hero.gold = 1
+        raise RuntimeError("something went wrong mid-turn")
 
     assert db.mail.unread_for(hero.id) == []
     assert db.state.get("day") is None
