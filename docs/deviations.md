@@ -103,3 +103,33 @@ mechanic-by-mechanic table).
 | Whole-house once-per-day gate and forest-fight cost not ported | `BARAK.PAS` gates the *entire* visit once per day (`bb^.p[play]`, a 151-entry flag array (`array[0..150]`, `BAR_VAR.PAS:18`) reset when `TIME.DAT`'s date rolls over) and spends a forest fight to enter at all (`dec(pl^.fights_left)`). This recreation instead gates the couch-search and training sub-actions individually (`couch:<id>`/`trained:<id>`, cleared by `daily_maint`) and charges no forest fight, matching the "Other Places" hub convention shared by all six starter IGMs (`pylord/engine/scenes/other_places.py` never deducts a fight to enter any of them). Changing that would be a cross-cutting, house-wide change out of scope for a single-IGM audit. |
 | (T)alk's quotes are five verbatim BARAK.PAS lines stitched together without their original context | Real lines pulled from four different branches (`knock()`'s greeting, `shoot()`'s chat opener and its books reaction, `walk_in()`'s threat and its beat-Barak reward line) and presented as flavor-only rotating quips, since the branching dialogue trees and fights they were originally part of are out of scope (see the arcade/narrative note above). |
 | Not ported: `sugar()` (borrow-sugar sub-flow, gem reward for laughing / fight for taking offense), the "read one of Barak's books" sub-flow (`history()`/`newspaper()` flavor text, or +1 to the reader's class skill counter capped at 40 via `skill()`), and `walk_in()`'s -1 charm penalties | Each is real BARAK.PAS content with no equivalent anywhere in this recreation's five-item menu. None is reachable from any action this port implements and none is covered by this task's brief/tests; listed here (and in the module docstring's "Not ported" section) so a future task doesn't have to rediscover the gap. |
+
+## Sandtiger's Bar vs. SANDBAR.PAS/SBARADD.PAS (original Pascal source)
+
+Task 16 built Sandtiger's Bar as a recreation, believing the real
+`SANDBAR.EXE` source lost. Task 2 found it (`igms_to_port/sandsrc.zip`'s
+`SANDBAR.PAS`/`SBARADD.PAS`, "Full Source Code To SandBar v1.02", 1995 Sons
+of Salami Software Group, credited to Joseph Masters) and audited the
+recreation against it. The real program is a vastly bigger thing than this
+recreation -- a whole separate "BarCoin" currency (100% of gold+bank
+mandatorily exchanged in on entry and back out on exit), three full card
+games against a fixed cast of six named NPC opponents each (Blackjack, Five
+Card Draw poker, Elimination) with tiered multi-way payouts, a Black Market
+shop (permanent stat/name/sex/class purchases, a 6-tier weapon/armor shop),
+an Old Witch PvP curse shop (mails the victim a stat penalty), and a
+keyword-driven free-text chat with Sandtiger gated behind buying him a
+drink -- none of which this recreation's three simple gambling games plus a
+stories flavor pick can or should try to reproduce. Per this task's own
+explicit judgment call, none of that content was ported (beyond the flavor
+stories, below); the rows cover only the numbers/flows the existing
+recreation already models (see `igms/sandtigers_bar/igm.py`'s module
+docstring for the full mechanic-by-mechanic breakdown).
+
+| Deviation | Reason |
+|-----------|--------|
+| (D)ice High/Low, (C)oin Flip, and (G)uess The Cup: no source equivalent for any of the three | The real source's only gambling is three full card games against six named NPC opponents each (Blackjack, Five Card Draw poker, Elimination -- `SANDBAR.PAS`'s `blackjack`/`elimination`, `SBARADD.PAS`'s `fivecard`) with tiered multi-way payouts (e.g. Elimination pays 200%/150%/100% of bet by 1st/2nd/3rd place) wagered in a separate BarCoin currency -- structurally unrelated to a single-round player-vs-house die/coin/cup pick. Kept invented. |
+| Max-bet cap `player.level * 1000` gold, no source equivalent | The source's `maxbet` config default is a flat `1000000` **BarCoins** (no per-level `L` scaling token, unlike `curse`/`mindfry`/`dwarf`/`abandonment`'s `L*L*L*L*<n>` formulas), wagered in a currency exchanged from gold at a separately-configured, also level-scaled rate this port doesn't model. No comparable flat-gold figure can be derived without inventing the sysop's exchange-rate config too; kept invented. |
+| BarCoin currency and its mandatory gold<->BarCoin exchange not ported | `opening()` (`SANDBAR.PAS` :443-494) converts 100% of the player's gold+bank into BarCoins at bar entry; every game in the real source is wagered in BarCoins, not gold. This recreation's dice/coin/cup bets stay in gold directly, matching every other starter IGM's economy (no other IGM introduces a second currency). |
+| Not ported: the Black Market (`blackmarket`, `SANDBAR.PAS` :708-1521), the Old Witch (`oldwitch`, :1526-1798), and Sandtiger's keyword-driven free-text chat with its per-exchange drink-purchase gate (`talksandtiger`/`drinkcheck`, `SBARADD.PAS` :907-1244/:752-875) | Each is real source content with no equivalent anywhere in this recreation's five-item menu (permanent stat/name/sex/class purchases and a 6-tier weapon/armor shop; PvP curse/mind-fry/dwarf/abandonment hexes that mail the victim a penalty; a free-text keyword chat gated behind buying Sandtiger a drink). None is reachable from any action this port implements and none is covered by this task's brief/tests; listed here (and in the module docstring's "Not ported" section) so a future task doesn't have to rediscover the gap. |
+| Whole-visit forest-fight cost and once-per-day play-count gate not ported | `opening()`/`chktheboy` spend a forest fight and cap plays via a per-player daily counter (`epd`, `sandbar.dat`'s `intoday`/`ltoday` arrays, `SANDBAR.PAS` :443-454/:2663-2696). This recreation charges no forest fight and has no once-per-day gate at all, matching the "Other Places" hub convention shared by all six starter IGMs (`pylord/engine/scenes/other_places.py` never deducts a fight to enter any of them). Changing that would be a cross-cutting, house-wide change out of scope for a single-IGM audit. |
+| (S)tories are four verbatim SANDBAR.PAS/SBARADD.PAS tales stitched into one write + one pause each, not their original drink-gated, multi-`moreprompt()` telling | Real text pulled from `talksandtiger()`'s `HIST`/`STOR` branch (`SBARADD.PAS` :1055-1223): Halder's Story, The Barak Life, Aragorn vs. Olodrin, Chance's Exile. Presented as a single flavor pick (matching this recreation's existing `_stories()` shape) rather than a keyword chat requiring a purchased drink and multiple keypresses through the telling. |

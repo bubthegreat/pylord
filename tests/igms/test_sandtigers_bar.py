@@ -1,9 +1,16 @@
-"""Behavior tests for Sandtiger's Bar (Task 16).
+"""Behavior tests for Sandtiger's Bar (Task 16; audited against
+SANDBAR.PAS/SBARADD.PAS in Task 2 -- see ``igms/sandtigers_bar/igm.py``'s
+module docstring).
 
 ``contract_check`` covers the framework invariants; these tests pin the
 gambling math (dice win/loss/push, coin-flip double-or-nothing chain,
-guess-the-cup 3x payout) and the economy guard (bet validation refuses a
-bet over gold-on-hand or over ``level * 1000``).
+guess-the-cup 3x payout), the economy guard (bet validation refuses a
+bet over gold-on-hand or over ``level * 1000``), and the Task 2 audit's
+adoption of the four real Sandtiger tales (verbatim SANDBAR.PAS/SBARADD.PAS
+text) into (S)tories. The gambling math itself stays invented -- the real
+source's only games are three card games against fixed NPC casts
+(Blackjack/Five Card Draw/Elimination), with no dice/coin/cup equivalent to
+adopt; see the module docstring and ``docs/deviations.md``.
 """
 
 from __future__ import annotations
@@ -226,7 +233,44 @@ async def test_stories_rotate_via_rng():
 
     await igm.enter(ctx)
 
+    from pylord.terminal import strip
+
     from igms.sandtigers_bar.igm import _STORIES
 
     out = "".join(ctx.term.output)
-    assert _STORIES[1].removeprefix("`0") in out
+    assert strip(_STORIES[1]) in strip(out)
+
+
+async def test_stories_uses_verbatim_sandbar_tale():
+    """(S)tories now tells one of four tales lifted verbatim from
+    SBARADD.PAS's ``talksandtiger()`` ``HIST``/``STOR`` branch (Task 2
+    audit) -- pin one exactly by literal text, not by re-importing
+    ``_STORIES``, so a future edit can't silently drift back to invented
+    flavor text without the test noticing.
+    """
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0]))
+    igm = SandtigersBar()
+    ctx = await make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    out = "".join(ctx.term.output)
+    # SBARADD.PAS's Halder's Story (ch = 'H').
+    assert "Halder was born in Devonshire" in out
+    assert "cannot kill or" in out
+
+
+async def test_stories_second_tale_is_barak_life():
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([1]))
+    igm = SandtigersBar()
+    ctx = await make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    out = "".join(ctx.term.output)
+    # SBARADD.PAS's "The Barak Life" (ch = 'T') -- the short one.
+    assert "we really know little about him" in out
