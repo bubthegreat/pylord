@@ -56,6 +56,7 @@ igms:
   the_latrine: true
   werewolf: true
   outlands_tavern: true
+  sunshines_fairy_land: true
 
 game:
   forest_fights_per_day: 15

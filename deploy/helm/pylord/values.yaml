@@ -138,6 +138,7 @@ igms:
   # Wave 3 -- ports from the igms_to_port archive.
   werewolf: true
   outlands_tavern: true
+  sunshines_fairy_land: true
 
 resources:
   requests:
