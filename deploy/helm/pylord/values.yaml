@@ -90,6 +90,13 @@ igms:
   turgons_house: true
   warriors_graveyard: true
   lord_casino: true
+  # Wave 2 -- off by default; flip any of these on per environment.
+  apothecary: false
+  gem_trader: false
+  old_skull_inn: false
+  abandoned_mines: false
+  arena_of_lords: false
+  the_latrine: false
 
 resources:
   requests:

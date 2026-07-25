@@ -16,7 +16,7 @@ import pytest
 
 from pylord import db
 from pylord.engine.game import GameCtx
-from pylord.hooks import IGM, ForestEvent, IgmContext, IgmViolation
+from pylord.hooks import IGM, ForestEvent, IgmContext, IgmStore, IgmViolation
 from pylord.models import PlayerRepo
 from pylord.terminal import ConnectionClosed, FakeIO
 from tests.igm_contract import contract_check
@@ -720,3 +720,21 @@ async def test_igm_inn_event_appears_on_the_inn_menu():
     text = "".join(ctx.io.output)
     assert "Slip into the back room" in text
     assert visited == [True]
+
+
+def test_store_reads_its_own_writes_after_a_flush():
+    """flush() used to leave the read cache saying "missing", so a get()
+    after it reported a value that was already on disk as absent."""
+    conn, _repo = _db()
+    store = IgmStore(conn, "cache")
+
+    assert store.get("rate") is None  # caches the miss
+    store.set("rate", 175)
+    store.flush()
+
+    assert store.get("rate") == 175
+    assert IgmStore(conn, "cache").get("rate") == 175  # and it really persisted
+
+    store.delete("rate")
+    store.flush()
+    assert store.get("rate") is None

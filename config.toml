@@ -26,3 +26,12 @@ violets_cottage = true
 turgons_house = true
 warriors_graveyard = true
 lord_casino = true
+
+# Wave 2 -- recreations from the historical IGM catalogue, shipped off
+# by default (see docs/deviations.md and each igms/<name>/igm.py).
+apothecary = false
+gem_trader = false
+old_skull_inn = false
+abandoned_mines = false
+arena_of_lords = false
+the_latrine = false

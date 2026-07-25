@@ -233,12 +233,18 @@ class IgmStore:
                     "DELETE FROM igm_data WHERE igm_key = ? AND k = ?",
                     (self._key, k),
                 )
+                self._loaded[k] = self._MISSING
             else:
                 self._conn.execute(
                     "INSERT INTO igm_data (igm_key, k, v) VALUES (?, ?, ?) "
                     "ON CONFLICT(igm_key, k) DO UPDATE SET v = excluded.v",
                     (self._key, k, json.dumps(val)),
                 )
+                # Fold the write into the read cache: without this, a get()
+                # after flush() falls back to whatever the cache learned
+                # *before* the write (usually "missing") and reports the
+                # value as absent even though it is on disk.
+                self._loaded[k] = val
         self._pending.clear()
 
 

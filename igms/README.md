@@ -6,10 +6,17 @@ original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-Six bundled IGMs ship here as working examples -- `baraks_house`,
+Twelve bundled IGMs ship here. Six are on by default -- `baraks_house`,
 `sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`
-and `lord_casino` -- from a few screens each to a full mini-game. Drop your
-own alongside them to add one.
+and `lord_casino` -- from a few screens each to a full mini-game. Six more
+(`apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
+`arena_of_lords`, `the_latrine`) ship **disabled**: enable them in
+`config.toml` under `[igms]`. Drop your own alongside them to add one.
+
+None of the classic third-party IGMs has surviving source -- they were
+separate DOS executables, and `reference/lord.js` models only the base
+game -- so every one of these is a recreation from the historical premise
+with its invented parts flagged in its module docstring.
 
 ## Writing an IGM
 
