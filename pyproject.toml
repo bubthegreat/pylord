@@ -8,6 +8,7 @@ license = {text = "GPL-3.0-or-later"}
 dependencies = [
     "aiomysql>=0.3.2",
     "aiosqlite>=0.22.1",
+    "cryptography>=49.0.0",
     "sqlalchemy>=2.0",
     "telnetlib3>=4.0.5",
 ]

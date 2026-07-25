@@ -338,9 +338,14 @@ class Database:
             yield conn
             await conn.commit()
 
-    async def execute(self, statement: Any) -> Any:
+    async def execute(self, statement: Any, parameters: Any = None) -> Any:
+        """Run ``statement``. ``parameters`` may be a list of dicts, which
+        executes it once per entry -- how a bulk copy inserts (see
+        ``pylord/migrate.py``)."""
         async with self._connection() as conn:
-            return await conn.execute(statement)
+            if parameters is None:
+                return await conn.execute(statement)
+            return await conn.execute(statement, parameters)
 
     async def fetch_one(self, statement: Any) -> Any:
         async with self._connection() as conn:

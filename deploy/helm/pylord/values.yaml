@@ -8,7 +8,9 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-# SQLite has a single writer and the volume is ReadWriteOnce: never run two.
+# One replica. On MySQL the storage no longer forces this, but the daily
+# maintenance pass and the "already adventuring elsewhere" login check are
+# not yet guarded across processes -- see deploy/README.md.
 replicaCount: 1
 
 nameOverride: ""
@@ -56,9 +58,44 @@ ingress:
     # Defaults to <fullname>-tls when blank.
     secretName: ""
 
-persistence:
+# The realm's database.
+#
+# MySQL runs as its own Deployment in this chart (mysql.yaml). SQLite is
+# still supported for local play -- set mysql.enabled: false and turn
+# persistence on, and the game keeps its file on the PVC below.
+mysql:
   enabled: true
-  # Retain, because this volume holds every character in the realm.
+  image: mysql:8.4
+  database: lord
+  user: lord
+  auth:
+    # Bring your own Secret (recommended): it must hold `password`,
+    # `root-password` and `url` keys. See deploy/README.md.
+    existingSecret: ""
+    # Only used when existingSecret is empty. Rendering a chart never
+    # generates one -- see templates/secret.yaml for why.
+    password: ""
+    rootPassword: ""
+  persistence:
+    storageClass: longhorn-retain
+    size: 8Gi
+  args:
+    # Players sit at a menu for minutes at a time; the pool must not have
+    # its connections cut out from under it while they think.
+    - --wait_timeout=28800
+    - --interactive_timeout=28800
+    - --max_connections=200
+  resources:
+    requests:
+      cpu: 50m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+persistence:
+  # Only needed when running on SQLite (mysql.enabled: false).
+  enabled: false
   storageClass: longhorn-retain
   accessMode: ReadWriteOnce
   size: 1Gi
@@ -66,8 +103,8 @@ persistence:
   # Reuse a volume that already exists rather than provisioning one.
   existingClaim: ""
 
-# IGMs ship inside the image -- this volume holds the database and nothing
-# else.
+# IGMs ship inside the image, so nothing but the SQLite file ever lives on
+# that volume.
 
 # Rendered into config.toml. Anything valid in the game's [game] table works;
 # see the repo README for what each knob does.

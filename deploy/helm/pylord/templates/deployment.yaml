@@ -6,10 +6,20 @@ metadata:
     {{- include "pylord.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  # SQLite has one writer and the volume is ReadWriteOnce: the old pod must
-  # be gone before the new one starts.
   strategy:
+    {{- if .Values.mysql.enabled }}
+    # The pod holds no state, so it no longer has to wait for a volume to
+    # detach. maxSurge stays 0 all the same: two pods would both try to run
+    # the daily maintenance pass, which is not yet guarded across processes.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    {{- else }}
+    # SQLite has one writer and the volume is ReadWriteOnce: the old pod
+    # must be gone before the new one starts.
     type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "pylord.selectorLabels" . | nindent 6 }}
@@ -30,6 +40,7 @@ spec:
       # Players are mid-session: give the connections a moment to close.
       terminationGracePeriodSeconds: 15
       volumes:
+        {{- if not .Values.mysql.enabled }}
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
@@ -37,6 +48,7 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- end }}
         - name: config
           configMap:
             name: {{ include "pylord.fullname" . }}-config
@@ -50,6 +62,16 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           args: ["serve", "--config", "/config/config.toml"]
+          {{- if .Values.mysql.enabled }}
+          env:
+            # Carries the password, so it comes from the Secret rather than
+            # the ConfigMap that renders config.toml.
+            - name: PYLORD_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pylord.dbSecretName" . }}
+                  key: url
+          {{- end }}
           ports:
             - name: telnet
               containerPort: {{ .Values.service.port }}
@@ -69,8 +91,10 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if not .Values.mysql.enabled }}
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
             - name: config
               mountPath: /config
               readOnly: true

@@ -36,18 +36,31 @@ deploy/
   192.168.0.41-100), so pylord takes its own address instead and touches
   nothing shared. Set `service.type: ClusterIP` and add a `tcp-services`
   entry if you'd rather have the nginx route.
-- **The volume outlives the release.** `longhorn-retain`, plus
+- **MySQL, not SQLite.** The realm ran on a SQLite file on a
+  ReadWriteOnce volume, which pinned the game pod to one node, made every
+  deploy a full stop-and-start, and left backups to "copy the file and hope
+  nobody was mid-write". MySQL runs as its own Deployment in this chart and
+  owns the volume; the game pod holds nothing.
+- **The database volume outlives the release.** `longhorn-retain`, plus
   `helm.sh/resource-policy: keep` and `argocd.argoproj.io/sync-options:
   Delete=false` on the PVC: deleting or pruning the Application does not
   delete anyone's character.
-- **`Recreate`, one replica.** SQLite has a single writer and the volume is
-  ReadWriteOnce.
-- **IGMs ship in the image; the volume holds only the database.** They
-  were briefly copied onto the volume on first start, which meant a fix to
-  a bundled IGM could never reach a realm that had already been seeded --
-  the stale copy kept loading, and a daily-limit fix sat unused in
-  production for a day. IGMs are code: they arrive with a release, and the
-  data directory is for `lord.db` alone.
+- **One replica, `maxSurge: 0`.** Not a storage limit any more -- the daily
+  maintenance pass and the "already adventuring elsewhere" login check are
+  not yet guarded across processes, so two game pods would both roll the
+  day over. Fix those and the replica count can go up.
+- **The password is a Secret, not the ConfigMap.** The game reads a whole
+  SQLAlchemy URL from `PYLORD_DB_URL`, so the credential never appears in
+  the rendered `config.toml`.
+- **The chart never generates a password.** Argo re-renders it on every
+  sync with no view of the cluster, so a generated one would rotate
+  underneath a running database and lock the game out. Create the Secret
+  out of band (below) and point `mysql.auth.existingSecret` at it.
+- **IGMs ship in the image.** They were briefly copied onto a volume on
+  first start, which meant a fix to a bundled IGM could never reach a realm
+  that had already been seeded -- the stale copy kept loading, and a
+  daily-limit fix sat unused in production for a day. IGMs are code: they
+  arrive with a release.
 
 ## First-time setup
 
@@ -55,7 +68,19 @@ deploy/
    `bubthegreat/pylord` (Settings → Secrets → Actions) so the build
    workflow can push `bubthegreat/pylord`.
 
-2. **Register the app with Argo** — copy the Application into the GitOps
+2. **Create the database Secret** — the chart will refuse to render
+   without one:
+
+   ```sh
+   kubectl -n pylord-prod create secret generic pylord-db \
+     --from-literal=password="$PW" \
+     --from-literal=root-password="$ROOT_PW" \
+     --from-literal=url="mysql+aiomysql://lord:$PW@pylord-mysql:3306/lord?charset=utf8mb4"
+   ```
+
+   then set `mysql.auth.existingSecret: pylord-db` in `values/prod.yaml`.
+
+3. **Register the app with Argo** — copy the Application into the GitOps
    repo and commit:
 
    ```sh
@@ -71,7 +96,7 @@ deploy/
    kubectl -n argocd get application pylord-prod -w
    ```
 
-3. **Play**:
+4. **Play**:
 
    - From anywhere: <https://lord.bubtaylor.com>
    - From the LAN, with a real telnet client:
@@ -90,7 +115,9 @@ deploy/
 | Change a game knob | Edit `values/prod.yaml`'s `game:` block and push — the config checksum restarts the pod. |
 | Roll back | Revert the tag commit, or `argocd app rollback pylord-prod`. |
 | Sysop CLI | `kubectl -n pylord-prod exec deploy/pylord -- pylord players --config /config/config.toml` |
-| Back up the realm | `kubectl -n pylord-prod exec deploy/pylord -- cat /data/lord.db > lord.db` (Longhorn also snapshots the volume). |
+| Back up the realm | `kubectl -n pylord-prod exec deploy/pylord-mysql -- sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction lord' > lord.sql` -- `--single-transaction` matters: it takes a consistent snapshot without locking players out mid-session. Longhorn also snapshots the volume. |
+| Restore | `kubectl -n pylord-prod exec -i deploy/pylord-mysql -- sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" lord' < lord.sql` |
+| Open a SQL shell | `kubectl -n pylord-prod exec -it deploy/pylord-mysql -- sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" lord'` |
 
 ## Local development
 

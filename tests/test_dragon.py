@@ -176,9 +176,7 @@ async def test_dragon_win_at_win_deeds_threshold_ends_session():
     assert "YOUR QUEST IS OVER" in text
     assert "YOUR QUEST IS NOT OVER" not in text
 
-    row = await query_one(ctx.db, "SELECT value FROM game_state WHERE key = 'won_by'")
-    assert row is not None
-    assert row.value == str(ctx.player.id)
+    assert await ctx.db.state.get("won_by") == str(ctx.player.id)
 
 
 # --- Seeded loss: death, no exp penalty (unlike forest/PvP) -------------
@@ -253,5 +251,4 @@ async def test_dragon_win_records_latest_hero_and_resets_flirts():
     await dragon_mod.dragon(ctx)
     assert ctx.player.flirts_today == 0
     assert ctx.player.high_spirits == 1
-    row = await query_one(ctx.db, "SELECT value FROM game_state WHERE key = 'latesthero'")
-    assert row is not None and row.value == "Hero"
+    assert await ctx.db.state.get("latesthero") == "Hero"

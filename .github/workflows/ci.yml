@@ -36,6 +36,43 @@ jobs:
               -f "deploy/values/${env}.yaml" > "/tmp/render-${env}.yaml"
           done
 
+  mysql:
+    name: Tests on MySQL
+    # SQLite and MySQL disagree about enough -- upsert syntax, collations,
+    # reserved words -- that a green suite on SQLite alone says nothing
+    # about the database the homelab actually runs. Same tests, real server.
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: lord
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Test
+        # The suite gives each `:memory:` request its own database, so the
+        # user needs CREATE DATABASE -- hence root against a throwaway
+        # service container. See tests/conftest.py.
+        env:
+          PYLORD_TEST_DB_URL: mysql+aiomysql://root:ci@127.0.0.1:3306/lord?charset=utf8mb4
+        run: uv run pytest -q
+
   image:
     name: Image runs the way the chart runs it
     runs-on: ubuntu-latest

@@ -105,8 +105,7 @@ async def test_maintenance_increments_day_from_existing_value():
 
     await daily.maintenance(database, {}, "2026-07-23")
 
-    row = await query_one(database, "SELECT value FROM game_state WHERE key = 'day'")
-    assert row.value == "8"
+    assert await database.state.get("day") == "8"
 
 
 async def test_maintenance_defaults_day_to_two_when_unset():
@@ -114,8 +113,7 @@ async def test_maintenance_defaults_day_to_two_when_unset():
 
     await daily.maintenance(database, {}, "2026-07-23")
 
-    row = await query_one(database, "SELECT value FROM game_state WHERE key = 'day'")
-    assert row.value == "2"
+    assert await database.state.get("day") == "2"
 
 
 async def test_maintenance_sets_last_maint_marker():
@@ -123,10 +121,7 @@ async def test_maintenance_sets_last_maint_marker():
 
     await daily.maintenance(database, {}, "2026-07-23")
 
-    row = await query_one(database, 
-        "SELECT value FROM game_state WHERE key = 'last_maint'"
-    )
-    assert row.value == "2026-07-23"
+    assert await database.state.get("last_maint") == "2026-07-23"
 
 
 async def test_skill_uses_death_knight_and_thief_use_rank_over_four_plus_one():

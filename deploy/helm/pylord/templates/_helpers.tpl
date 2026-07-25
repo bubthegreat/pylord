@@ -34,6 +34,25 @@ app.kubernetes.io/name: {{ include "pylord.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{/* The Secret holding the database password/URL. */}}
+{{- define "pylord.dbSecretName" -}}
+{{- if .Values.mysql.auth.existingSecret }}
+{{- .Values.mysql.auth.existingSecret }}
+{{- else }}
+{{- printf "%s-db" (include "pylord.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+The SQLAlchemy URL the game connects with.
+
+utf8mb4 is not optional: character names and mail are free text, and the
+older utf8 alias is a three-byte subset that cannot store an emoji.
+*/}}
+{{- define "pylord.dbUrl" -}}
+{{- printf "mysql+aiomysql://%s:%s@%s-mysql:3306/%s?charset=utf8mb4" .Values.mysql.user .Values.mysql.auth.password (include "pylord.fullname" .) .Values.mysql.database }}
+{{- end }}
+
 {{/* The PVC the deployment mounts: an existing one, or ours. */}}
 {{- define "pylord.claimName" -}}
 {{- if .Values.persistence.existingClaim }}

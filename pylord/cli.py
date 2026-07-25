@@ -25,6 +25,16 @@ def load_config(config_path: Path) -> dict[str, Any]:
         config = tomllib.load(f)
 
     server_cfg = config.setdefault("server", {})
+
+    # A full database URL may come from the environment instead, and wins
+    # when it does. That is how the Kubernetes deployment passes a MySQL
+    # URL: it carries a password, so it belongs in a Secret rather than in
+    # the ConfigMap that renders config.toml.
+    env_url = os.environ.get("PYLORD_DB_URL")
+    if env_url:
+        server_cfg["db"] = env_url
+        return config
+
     if "db" in server_cfg:
         db_path = Path(server_cfg["db"])
         if not db_path.is_absolute():
@@ -250,6 +260,25 @@ def _cmd_players(args: argparse.Namespace) -> int:
     return asyncio.run(_run())
 
 
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    """Copy a realm between two databases (e.g. SQLite -> MySQL)."""
+    from pylord.migrate import migrate
+
+    async def _run() -> int:
+        try:
+            counts = await migrate(args.source, args.dest, overwrite=args.overwrite)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        _print_table(
+            ["table", "rows"], [[name, str(n)] for name, n in counts.items()]
+        )
+        print(f"copied {sum(counts.values())} rows")
+        return 0
+
+    return asyncio.run(_run())
+
+
 def _cmd_smoke(args: argparse.Namespace) -> int:
     """Play every base feature over real telnet against a throwaway
     server/database and report what each screen said. See pylord/e2e.py."""
@@ -343,6 +372,21 @@ def main(argv: list[str] | None = None) -> int:
         help="path to config.toml (default: ./config.toml)",
     )
     players_parser.set_defaults(func=_cmd_players)
+
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="copy a realm from one database to another",
+    )
+    migrate_parser.add_argument(
+        "source", help="source database (a path, or a full SQLAlchemy URL)"
+    )
+    migrate_parser.add_argument("dest", help="destination database")
+    migrate_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace the destination's characters (it refuses otherwise)",
+    )
+    migrate_parser.set_defaults(func=_cmd_migrate)
 
     smoke_parser = subparsers.add_parser(
         "smoke",
