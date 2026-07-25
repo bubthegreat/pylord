@@ -54,6 +54,9 @@ igms:
   abandoned_mines: true
   arena_of_lords: true
   the_latrine: true
+  # Wave 3 -- documented recreation from surviving archive docs; sysop
+  # flips this on when ready (see igms/werewolf/igm.py).
+  werewolf: false
 
 game:
   forest_fights_per_day: 15

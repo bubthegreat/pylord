@@ -36,3 +36,8 @@ old_skull_inn = false
 abandoned_mines = false
 arena_of_lords = false
 the_latrine = false
+
+# Wave 3 -- documented recreations ported from surviving archive docs
+# (igms_to_port/, see each igms/<name>/igm.py for the recorded/invented
+# split), shipped off by default.
+werewolf = false

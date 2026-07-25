@@ -32,3 +32,8 @@ game:
   # Short clocks so the regeneration and daily paths are quick to exercise.
   fight_regen_minutes: 1
   endurance_cost: 100
+
+# Merges with the chart's own igms defaults (deploy/helm/pylord/values.yaml)
+# -- only the new key needs stating here.
+igms:
+  werewolf: false
