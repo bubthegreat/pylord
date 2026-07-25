@@ -8,6 +8,7 @@ before calling ``run_session``.
 from pylord.engine.scenes import (
     bank,
     conjugality,
+    dark_cloak,
     dragon,
     forest,
     hall,
@@ -29,6 +30,7 @@ from pylord.engine.scenes import (
 __all__ = [
     "bank",
     "conjugality",
+    "dark_cloak",
     "dragon",
     "forest",
     "hall",

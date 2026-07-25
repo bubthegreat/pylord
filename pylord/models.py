@@ -93,3 +93,5 @@ class Player:
     fight_bonus: int = 0
     endurance_bought: int = 0
     fights_regen_at: str = ""
+    description1: str = ""
+    description2: str = ""

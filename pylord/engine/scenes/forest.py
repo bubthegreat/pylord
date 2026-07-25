@@ -779,6 +779,15 @@ async def _event_troll(ctx: GameCtx) -> None:
     await ctx.io.pause()
 
 
+async def _event_dark_cloak(ctx: GameCtx) -> None:
+    """lord.js case 15: the forest opens onto the Dark Cloak Tavern
+    (:12240). Run in place -- lord.js calls it as a function and drops the
+    player back in the forest afterwards, rather than changing screens."""
+    from pylord.engine.scenes.dark_cloak import dark_cloak
+
+    await dark_cloak(ctx)
+
+
 _EVENT_TABLE = {
     0: _event_old_man,
     1: _event_hag,
@@ -789,6 +798,7 @@ _EVENT_TABLE = {
     8: _event_horse_trader,
     9: _event_fairy,
     13: _event_troll,
+    15: _event_dark_cloak,
 }
 
 

@@ -103,6 +103,13 @@ players = Table(
     Column("fight_bonus", Integer, nullable=False, server_default="0"),
     Column("endurance_bought", Integer, nullable=False, server_default="0"),
     Column("fights_regen_at", String(40), nullable=False, server_default=""),
+    # What the old man in the Dark Cloak Tavern will tell other players
+    # about you (recorddefs.js:329-345, two lines the player writes
+    # themselves). Empty means he has heard nothing -- lord.js keeps a
+    # separate `has_des` flag for that, which two empty strings say just
+    # as well.
+    Column("description1", String(255), nullable=False, server_default=""),
+    Column("description2", String(255), nullable=False, server_default=""),
 )
 
 game_state = Table(
@@ -151,4 +158,4 @@ schema_version = Table(
 
 #: Bumped whenever the tables above change in a way an existing database
 #: has to be migrated for.
-CURRENT_VERSION = 4
+CURRENT_VERSION = 5
