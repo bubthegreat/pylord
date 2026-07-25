@@ -118,12 +118,11 @@ async def test_write_mail_inserts_row():
     result = await mail_mod.mail(ctx)
     assert result == "town"
 
-    row = await query_one(database, "SELECT to_id, from_name, text, effect, read FROM mail")
-    assert row.to_id == recipient.id
-    assert row.from_name == "Sender"
-    assert "Hello there!" in row.text
-    assert row.effect is None
-    assert row.read == 0
+    unread = await database.mail.unread_for(recipient.id)
+    assert len(unread) == 1
+    assert unread[0].from_name == "Sender"
+    assert "Hello there!" in unread[0].text
+    assert unread[0].effect is None
 
 
 async def test_write_mail_partial_name_match_confirms():
@@ -177,8 +176,7 @@ async def test_login_applies_effect_exactly_once():
     assert ctx.player.gold == 150
     assert "A gift!" in screen(ctx.io)
 
-    row = await query_one(database, "SELECT read FROM mail")
-    assert row.read == 1
+    assert await database.mail.unread_for(player.id) == []
 
     # Re-login: the same mail row must not be applied a second time.
     ctx2 = GameCtx(player=ctx.player, db=database, io=FakeIO([]))
@@ -212,8 +210,7 @@ async def test_apply_unread_mail_effect_survives_crash_without_session_save():
 
     reloaded = await database.players.get(player.id)
     assert reloaded.gold == 150
-    reloaded_row = await query_one(database, "SELECT read FROM mail")
-    assert reloaded_row.read == 1
+    assert await database.mail.unread_for(player.id) == []
 
 
 async def test_apply_unread_mail_no_mail_is_a_silent_no_op():

@@ -93,3 +93,32 @@ async def _redirect_in_memory_databases(monkeypatch):
     finally:
         for name in created:
             await _run(f"DROP DATABASE IF EXISTS `{name}`")
+
+
+@pytest.fixture(autouse=True)
+async def _close_databases(monkeypatch):
+    """Dispose every database a test opened, once it is done.
+
+    Defined after the redirect above so it tears down *first*: pools are
+    disposed before the databases they point at are dropped.
+
+    Tests call ``connect()`` freely and rarely close, which costs nothing
+    on an in-memory SQLite database. Against a real server each of those
+    leaves a live connection pool behind, and a few dozen tests is enough
+    to exhaust ``max_connections`` and hang the rest of the run -- which is
+    exactly how this was found.
+    """
+    opened: list[data.Database] = []
+    real_connect = data.connect
+
+    async def connect(url: str, **kwargs):
+        db = await real_connect(url, **kwargs)
+        opened.append(db)
+        return db
+
+    monkeypatch.setattr(data, "connect", connect)
+    try:
+        yield
+    finally:
+        for db in opened:
+            await db.dispose()

@@ -441,4 +441,10 @@ async def start(config: dict[str, Any]):
             reader, writer, database=database, config=config, igms=igms
         )
 
-    return await telnetlib3.create_server(host=host, port=port, shell=shell)
+    server = await telnetlib3.create_server(host=host, port=port, shell=shell)
+    # Hung off the server so a caller that shuts it down can also let go of
+    # the connection pool. Without it, a short-lived server (the e2e
+    # walkthrough) leaves aiomysql connections to be collected after the
+    # event loop has closed, which prints an alarming traceback at exit.
+    server.pylord_database = database
+    return server

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -220,9 +221,12 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
     ``igms`` names bundled IGMs to enable for this run. They load from the
     build itself (see ``pylord.server.start``), so this only flips their
     config toggles -- nothing is copied anywhere.
+
+    ``PYLORD_DB_URL`` points the walkthrough at another database instead --
+    how the whole thing gets played against MySQL before a release.
     """
     work_dir.mkdir(parents=True, exist_ok=True)
-    db_path = work_dir / "lord.db"
+    db_path = os.environ.get("PYLORD_DB_URL") or str(work_dir / "lord.db")
     config = {
         "server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)},
         "game": {},
@@ -234,6 +238,7 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
     finally:
         server.close()
         await server.wait_closed()
+        await server.pylord_database.dispose()
 
 
 async def wait_offline(db_path: Path, name: str, timeout: float = 5.0):
