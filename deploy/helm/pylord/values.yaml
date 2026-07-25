@@ -119,6 +119,8 @@ game:
   endurance_cost: 1000
 
 # IGM enable/disable, rendered into config.toml's [igms] table.
+# Shipped IGMs are on by default; flip any of these off per environment
+# if the sysop doesn't want them.
 igms:
   baraks_house: true
   sandtigers_bar: true
@@ -126,15 +128,15 @@ igms:
   turgons_house: true
   warriors_graveyard: true
   lord_casino: true
-  # Wave 2 -- off by default; flip any of these on per environment.
-  apothecary: false
-  gem_trader: false
-  old_skull_inn: false
-  abandoned_mines: false
-  arena_of_lords: false
-  the_latrine: false
-  # Wave 3 -- ports from the igms_to_port archive, off by default.
-  werewolf: false
+  # Wave 2.
+  apothecary: true
+  gem_trader: true
+  old_skull_inn: true
+  abandoned_mines: true
+  arena_of_lords: true
+  the_latrine: true
+  # Wave 3 -- ports from the igms_to_port archive.
+  werewolf: true
 
 resources:
   requests:

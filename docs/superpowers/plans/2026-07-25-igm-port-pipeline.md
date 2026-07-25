@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-07-25-igm-port-pipeline-design.md`.
-- All new IGMs: `default_enabled = False`, toggles added to `config.toml` `[igms]` and BOTH `deploy/values/prod.yaml` and `deploy/values/local.yaml` `igms:` maps (prod may enable; local mirrors config).
+- All new IGMs: `default_enabled = True` (convention flipped 2026-07-25: shipped IGMs default on), toggles added to `config.toml` `[igms]` and BOTH `deploy/values/prod.yaml` and `deploy/values/local.yaml` `igms:` maps (prod may enable; local mirrors config).
 - Module docstring must state provenance tier (direct port / documented recreation) and list everything invented.
 - LORD2-targeted archives are out of scope; so are `tense100.zip` and the 8 dead-link files.
 - Commit author: pass `-c user.name='Bub Taylor' -c user.email='bubthegreat@gmail.com'` (repo has no local identity).

@@ -178,7 +178,7 @@ class WereWolf(IGM):
     key = "werewolf"
     name = "WereWolf"
     author = "Jay Hodges"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(

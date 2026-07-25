@@ -51,10 +51,10 @@ async def test_contract(igm_cls):
 
 
 @pytest.mark.parametrize("igm_cls", _WAVE2)
-def test_ships_disabled(igm_cls):
-    """Wave 2+ is opt-in: the spec ships everything past the starter six
-    disabled, so a sysop chooses what their realm has."""
-    assert igm_cls.default_enabled is False
+def test_ships_enabled(igm_cls):
+    """Shipped IGMs are on by default: a sysop turns off what they don't
+    want, rather than opting each one in."""
+    assert igm_cls.default_enabled is True
     assert igm_cls.key and igm_cls.name
 
 

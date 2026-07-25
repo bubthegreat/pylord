@@ -6,11 +6,11 @@ original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-Twelve bundled IGMs ship here. Six are on by default -- `baraks_house`,
-`sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`
-and `lord_casino` -- from a few screens each to a full mini-game. Six more
-(`apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
-`arena_of_lords`, `the_latrine`) ship **disabled**: enable them in
+Thirteen bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
+`sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`,
+`lord_casino`, `apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
+`arena_of_lords`, `the_latrine`, and `werewolf` -- from a few screens each to
+a full mini-game. A sysop who doesn't want one turns it off in
 `config.toml` under `[igms]`. Add your own alongside them -- IGMs ship
 with the build, so a new one arrives with the next release rather than
 being copied onto a server.

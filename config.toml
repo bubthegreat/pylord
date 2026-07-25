@@ -20,7 +20,8 @@ fight_regen_minutes = 15
 endurance_cost = 1000
 
 [igms]
-# populated by bundled IGMs; true = enabled
+# populated by bundled IGMs; true = enabled. Shipped IGMs are on by
+# default -- the sysop turns off what they don't want.
 baraks_house = true
 sandtigers_bar = true
 violets_cottage = true
@@ -28,16 +29,16 @@ turgons_house = true
 warriors_graveyard = true
 lord_casino = true
 
-# Wave 2 -- recreations from the historical IGM catalogue, shipped off
-# by default (see docs/deviations.md and each igms/<name>/igm.py).
-apothecary = false
-gem_trader = false
-old_skull_inn = false
-abandoned_mines = false
-arena_of_lords = false
-the_latrine = false
+# Wave 2 -- recreations from the historical IGM catalogue (see
+# docs/deviations.md and each igms/<name>/igm.py).
+apothecary = true
+gem_trader = true
+old_skull_inn = true
+abandoned_mines = true
+arena_of_lords = true
+the_latrine = true
 
-# Wave 3 -- documented recreations ported from surviving archive docs
-# (igms_to_port/, see each igms/<name>/igm.py for the recorded/invented
-# split), shipped off by default.
-werewolf = false
+# Wave 3 -- ports from the igms_to_port archive and documented
+# recreations from surviving archive docs (see each igms/<name>/igm.py
+# for the recorded/invented split).
+werewolf = true

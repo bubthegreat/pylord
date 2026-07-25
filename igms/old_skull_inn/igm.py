@@ -41,7 +41,7 @@ class OldSkullInn(IGM):
     key = "old_skull_inn"
     name = "The Old Skull Inn"
     author = "pylord (recreation)"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(

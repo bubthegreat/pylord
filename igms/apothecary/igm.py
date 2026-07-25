@@ -39,7 +39,7 @@ class Apothecary(IGM):
     key = "apothecary"
     name = "The Apothecary"
     author = "pylord (recreation)"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(

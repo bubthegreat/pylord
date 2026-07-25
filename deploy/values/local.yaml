@@ -33,7 +33,5 @@ game:
   fight_regen_minutes: 1
   endurance_cost: 100
 
-# Merges with the chart's own igms defaults (deploy/helm/pylord/values.yaml)
-# -- only the new key needs stating here.
-igms:
-  werewolf: false
+# No igms override here -- the chart's own defaults (deploy/helm/pylord/
+# values.yaml) already ship everything on, including werewolf.

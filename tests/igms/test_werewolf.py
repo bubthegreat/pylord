@@ -56,8 +56,8 @@ async def test_contract():
     await contract_check(WereWolf)
 
 
-def test_ships_disabled():
-    assert WereWolf.default_enabled is False
+def test_ships_enabled():
+    assert WereWolf.default_enabled is True
     assert WereWolf.key == "werewolf"
 
 

@@ -43,7 +43,7 @@ class GemTrader(IGM):
     key = "gem_trader"
     name = "The Gem Trader"
     author = "pylord (recreation)"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(

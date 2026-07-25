@@ -37,7 +37,7 @@ class AbandonedMines(IGM):
     key = "abandoned_mines"
     name = "The Abandoned Mines"
     author = "pylord (recreation)"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(

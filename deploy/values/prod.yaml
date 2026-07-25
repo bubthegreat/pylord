@@ -40,7 +40,7 @@ mysql:
 persistence:
   enabled: false
 
-# All twelve bundled IGMs are on in this realm. They ship inside the image.
+# All thirteen bundled IGMs are on in this realm. They ship inside the image.
 igms:
   baraks_house: true
   sandtigers_bar: true
@@ -54,9 +54,7 @@ igms:
   abandoned_mines: true
   arena_of_lords: true
   the_latrine: true
-  # Wave 3 -- documented recreation from surviving archive docs; sysop
-  # flips this on when ready (see igms/werewolf/igm.py).
-  werewolf: false
+  werewolf: true
 
 game:
   forest_fights_per_day: 15

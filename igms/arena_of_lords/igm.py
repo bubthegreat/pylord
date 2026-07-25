@@ -51,7 +51,7 @@ class ArenaOfLords(IGM):
     key = "arena_of_lords"
     name = "The Arena of Lords"
     author = "pylord (recreation)"
-    default_enabled = False
+    default_enabled = True
 
     async def enter(self, ctx: IgmContext) -> None:
         await ctx.term.write(
