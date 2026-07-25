@@ -24,13 +24,21 @@ ingress:
   enabled: true
   host: lord.bubtaylor.com
 
-persistence:
+# The realm lives in MySQL. The password is in the `pylord-db` Secret,
+# created out of band -- see deploy/README.md's first-time setup.
+mysql:
   enabled: true
-  storageClass: longhorn-retain
-  size: 1Gi
+  auth:
+    existingSecret: pylord-db
+  persistence:
+    storageClass: longhorn-retain
+    size: 8Gi
 
-# All twelve bundled IGMs are on in this realm. The chart seeds any that
-# aren't on the volume yet (see the chart's init container).
+# No volume on the game pod: it holds nothing now.
+persistence:
+  enabled: false
+
+# All twelve bundled IGMs are on in this realm. They ship inside the image.
 igms:
   baraks_house: true
   sandtigers_bar: true

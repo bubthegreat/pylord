@@ -14,11 +14,19 @@ service:
 web:
   enabled: true
 
-persistence:
+# A throwaway MySQL with a throwaway password, so `tilt up` needs no
+# out-of-band Secret. Never do this anywhere real.
+mysql:
   enabled: true
-  # Whatever the local cluster's default class is.
-  storageClass: ""
-  size: 100Mi
+  auth:
+    password: localdev
+  persistence:
+    # Whatever the local cluster's default class is.
+    storageClass: ""
+    size: 1Gi
+
+persistence:
+  enabled: false
 
 game:
   # Short clocks so the regeneration and daily paths are quick to exercise.
