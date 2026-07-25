@@ -36,8 +36,8 @@ multiplies the number times the player's level").
 
 ``SHINY.RHP``'s own header calls it "The Strange Shiny Thing" and says
 "This is included so your users have an extra Random Happening" -- unlike
-its sibling ``SAMPLE.RHP`` ("RHP_name: Sample Program... Feel free to use
-this in writing your own random happening"), which is explicitly a
+its sibling ``SAMPLE.RHP`` ("RHP_name: Sample Program... Fell [sic] free to
+use this in writing your own random happening"), which is explicitly a
 sysop-facing scripting tutorial that narrates its own scripting language
 in-fiction ("This is a sample of...`0`0's new built in programing
 language") -- not in-world content. Only ``SHINY.RHP`` is ported; the
@@ -184,6 +184,21 @@ no-kill guards.
   ("A child could beat that wimp!", ``pylord/engine/scenes/inn.py``'s
   ``_bribe_attack``), the closest analog this codebase has to Outlands'
   own "sneak upstairs and attack a sleeping guest" mechanic.
+* **The return-trip catch risk, and why "upstairs" is read as "downstairs."**
+  ``WHATSNEW.TXT`` v1.1 says, verbatim: "If user can't find someone in the
+  rooms to kill, they must risk sneaking back upstairs." Read literally
+  this doesn't parse -- the player is already upstairs at that point, per
+  the same doc's own "sneaks upstairs and tries to attack someone" wording
+  a few lines above it -- so there is nothing to "sneak back upstairs"
+  *to*. This port reads it as a typo for "downstairs": the archive's prose
+  is typo-heavy throughout (e.g. "thier" and "save" for "safe" quoted
+  elsewhere in this docstring, plus "completly," "intresting," "awnser,"
+  and "orginally" in ``OUTLANDS.TXT`` itself), and "the return trip out of
+  the rooms also carries a catch-risk" is the only reading that fits the
+  surrounding sentence and the sneak-in risk it's paired with. Implemented
+  as a second ``SNEAK_CATCH_CHANCE_DENOM`` roll (skipped, like the entry
+  roll, when a fairy is protecting the whole excursion) after the sneak
+  loop ends with no attack resolved.
 * **A caught sneak (either direction) costs nothing beyond the wasted
   trip** -- no penalty is recorded, so none beyond "no kill, try again
   another day" is invented.
@@ -217,11 +232,11 @@ no-kill guards.
 **Not ported:**
 
 * **``SAMPLE.RHP``** ("Sample Program") -- explicitly a sysop-facing
-  scripting tutorial ("Feel free to use this in writing your own random
-  happening"), not in-world Tavern content; its own narration breaks the
-  fourth wall to describe the scripting language itself. Porting its text
-  as a real Tavern encounter would put words about pylord's own
-  implementation into a fictional BarKeep's mouth.
+  scripting tutorial ("Fell [sic] free to use this in writing your own
+  random happening"), not in-world Tavern content; its own narration
+  breaks the fourth wall to describe the scripting language itself.
+  Porting its text as a real Tavern encounter would put words about
+  pylord's own implementation into a fictional BarKeep's mouth.
 * **BADWORDS.DAT profanity filtering** (v1.1: "Uses LORD v3.55
   BADWORDS.DAT file in the conversation if it exists...") -- this port
   takes no free-text conversational input for the BarKeep to filter, and
@@ -529,8 +544,9 @@ class OutlandsTavern(IGM):
 
         # Found no one to rob, or lost their nerve -- must risk the trip
         # back down. "If user can't find someone in the rooms to kill,
-        # they must risk sneaking back upstairs." (WHATSNEW.TXT, v1.1;
-        # read here as the return trip -- see module docstring.)
+        # they must risk sneaking back upstairs." (WHATSNEW.TXT, v1.1) --
+        # "upstairs" read as a typo for "downstairs"; see the module
+        # docstring's "The return-trip catch risk" note for why.
         if not protected and ctx.rng.randrange(SNEAK_CATCH_CHANCE_DENOM) == 0:
             await ctx.term.write(
                 "\n  `4The BarKeep spots you sneaking back down and gives you a\n"
