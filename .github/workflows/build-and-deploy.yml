@@ -68,7 +68,9 @@ jobs:
 
       - name: Write the tag into deploy/values/prod.yaml
         run: |
-          sed -i -E "s/^(  tag: ).*/\1${{ needs.build.outputs.tag }}/" deploy/values/prod.yaml
+          # Quoted: an all-digit commit SHA (about one in fifteen) is a
+          # valid YAML number, and Helm renders it back as 2.521844e+06.
+          sed -i -E "s/^(  tag: ).*/\1\"${{ needs.build.outputs.tag }}\"/" deploy/values/prod.yaml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --quiet; then
