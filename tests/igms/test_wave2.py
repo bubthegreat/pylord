@@ -23,6 +23,7 @@ from tests.igms._harness import (
     make_ctx,
     make_db,
     make_igm_ctx,
+    make_maint_ctx,
 )
 
 _WAVE2 = [Apothecary, GemTrader, OldSkullInn, AbandonedMines, ArenaOfLords, TheLatrine]
@@ -249,3 +250,87 @@ async def test_searching_can_find_gold_or_regret():
     _gctx, ctx, p, _ = _visit(igm, ["S", "x", "L"], rng=SeqRandom([3]), hp=100, hp_max=100)
     await igm.enter(ctx)
     assert p.hp == 95
+
+
+# --- Daily allowances: none of these may print money ------------------------
+
+
+async def test_shallow_digging_is_rationed():
+    """Unlimited small payouts are unlimited payouts: sifting used to be an
+    endless gold faucet."""
+    from igms.abandoned_mines.igm import SHALLOW_PER_DAY
+
+    igm = AbandonedMines()
+    keys = []
+    for _ in range(SHALLOW_PER_DAY + 2):
+        keys += ["S", "x"]
+    keys.append("L")
+    gctx, ctx, p, _ = _visit(
+        igm, keys, rng=SeqRandom([50] * SHALLOW_PER_DAY), gold=0
+    )
+    await igm.enter(ctx)
+
+    assert p.gold == 50 * SHALLOW_PER_DAY  # the extra attempts paid nothing
+    assert "every heap worth turning today" in _screen(gctx)
+
+
+async def test_latrine_searching_is_rationed():
+    from igms.the_latrine.igm import SEARCH_PER_DAY
+
+    igm = TheLatrine()
+    keys = []
+    for _ in range(SEARCH_PER_DAY + 1):
+        keys += ["S", "x"]
+    keys.append("L")
+    gctx, ctx, _p, _ = _visit(igm, keys, rng=SeqRandom([2] * SEARCH_PER_DAY), gold=0)
+    await igm.enter(ctx)
+
+    assert "enough for one day" in _screen(gctx)
+
+
+async def test_arena_bouts_are_rationed():
+    """A strong warrior nets purse-minus-fee every win, so an uncapped
+    arena prints gold."""
+    import random
+
+    from igms.arena_of_lords.igm import BOUTS_PER_DAY
+
+    igm = ArenaOfLords()
+    keys = []
+    for _ in range(BOUTS_PER_DAY + 1):
+        keys += ["1", "A", "x"]
+    keys.append("L")
+    gctx, ctx, _p, _ = _visit(
+        igm, keys, rng=random.Random(3),
+        level=1, strength=30_000, hp=900, hp_max=900, gold=10_000,
+    )
+    await igm.enter(ctx)
+
+    assert ctx.store.get("bouts:1") == BOUTS_PER_DAY
+    assert "day's work" in _screen(gctx)
+
+
+@pytest.mark.parametrize(
+    "igm_cls,keys",
+    [
+        (AbandonedMines, ["sift:1", "deep:1"]),
+        (TheLatrine, ["search:1"]),
+        (ArenaOfLords, ["bouts:1", "streak:1"]),
+    ],
+)
+async def test_daily_maint_clears_the_allowances(igm_cls, keys):
+    conn, repo = make_db()
+    repo.create("Hero", "pw", "M")
+    igm = igm_cls()
+
+    mctx = make_maint_ctx(conn, {}, igm.key)
+    for key in keys:
+        mctx.store.set(key, 3)
+    mctx.store.flush()
+
+    fresh = make_maint_ctx(conn, {}, igm.key)
+    await igm.daily_maint(fresh)
+    fresh.store.flush()
+
+    after = make_maint_ctx(conn, {}, igm.key)
+    assert [after.store.get(k) for k in keys] == [None] * len(keys)

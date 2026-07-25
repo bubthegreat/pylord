@@ -4,8 +4,9 @@ Wave-2 IGM, recreated from the premise; no source survives for the original
 binary and `reference/lord.js` never modelled an IGM's internals. Invented:
 the two shafts, their odds, the payouts and the cave-in damage.
 
-The shallow workings are safe and stingy. The deep shaft pays better and
-can hurt you, and you may only try it once a day -- the pick is the same,
+The shallow workings are safe and stingy, and rationed -- a small payout
+you can repeat forever is not small. The deep shaft pays better and can
+hurt you, and you may only try it once a day -- the pick is the same,
 what changes is how far in you are willing to go.
 """
 
@@ -13,6 +14,9 @@ from __future__ import annotations
 
 from pylord.hooks import IGM, IgmContext, IgmMaintContext
 
+#: Shallow digs allowed per day. Without a cap the spoil heaps are an
+#: unbounded gold faucet -- a small payout repeated forever is not small.
+SHALLOW_PER_DAY = 6
 SHALLOW_GOLD = (20, 120)
 DEEP_GOLD = (200, 900)
 #: Deep-shaft chance (1 in N) of each: a gem, and a cave-in.
@@ -56,11 +60,21 @@ class AbandonedMines(IGM):
 
     async def _shallow(self, ctx: IgmContext) -> None:
         p = ctx.player
+        used = ctx.store.get(f"sift:{p.id}", 0)
+        if used >= SHALLOW_PER_DAY:
+            await ctx.term.write(
+                "\n  `2You have turned over every heap worth turning today, and your\n"
+                "  back has opinions about the rest.\n"
+            )
+            await ctx.term.pause()
+            return
+        ctx.store.set(f"sift:{p.id}", used + 1)
         gold = ctx.rng.randrange(SHALLOW_GOLD[0], SHALLOW_GOLD[1] + 1)
         p.gold += gold
         await ctx.term.write(
             "\n  `2You pick over the spoil heaps by the entrance for an hour.\n"
-            f"  `%YOU FIND {gold} GOLD.`2\n"
+            f"  `%YOU FIND {gold} GOLD.`2  `8({SHALLOW_PER_DAY - used - 1} more "
+            "heaps left today)`2\n"
         )
         await ctx.term.pause()
 
@@ -98,3 +112,4 @@ class AbandonedMines(IGM):
     async def daily_maint(self, ctx: IgmMaintContext) -> None:
         for player in ctx.repo.all_players():
             ctx.store.delete(f"deep:{player.id}")
+            ctx.store.delete(f"sift:{player.id}")

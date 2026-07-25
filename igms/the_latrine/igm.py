@@ -11,12 +11,15 @@ text box in a game is an invitation.
 
 from __future__ import annotations
 
-from pylord.hooks import IGM, IgmContext
+from pylord.hooks import IGM, IgmContext, IgmMaintContext
 
 WALL_KEY = "wall"
 WALL_MAX = 15
 LINE_MAXLEN = 60
 FIND_ODDS = (0, 1, 2, 3)  # gold / gem / nothing / regret
+#: Searches allowed per day -- otherwise it is an unbounded gold faucet,
+#: and nobody should want to be down there that long anyway.
+SEARCH_PER_DAY = 4
 
 _MENU = (
     "\n  `5The Latrine`2\n"
@@ -55,6 +58,15 @@ class TheLatrine(IGM):
 
     async def _search(self, ctx: IgmContext) -> None:
         p = ctx.player
+        used = ctx.store.get(f"search:{p.id}", 0)
+        if used >= SEARCH_PER_DAY:
+            await ctx.term.write(
+                "\n  `2You have been elbow-deep in there enough for one day.  Have\n"
+                "  a word with yourself.\n"
+            )
+            await ctx.term.pause()
+            return
+        ctx.store.set(f"search:{p.id}", used + 1)
         outcome = ctx.rng.choice(FIND_ODDS)
         if outcome == 0:
             gold = ctx.rng.randrange(10, 200)
@@ -95,3 +107,7 @@ class TheLatrine(IGM):
             "\n  `2You carve it in with your knife.  It will outlive you.\n"
         )
         await ctx.term.pause()
+
+    async def daily_maint(self, ctx: IgmMaintContext) -> None:
+        for player in ctx.repo.all_players():
+            ctx.store.delete(f"search:{player.id}")

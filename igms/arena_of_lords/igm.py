@@ -25,6 +25,9 @@ _CHAMPIONS = (
     ("Lord Vane", "a black halberd", 16, 8, 3000),
 )
 ENTRY_FEE_PER_LEVEL = 200
+#: Bouts allowed per day. A strong enough warrior nets fee-minus-purse on
+#: every win, so without a cap the arena prints gold.
+BOUTS_PER_DAY = 3
 #: Purse multiplier for each consecutive win, capped so it can't run away.
 STREAK_BONUS = 0.25
 STREAK_CAP = 4
@@ -76,6 +79,14 @@ class ArenaOfLords(IGM):
     async def _bout(self, ctx: IgmContext, champion, fee: int) -> None:
         p = ctx.player
         name, weapon, hp_mult, str_mult, purse_mult = champion
+        fought = ctx.store.get(f"bouts:{p.id}", 0)
+        if fought >= BOUTS_PER_DAY:
+            await ctx.term.write(
+                '\n  `0"Three bouts is a day\'s work, and the crowd wants someone\n'
+                '  new. Come back tomorrow."`2\n'
+            )
+            await ctx.term.pause()
+            return
         if p.gold < fee:
             await ctx.term.write(
                 '\n  `0"No coin, no bout,"`2 says the master of the games.\n'
@@ -89,6 +100,7 @@ class ArenaOfLords(IGM):
             await ctx.term.pause()
             return
         p.gold -= fee
+        ctx.store.set(f"bouts:{p.id}", fought + 1)
 
         enemy = Combatant(
             name=name,
@@ -152,3 +164,4 @@ class ArenaOfLords(IGM):
         """Streaks are a day's work, not a lifetime's."""
         for player in ctx.repo.all_players():
             ctx.store.delete(f"streak:{player.id}")
+            ctx.store.delete(f"bouts:{player.id}")
