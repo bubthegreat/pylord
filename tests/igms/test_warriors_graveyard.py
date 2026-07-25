@@ -1,12 +1,16 @@
-"""Behavior tests for The Warrior's Graveyard (Task 19).
+"""Behavior tests for The Warrior's Graveyard (Task 19; source-audited --
+see ``igms/warriors_graveyard/igm.py``'s module docstring).
 
 ``contract_check`` covers the framework invariants; these tests pin the
 IGM's own seeded gameplay: each dig outcome (gold cache, rare gem,
-nothing, undead fight), the 5-digs/day gate, an undead fight's victory
-payout, the no-kill guard (hp floored to 1, never touching ``alive``, on a
-losing fight), the Old Hag's hp<->stat trade and its hp<=5 refusal and
-once/day gate, the ghost's listen-for-exp option and its once/day gate,
-and ``daily_maint`` clearing all three daily gates.
+nothing, undead fight), the once/day dig gate (adopted from the real
+source's once-per-day grave-rob gate -- see the module docstring), an
+undead fight's victory payout, the no-kill guard (hp floored to 1, never
+touching ``alive``, on a losing fight -- confirmed by the audit to match
+the real source's own non-lethal "caught robbing"/"bad potion" outcomes,
+not just an invented safety net), the Old Hag's hp<->stat trade and its
+hp<=5 refusal and once/day gate, the ghost's listen-for-exp option and its
+once/day gate, and ``daily_maint`` clearing all three daily gates.
 """
 
 from __future__ import annotations
@@ -66,18 +70,21 @@ async def test_dig_finds_nothing():
     assert "find nothing" in "".join(ctx.term.output)
 
 
-async def test_digs_blocked_after_five_per_day():
+async def test_digs_blocked_after_one_per_day():
+    """Adopted: the real source gates grave-robbing to once per day (a
+    single ``graverobbed`` boolean, gravyard.ts:1795-1807), not a
+    5-per-day counter -- see the module docstring's mechanic table."""
     database, repo = await make_db()
     p = await repo.create("Hero", "pw", "M")
     igm = WarriorsGraveyard()
-    keys = ["D", "\r"] * 6 + ["L"]
-    gctx = make_ctx(database, repo, p, keys=keys, rng=SeqRandom([5, 5, 5, 5, 5]))
+    keys = ["D", "\r"] * 2 + ["L"]
+    gctx = make_ctx(database, repo, p, keys=keys, rng=SeqRandom([5]))
     ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
     out = "".join(ctx.term.output)
-    assert out.count("find nothing") == 5
+    assert out.count("find nothing") == 1
     assert "shovel is spent" in out
 
 

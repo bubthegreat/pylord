@@ -169,3 +169,47 @@ wired through the combat engine's existing overkill loot bonus
 (`Fight.gem_found`/`bonus_gold`, `combat.py`) rather than a newly-invented
 roll, matching `igms/warriors_graveyard/igm.py`'s own use of the same
 mechanic.
+
+## Warriors Graveyard vs. gravyard.ts/gravyard.js (real TypeScript/JS source found; two unrelated archives ruled out)
+
+Task 19 built The Warrior's Graveyard as a from-brief recreation, believing
+no record of a real "Warrior's Graveyard" survived. This audit checked two
+archives and one in-repo port. `igms_to_port/grave330.zip` ("The GraveYard
+v3.3", Tommy Baker, a DOS `.EXE` shareware door, doc-only) and
+`igms_to_port/grave20.zip` ("The Graveyard" for WT-LORD, Joe
+Marcelletti/James Cornman/IceRage Technologies, a wcCODE binary for a
+different host game) are both **ruled out** -- different titles, different
+authors, different programs, neither a plausible ancestor.
+`reference/igm-sources/lordts/gravyard/` **is** the real ancestor: a
+faithful TypeScript port of the actual "The Warrior's Graveyard" by Lloyd
+Hannesson (Copyright 1995-2023), corroborated by the original Synchronet
+JS source also vendored in this repo
+(`reference/igm-sources/synchronet/gravyard/gravyard.js`/`gravyard.txt`,
+same title/author/copyright). Direct-port-verified tier applies -- but the
+real IGM (13 named graveplots to rob, four hidden ghosts, a potion-brewing
+Hag with a separate gambling game, a Lemon-Aide stand, a Kitten easter
+egg, and *no combat mechanic at all*) is structurally almost entirely
+alien to this recreation's three-action menu (dig / Old Hag hp-trade / one
+generic ghost), so -- as with Sandtiger's Bar's own differently-alien real
+source -- only a couple of numbers actually transfer. See
+`igms/warriors_graveyard/igm.py`'s module docstring for the full
+mechanic-by-mechanic breakdown.
+
+| Deviation | Reason |
+|-----------|--------|
+| Dig outcome table's shape and odds (4/10 gold cache, 1/10 gem, 2/10 nothing, 3/10 undead fight) -- no source equivalent | The real grave-rob is deterministic per named grave (fixed `gold * level` + fixed `gems`, plus a 50% chance of a bonus potion, `gravyard.ts` :1104-1176/:1458-1497), not a procedural random-bucket roll, and has no "find nothing" outcome at all. Kept invented. |
+| The undead-fight combat encounter itself -- no source equivalent | The real Warrior's Graveyard has no combat mechanic anywhere; disturbing a grave never spawns a monster fight. Its only risk is a flat catch-and-mug penalty (11% for a "good" grave, 6% for "evil", `gravyard.ts` :1459-1463), which floors hp to 1 exactly like this recreation's no-kill guard already does (see the module docstring's "Adopted from the real source" -- that part is now source-confirmed) but never involves a fight. The monster stats/reward formulas remain this project's own invention. |
+| The Old Hag's hp<->stat trade -- no source equivalent | The real Hag's potion is free (day-gated only, no hp cost) and rolls a 12-outcome table (`graGetPotion`, `gravyard.ts` :876-933); she separately runs a marble-draw gambling game (`graPlayGame`/`_playGameRound`, :611-654/:656-749). Neither maps onto a flat hp-for-stat trade. Kept invented. |
+| The ghost's listen-for-exp(+25)/flee choice -- no source equivalent | The real source's four named ghosts (Jim Bob Jones, George, Mike, Tanya) each offer structurally different, richer rewards (see below); none is a binary listen/flee pick and none hands out a flat 25 exp. Kept invented. |
+| Not ported: the 13 named graveplots and their epitaphs/`good`/`evil` flags, the decline-a-good-grave +1 charm reward | `Graveplots`, `gravyard.ts` :35-192; decline reward at :1162-1168. No equivalent in this recreation's procedural (unnamed) dig. |
+| Not ported: Jim Bob Jones (1%-per-visit random event, player-chosen reward from six), George (talk/ask-help), Mike/Tanya (gendered ghosts, ask-a-favor + a shared once/day "flirt" branch that increments `player.laid`) | `doRandomStuff`/`graJimBob` (:537-547/:935-1045), `graGhostGeorge`/`_georgeAskHelp`/`_georgeTalk` (:1330-1379/:1381-1421/:1423-1456), `graGhostMike`/`graGhostTanya`/`graFlirtMike`/`graFlirtTanya` (:1180-1254/:1256-1328/:751-767). This recreation's single generic "ghost" action has no equivalent for any of the four named ghosts, their gender-gating, or the romance/`lays`-counter tie-in. |
+| Not ported: the Lemon-Aide stand (once/day, level-priced, 4-outcome roll: full heal / reset today's flirt flags / gain a fairy / +5 gems) | `graBuyAide`/`_drinkLemonAide`, `gravyard.ts` :769-806/:808-874. No equivalent action exists in this recreation's menu. |
+| Not ported: the Grave Digger's dialogue, and the secret Kitten easter egg (backtick key, once/day, +level strength/defense or +1 charm or +15 forest fights) | `graDigger` (:1644-1751), `graKitten` (:1047-1102). Neither has an equivalent in this recreation. |
+
+Adopted: grave-robbing is now gated once per day (`_DIGS_PER_DAY = 1`,
+matching the real source's single `graverobbed` boolean, `gravyard.ts`
+:1795-1807) rather than an invented "5 digs/day"; and the no-kill floor
+(hp -> 1, never touching an alive/death flag) is now known to be
+source-confirmed rather than only an architectural invention -- the real
+IGM's own two "bad outcome" paths (getting caught robbing, the Hag's bad
+potion roll) do exactly the same thing (`gravyard.ts` :1476/:918).
