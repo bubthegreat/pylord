@@ -1,7 +1,7 @@
 # IGMs -- In-Game Modules (pylord plugins)
 
-An **IGM** is a drop-in mini-game or feature that a player reaches from the
-Town Square's **(O)ther places** menu. This is pylord's replacement for the
+An **IGM** is a mini-game or feature that a player reaches from the Town
+Square's **(O)ther places** menu. This is pylord's replacement for the
 original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
@@ -11,7 +11,9 @@ Twelve bundled IGMs ship here. Six are on by default -- `baraks_house`,
 and `lord_casino` -- from a few screens each to a full mini-game. Six more
 (`apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
 `arena_of_lords`, `the_latrine`) ship **disabled**: enable them in
-`config.toml` under `[igms]`. Drop your own alongside them to add one.
+`config.toml` under `[igms]`. Add your own alongside them -- IGMs ship
+with the build, so a new one arrives with the next release rather than
+being copied onto a server.
 
 None of the classic third-party IGMs has surviving source -- they were
 separate DOS executables, and `reference/lord.js` models only the base
@@ -143,4 +145,4 @@ async def test_contract():
 ```
 
 Broken plugins (import errors, no/multiple `IGM` subclass, bad `key`) are
-logged and skipped at startup -- one bad drop-in never takes the game down.
+logged and skipped at startup -- one bad plugin never takes the game down.

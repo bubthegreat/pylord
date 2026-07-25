@@ -42,13 +42,12 @@ deploy/
   delete anyone's character.
 - **`Recreate`, one replica.** SQLite has a single writer and the volume is
   ReadWriteOnce.
-- **Bundled IGMs load from the image; the volume is for your own.** They
-  used to be copied onto the volume on first start, which meant a fix to a
-  bundled IGM could never reach a realm that had already been seeded --
-  the stale copy kept loading. The server now searches the image's `igms/`
-  first and the volume's second, so bundled fixes ship with the release
-  and a sysop's own plugins (their own keys) still load from the volume.
-  A leftover copy of a bundled IGM there is ignored, not shadowing.
+- **IGMs ship in the image; the volume holds only the database.** They
+  were briefly copied onto the volume on first start, which meant a fix to
+  a bundled IGM could never reach a realm that had already been seeded --
+  the stale copy kept loading, and a daily-limit fix sat unused in
+  production for a day. IGMs are code: they arrive with a release, and the
+  data directory is for `lord.db` alone.
 
 ## First-time setup
 

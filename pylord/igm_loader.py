@@ -92,12 +92,14 @@ def discover(
 ) -> IgmRegistry:
     """Discover, validate, and enable IGMs under ``igms_dir``.
 
-    Accepts one directory or several, searched in order. The **first**
-    directory to claim a key wins, so the bundled IGMs shipped inside the
-    image always take precedence over a stale copy of the same key sitting
-    on a data volume -- which is how a realm receives fixes to a bundled
-    IGM. A sysop's own plugins live in the later directory and load
-    normally, since their keys are their own.
+    IGMs are *code*: they ship inside the image alongside the engine, and a
+    new one arrives the way any other change does -- a folder in ``igms/``,
+    a pull request, the next release. (They were briefly loaded from the
+    data volume as well, which meant a fix to a bundled IGM could never
+    reach a realm that had already been seeded; see docs/deviations.md.)
+
+    Several directories may still be passed -- the first to claim a key
+    wins -- because the test harness uses that to isolate fixtures.
 
     Returns an :class:`IgmRegistry` of the enabled instances. Enable state
     for each IGM key is ``config["igms"].get(key, instance.default_enabled)``.

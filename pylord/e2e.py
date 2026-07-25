@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
-import shutil
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -219,15 +218,11 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
     """Start a server on an ephemeral port against a fresh database in
     ``work_dir``. Yields ``(port, db_path)``.
 
-    ``igms`` names bundled IGM directories to copy in and enable; the
-    loader resolves ``igms/`` next to the database (see
-    ``pylord.server.start``), so they are copied there.
+    ``igms`` names bundled IGMs to enable for this run. They load from the
+    build itself (see ``pylord.server.start``), so this only flips their
+    config toggles -- nothing is copied anywhere.
     """
     work_dir.mkdir(parents=True, exist_ok=True)
-    for igm in igms or []:
-        target = work_dir / "igms" / igm
-        if not target.exists():
-            shutil.copytree(_REPO_ROOT / "igms" / igm, target)
     db_path = work_dir / "lord.db"
     config = {
         "server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)},

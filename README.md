@@ -88,9 +88,10 @@ automatically on the first connection of each UTC day.
 
 ## Writing your own IGM
 
-IGMs are drop-in plugins discovered from the `igms/` directory next to
-your database. Each one is a folder containing an `igm.py` that defines
-exactly one subclass of `pylord.hooks.IGM`:
+IGMs are plugins that ship with the build: a folder under `igms/`
+containing an `igm.py` that defines exactly one subclass of
+`pylord.hooks.IGM`. Add one the way you add any other code -- a folder, a
+pull request, the next release:
 
 ```
 igms/
@@ -119,8 +120,9 @@ class CrystalCave(IGM):
         await ctx.term.pause()
 ```
 
-Enable it with `crystal_cave = true` under `[igms]` in `config.toml` and
-it appears under **(O)ther places** on the Town Square.
+Enable it with `crystal_cave = true` under `[igms]` in `config.toml`
+(`deploy/values/*.yaml` in the homelab) and it appears under **(O)ther
+places** on the Town Square.
 
 The `ctx` façade gives you:
 
