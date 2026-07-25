@@ -1,7 +1,10 @@
 {{/*
-config.toml, rendered from values. The server resolves its database and its
-igms/ directory relative to this file's directory, so `db` is set explicitly
-to the volume and the IGMs are seeded next to it.
+config.toml, rendered from values.
+
+On MySQL the database is deliberately absent here: it arrives as a whole
+URL in PYLORD_DB_URL, from a Secret, because it carries a password. Writing
+a SQLite path as well would give the game something to silently fall back
+to if that variable ever went missing -- better that it fails loudly.
 */}}
 apiVersion: v1
 kind: ConfigMap
@@ -14,7 +17,9 @@ data:
     [server]
     host = "0.0.0.0"
     port = {{ .Values.service.port }}
+    {{- if not .Values.mysql.enabled }}
     db = "{{ .Values.persistence.mountPath }}/lord.db"
+    {{- end }}
 
     [game]
     {{- range $key, $value := .Values.game }}
