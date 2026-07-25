@@ -70,7 +70,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         server_cfg = config["server"]
         print(
             f"pylord listening on {server_cfg.get('host', '0.0.0.0')}:"
-            f"{server_cfg.get('port', 2323)} (db: {server_cfg['db']})"
+            f"{server_cfg.get('port', 2323)} (db: {_safe_db(server_cfg['db'])})"
         )
         await server.wait_closed()
 
@@ -79,6 +79,27 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def _safe_db(url: str) -> str:
+    """The database URL with any password masked.
+
+    Startup prints this, and on Kubernetes that goes straight to
+    ``kubectl logs`` -- so a MySQL URL would put the realm's password in
+    the log of every pod that ever started. SQLAlchemy's own ``str(URL)``
+    masks it; a bare file path has nothing to mask and is returned as is.
+    """
+    if "://" not in url:
+        return url
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import ArgumentError
+
+    try:
+        return str(make_url(url))
+    except ArgumentError:
+        # Unparseable, so it cannot be masked reliably -- say nothing
+        # rather than risk printing a credential.
+        return "(unparseable url)"
 
 
 async def _open_db(config: dict[str, Any]):

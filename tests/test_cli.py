@@ -226,3 +226,17 @@ async def test_serve_configures_logging(tmp_path, monkeypatch):
 
     assert logging.getLogger().handlers, "no logging handler was installed"
     assert logging.getLogger().level == logging.INFO
+
+
+async def test_the_startup_line_does_not_print_the_database_password():
+    """Startup prints where it connected, and on Kubernetes that goes
+    straight to `kubectl logs` -- so a MySQL URL there would put the realm's
+    password in the log of every pod that ever started."""
+    from pylord.cli import _safe_db
+
+    masked = _safe_db("mysql+aiomysql://lord:sekrit@pylord-mysql:3306/lord")
+    assert "sekrit" not in masked
+    assert "pylord-mysql" in masked  # still says where it went
+
+    # A file path has no secret in it and is left alone.
+    assert _safe_db("/data/lord.db") == "/data/lord.db"
