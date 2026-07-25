@@ -141,6 +141,7 @@ igms:
   sunshines_fairy_land: true
   kaldors_court: true
   wishing_well: true
+  xenons_town_square: true
 
 resources:
   requests:

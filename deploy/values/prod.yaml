@@ -40,7 +40,7 @@ mysql:
 persistence:
   enabled: false
 
-# All sixteen bundled IGMs are on in this realm. They ship inside the image.
+# All eighteen bundled IGMs are on in this realm. They ship inside the image.
 igms:
   baraks_house: true
   sandtigers_bar: true
@@ -59,6 +59,7 @@ igms:
   sunshines_fairy_land: true
   kaldors_court: true
   wishing_well: true
+  xenons_town_square: true
 
 game:
   forest_fights_per_day: 15
