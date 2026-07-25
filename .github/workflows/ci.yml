@@ -79,6 +79,21 @@ jobs:
 
   image:
     name: Image runs the way the chart runs it
+    # The chart deploys against MySQL and deliberately renders no SQLite
+    # path, so the container needs a real database here too -- running it
+    # any other way would not be "the way the chart runs it".
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: lord
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,8 +137,8 @@ jobs:
         run: |
           set -e
           docker run -d --name pylord-ci \
-            -p 2323:2323 \
-            -p 7681:7681 \
+            --network host \
+            -e PYLORD_DB_URL="mysql+aiomysql://root:ci@127.0.0.1:3306/lord?charset=utf8mb4" \
             -v /tmp/pylord-config:/config:ro \
             -v /tmp/pylord-data:/data \
             pylord:ci $(uv run python -c "import json;print(' '.join(json.load(open('/tmp/args.json'))))")
@@ -148,6 +163,17 @@ jobs:
               except OSError:
                   time.sleep(1)
           sys.exit("no name prompt from the container within 30s")
+          PY
+
+      - name: The health endpoint answers the way the probes expect
+        run: |
+          # Checked whether or not the chart probes it yet: this is what
+          # gates turning health.probes on, and a pod that never goes ready
+          # is what happens if it is wrong.
+          curl -fsS --retry 10 --retry-delay 2 --retry-all-errors \
+            http://127.0.0.1:8080/healthz | grep -q alive
+          curl -fsS --retry 10 --retry-delay 2 --retry-all-errors \
+            http://127.0.0.1:8080/readyz | grep -q ready
           PY
 
       - name: The browser terminal serves the game

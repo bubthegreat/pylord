@@ -37,16 +37,23 @@ from pylord import data, schema
 
 _TEST_DB_URL = os.environ.get("PYLORD_TEST_DB_URL", "")
 
-#: The session's databases, created once by ``_create_test_database``.
+#: How many realm databases to build up front.
 #:
 #: More than one, because ``:memory:`` means a *private* realm under
-#: SQLite's ``StaticPool`` and some tests genuinely need two at once --
-#: ``pylord/migrate.py``'s, most obviously, which copy one realm into
-#: another. Each ``:memory:`` request inside a test takes the next of
-#: these, emptied; a pool means that costs a truncate rather than a
-#: CREATE DATABASE.
-_DB_COUNT = 4
-_DB_NAMES = [f"pylord_test_{i}" for i in range(_DB_COUNT)]
+#: SQLite's ``StaticPool`` and some tests genuinely need several -- the
+#: migration tests copy one realm into another, and a scene test may call
+#: ``play()`` a dozen times, each wanting a fresh one. Each ``:memory:``
+#: request takes the next, emptied, so a pool costs a truncate rather than
+#: a CREATE DATABASE.
+#:
+#: The pool grows on demand rather than failing when it runs out: guessing
+#: this number wrong is a broken test run, and a database created once per
+#: session is cheap.
+_DB_PREWARM = 8
+
+
+def _db_name(index: int) -> str:
+    return f"pylord_test_{index}"
 
 
 def pytest_report_header(config):
@@ -73,39 +80,63 @@ async def _exec(url: str, *statements: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def test_db_urls() -> list[str]:
-    """The pool of realm URLs, or [] when running on SQLite."""
+def test_db_pool():
+    """The growable pool of realm databases, or None when on SQLite."""
     if not _TEST_DB_URL:
-        return []
-    base = make_url(_TEST_DB_URL)
-    return [_url(base.set(database=name)) for name in _DB_NAMES]
+        return None
+    return _Pool(make_url(_TEST_DB_URL))
+
+
+class _Pool:
+    """Realm databases on the test server, created as they are needed."""
+
+    def __init__(self, base) -> None:
+        self._base = base
+        self.urls: list[str] = []
+
+    def url_for(self, index: int) -> str:
+        return _url(self._base.set(database=_db_name(index)))
+
+    @property
+    def server_url(self) -> str:
+        return _url(self._base.set(database=""))
+
+    async def ensure(self, count: int) -> None:
+        """Make sure at least ``count`` databases exist, with tables."""
+        while len(self.urls) < count:
+            index = len(self.urls)
+            name = _db_name(index)
+            await _exec(
+                self.server_url,
+                f"DROP DATABASE IF EXISTS `{name}`",
+                f"CREATE DATABASE `{name}`",
+            )
+            url = self.url_for(index)
+            # Build the tables now, so a later reset has something to
+            # truncate before anything has connected.
+            db = await data.connect(url)
+            await db.dispose()
+            self.urls.append(url)
+
+    async def drop_all(self) -> None:
+        if self.urls:
+            await _exec(
+                self.server_url,
+                *[f"DROP DATABASE IF EXISTS `{_db_name(i)}`" for i in range(len(self.urls))],
+            )
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _create_test_databases(test_db_urls):
-    """Build the pool once for the whole run."""
-    if not test_db_urls:
+async def _create_test_databases(test_db_pool):
+    """Build the initial pool once for the whole run."""
+    if test_db_pool is None:
         yield
         return
-
-    server = _url(make_url(_TEST_DB_URL).set(database=""))
-    statements = []
-    for name in _DB_NAMES:
-        statements += [
-            f"DROP DATABASE IF EXISTS `{name}`",
-            f"CREATE DATABASE `{name}`",
-        ]
-    await _exec(server, *statements)
-
-    # Build the tables now, so the per-test reset has something to
-    # truncate before any test has connected.
-    for url in test_db_urls:
-        db = await data.connect(url)
-        await db.dispose()
+    await test_db_pool.ensure(_DB_PREWARM)
     try:
         yield
     finally:
-        await _exec(server, *[f"DROP DATABASE IF EXISTS `{n}`" for n in _DB_NAMES])
+        await test_db_pool.drop_all()
 
 
 def _truncate_all() -> list[str]:
@@ -120,7 +151,7 @@ def _truncate_all() -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-async def _redirect_and_reset(test_db_urls, monkeypatch):
+async def _redirect_and_reset(test_db_pool, monkeypatch):
     """Point ``connect()`` at the pool, keeping SQLite's own meanings.
 
     The two forms the suite uses mean different things, and the difference
@@ -134,7 +165,7 @@ async def _redirect_and_reset(test_db_urls, monkeypatch):
       such path in a test claims a database; asking again for the same
       path returns it untouched.
     """
-    if not test_db_urls:
+    if test_db_pool is None:
         yield
         return
 
@@ -144,12 +175,8 @@ async def _redirect_and_reset(test_db_urls, monkeypatch):
 
     async def next_url() -> str:
         nonlocal taken
-        if taken >= len(test_db_urls):
-            raise RuntimeError(
-                f"this test opened more than {len(test_db_urls)} databases; "
-                "raise _DB_COUNT in tests/conftest.py"
-            )
-        url = test_db_urls[taken]
+        await test_db_pool.ensure(taken + 1)
+        url = test_db_pool.urls[taken]
         taken += 1
         await _exec(url, *_truncate_all())
         return url
@@ -167,7 +194,7 @@ async def _redirect_and_reset(test_db_urls, monkeypatch):
     try:
         yield
     finally:
-        for url in test_db_urls[:taken]:
+        for url in test_db_pool.urls[:taken]:
             await _exec(url, *_truncate_all())
 
 

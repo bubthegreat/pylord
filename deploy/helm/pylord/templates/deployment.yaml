@@ -79,29 +79,44 @@ spec:
             - name: health
               containerPort: {{ .Values.health.port }}
               protocol: TCP
-          # Probed over HTTP on their own port. Against the telnet port each
-          # probe was a real session -- it negotiated, logged a connection
-          # and a disconnection, and buried the players in the log.
+          # `health` switches these to the HTTP endpoint in pylord/health.py
+          # (/healthz for liveness, /readyz for readiness, which also checks
+          # the database). Left off for one release on purpose: a chart that
+          # probes an endpoint the running image does not serve is a pod
+          # that never goes ready, and while ArgoCD tracked `main` the chart
+          # could reach the cluster ahead of the image that serves it. Once
+          # it tracks release tags the two always move together, and this
+          # flips on.
+          {{- if .Values.health.probes }}
           startupProbe:
             httpGet:
               path: /readyz
               port: health
             {{- toYaml .Values.probes.startup | nindent 12 }}
-          # /readyz checks the database, so a pod that cannot reach MySQL
-          # leaves the Service instead of taking players it cannot save.
           readinessProbe:
             httpGet:
               path: /readyz
               port: health
             {{- toYaml .Values.probes.readiness | nindent 12 }}
-          # /healthz deliberately checks nothing but the event loop:
-          # restarting the pod would not fix a database outage, and would
-          # end every session in progress.
           livenessProbe:
             httpGet:
               path: /healthz
               port: health
             {{- toYaml .Values.probes.liveness | nindent 12 }}
+          {{- else }}
+          startupProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.startup | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: telnet
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

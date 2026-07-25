@@ -147,6 +147,9 @@ resources:
 # log with connections that were never players.
 health:
   port: 8080
+  # Probe it instead of the telnet port. Turn on once the running image
+  # serves /healthz -- see the deployment template.
+  probes: false
 
 probes:
   startup:
