@@ -1,34 +1,82 @@
-"""Barak's House -- pylord's "hello world" IGM (Task 15).
+"""Barak's House -- pylord's "hello world" IGM (Task 15; audited against the
+real Turbo Pascal source in Task 2).
 
 Barak is the official example IGM shipped with the original LORD IGM SDK
 (the ``BARAK.EXE`` sample every real-world third-party IGM author cloned to
-get started), written by Seth Able Robinson himself. The original DOS
-binary's source is lost -- there is no surviving screen-by-screen transcript
-to port line-for-line -- so this is a **recreation** built from the
-historical description in this project's design docs/task brief (visiting
-Barak and his "crazy mother"), not a byte-for-byte port of
-``reference/lord.js`` (which, unlike the Inn/Forest/Town, never modeled any
-IGM's internals -- IGMs were always a separate ``.EXE`` reached through the
-``3RDPARTY.DAT`` handshake).
+get started), written by Seth Able Robinson himself. Task 15 built this as a
+**recreation** from the historical description in this project's design
+docs/task brief, believing the original source lost. It wasn't: Task 2's
+audit worked from ``igms_to_port/barsrc.zip``'s ``BARAK.PAS``/``BAR_VAR.PAS``
+(Seth's own released full source, "Version 6.2; 04-12-94"), Barak's real
+sample-IGM counterpart to ``reference/lord.js`` (which, unlike the
+Inn/Forest/Town, never modeled any IGM's internals -- IGMs were always a
+separate ``.EXE`` reached through the ``3RDPARTY.DAT`` handshake).
 
-**Reconstruction notes (invented filler, since no original transcript
-survives):**
+**Direct-port-verified: numbers from BARAK.PAS (barsrc.zip).** The real
+``BARAK.EXE`` is a much bigger program than this menu -- a branching
+narrative (knock-on-the-door vs. walk-in-uninvited, "shoot the breeze" vs.
+borrow-sugar vs. insult-his-beard) gating two real-time ANSI arcade
+minigames (``run()``, a directional chase where Barak or his mother hunts
+you around the house; ``fly()``, throwing your weapon at an animated flying
+wig) and a six-chest basement heist (``chest()``) with a per-chest risk of
+his mother catching you and ending the visit. None of that is reproducible
+in this project's line-oriented ``TermIO`` (no real-time redraw, no
+directional movement), so per this task's own explicit judgment call, it
+was **not ported** -- this recreation's much smaller five-item menu
+((T)alk/(S)earch/(A)sk to train/(M)other/(L)eave) is kept, and every number
+*it* already models was checked against the source and, where a genuine
+match exists, adopted verbatim:
 
-* The five Barak quotes (``_QUOTES``) are invented flavor text -- no source
-  records what Barak actually said.
-* The couch-cushion gold find range (5-50 gold, ``_SEARCH_MIN``/``_MAX``) is
-  an invented small-find range with no historical basis beyond "small gold
-  find" in the brief.
-* Barak's mother's chase-vs-soup split is a flat 50/50 (``ctx.rng.randrange(2)``)
-  -- no record of the real odds, if any existed at all.
-* The brief's *generic* six-IGM overview also mentions a "steal from Barak"
-  event; this task's specific spec for Barak's House (given directly, not
-  the generic overview) defines a five-item menu -- (T)alk/(S)earch/
-  (A)sk to train/(M)other/(L)eave -- with no steal option. Omitted
-  deliberately, not a gap.
+* **(A)sk Barak to train you** -- ``+1 strength``, once per day, already
+  matched the source by coincidence: ``hair_end()``'s perfect-run reward
+  for destroying the flying wig in ``fly()`` is exactly
+  ``inc(pl^.strength, 1)`` with no exp, gated the same "only counts once"
+  way. No code change; now cited as confirmed rather than invented.
+* **(M)eet his mother**, negative outcome ("chased out with a broom") --
+  now sets ``hp = 1``, matching ``pl^.hit := 1``, the recurring
+  caught-or-defeated punishment used both by ``beard()``'s
+  decline-the-duel branch and ``run()``'s chase-capture ending. Previously
+  flavor-only (no stat change).
+* **(M)eet his mother**, positive outcome ("she feeds you soup") -- now
+  uses Barak's "Ultra Ale" reward formula, ``hp = hp_max + hp_max // 4``
+  (``chest()``'s full-basement-clear reward and ``walk_in()``'s
+  beat-Barak-in-a-fight reward: ``pl^.hit := pl^.hit_max + (pl^.hit_max div
+  4)``). The formula always exceeds ``hp_max``, so :class:`~pylord.hooks.
+  PlayerView`'s hp clamp turns it into a guaranteed full heal here rather
+  than fighting the cap -- previously an invented flat ``+2``.
+* **(T)alk to Barak** -- the five rotating quotes (``_QUOTES``) are now
+  verbatim lines lifted from BARAK.PAS dialogue (the knock-in greeting,
+  the "shoot the breeze" chat, and two lines from getting caught snooping
+  around/thrown out), stitched together without their original branching
+  consequences since this action is just a flavor quip. Previously
+  invented from whole cloth.
 
-**Daily-gate design.** ``ctx.enter()`` (:class:`~pylord.hooks.IgmContext`)
-has no day-number access, so -- per the brief's own suggestion -- the couch
+**Still invented (no BARAK.PAS equivalent found):**
+
+* **(S)earch the couch cushions** -- the flat 5-50 gold find
+  (``_SEARCH_MIN``/``_MAX``) has no source counterpart; the word "couch"
+  never appears anywhere in ``BARAK.PAS``. The closest source content is
+  the basement ``chest()`` heist -- a level-scaled formula
+  (``random(20 * level * level * level) + 1`` gold, or a gem, 50/50) --
+  but that's a materially different mechanic (six chests, directional
+  movement, per-chest risk of the mother catching you and ending the run
+  empty-handed) this port doesn't model. Kept as an invented deviation;
+  see ``docs/deviations.md``.
+
+**Not ported** (real BARAK.PAS content with no equivalent in this
+recreation, beyond the arcade minigames noted above): the knock-vs-walk-in
+top-level branch and its own dialogue; the "borrow sugar" sub-flow (a gem
+reward for laughing at Barak's joke, or a fight for taking offense); the
+"read one of Barak's books" sub-flow (random history/newspaper flavor
+text, or +1 to the reading player's class skill counter, capped at 40);
+walk-in's -1 charm penalties; the whole-visit once-per-day gate tied to
+consuming a forest fight (``dec(pl^.fights_left)`` plus a ``bb^.p[]``
+per-player flag covering the *entire* house, not per-mechanic) -- see
+``docs/deviations.md`` for why this port keeps its existing per-mechanic
+gates instead.
+
+**Daily-gate design (Task 15, unchanged by the audit).** ``ctx.enter()``
+(:class:`~pylord.hooks.IgmContext`) has no day-number access, so the couch
 search and Barak's training use plain per-player boolean flags
 (``couch:<player_id>`` / ``trained:<player_id>``) rather than day-suffixed
 keys, and :meth:`BaraksHouse.daily_maint` (run once per game-day, see
@@ -47,17 +95,25 @@ _MENU = (
     "  `2(`0A`2)sk Barak to train you   (`0M`2)eet his mother   (`0L`2)eave\n"
 )
 
-# Invented flavor text -- see module docstring's Reconstruction notes.
+# Verbatim lines lifted from BARAK.PAS dialogue -- see module docstring.
+# Collected across different in-story branches (the knock-in greeting, the
+# "shoot the breeze" chat, and getting caught snooping/thrown out) and
+# presented here without their original branching consequences.
 _QUOTES = (
-    "`0\"You know, I once found a whole gold piece under this couch!\"",
-    "`0\"My mother says I should get a real job.  I told her IGMs ARE a real job!\"",
-    "`0\"Careful in the forest today -- I hear the wolves are extra hungry!\"",
-    "`0\"I used to be an adventurer like you, then I took a nap and never left.\"",
-    "`0\"Don't mind mother, she's just protective.  Mostly of the couch.\"",
+    "`0\"Whadaya ya want, kid?\"",  # knock(): Barak's greeting
+    "`0\"Shoot the breeze?\" Barak asks, obviously puzzled.",  # shoot()
+    "`0\"Books?!  BOOKS?!  You know I can't read!\"",  # shoot(), ch='C'
+    "`0\"You insolent pubby!  You will die for this.\"",  # walk_in()
+    "`0\"Alright!  I'll give you a flask of my Ultra Ale, damnit!\"",  # walk_in(), ch='K' win
 )
 
 _SEARCH_MIN = 5
 _SEARCH_MAX = 50
+
+# BARAK.PAS: `pl^.hit := 1` -- the recurring "caught/defeated" punishment
+# used by both beard()'s decline-the-duel branch and run()'s chase-capture
+# ending. Adopted verbatim for mother's negative outcome (Task 2 audit).
+_CAUGHT_HP = 1
 
 
 class BaraksHouse(IGM):
@@ -116,6 +172,10 @@ class BaraksHouse(IGM):
         await ctx.term.pause()
 
     async def _train(self, ctx: IgmContext) -> None:
+        # +1 strength, once per day, no exp -- confirmed against BARAK.PAS's
+        # hair_end(): a perfect run in fly() (5/5 hits on the flying wig)
+        # calls `inc(pl^.strength, 1)` and exits immediately, no exp
+        # granted. Matched by coincidence; see module docstring.
         p = ctx.player
         gate = f"trained:{p.id}"
         if ctx.store.get(gate, False):
@@ -137,16 +197,21 @@ class BaraksHouse(IGM):
         p = ctx.player
         outcome = ctx.rng.randrange(2)
         if outcome == 0:
+            p.hp = _CAUGHT_HP  # BARAK.PAS: `pl^.hit := 1` -- see _CAUGHT_HP.
             await ctx.term.write(
                 "\n  `4Barak's mother spots you and grabs her broom!\n"
                 '  `4"GET OUT OF MY HOUSE!"`0 she shrieks, chasing you out the door!\n'
+                "  `4YOU FEEL AWFULLY WEAK.\n"
             )
             await ctx.term.pause()
             return True
-        p.hp = p.hp + 2
+        # BARAK.PAS's "Ultra Ale" reward: `pl^.hit := pl^.hit_max + (pl^.
+        # hit_max div 4)` -- always exceeds hp_max, so PlayerView's hp clamp
+        # (pylord/hooks.py) turns this into a guaranteed full heal.
+        p.hp = p.hp_max + p.hp_max // 4
         await ctx.term.write(
             "\n  `2Barak's mother smiles and ladles you a bowl of soup.\n"
-            "  `0YOU RECOVER 2 HIT POINTS!\n"
+            "  `0YOU FEEL WONDERFUL!\n"
         )
         await ctx.term.pause()
         return False

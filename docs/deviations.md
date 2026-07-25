@@ -79,3 +79,26 @@ once-a-day BBS door call.
 | **The shops take your old weapon/armour in part-exchange.** lord.js refuses to sell you a weapon while you carry one ("you can't carry two!", reference/lord.js:10195-10202, and :10416-10423 for armour), so upgrading is two errands: sell, then buy. | You can only hold one, so the shop buys the old one at the same price its sell counter would offer, as part of the purchase. The checks run in lord.js's own order and *before* anything changes hands: you must be able to wield it (measured without the old item's bonus, which is the figure the offer screen already showed) and afford it once the trade-in counts. A refusal leaves you holding exactly what you walked in with. |
 | **Enter in the forest hunts, rather than leaving.** lord.js's forest treats a bare CR as "return to town" (reference/lord.js:15274-15277); here the prompt advertises `[L]` and Enter looks for something to kill. | The forest is where a session is spent: holding Enter should keep the fights coming, not eject you to the square. `R`/`Q` still leave. |
 | **One forest fight regenerates every 15 minutes of real time**, up to the player's maximum (`fight_regen_minutes`, 0 disables). lord.js only refills at the daily rollover. | Players drop in for a few minutes at a time rather than calling the BBS once a day; without this, an evening session ends the day's play entirely. The clock is stored on the player (`fights_regen_at`), so it runs while they are logged off, advances in whole intervals so partial progress isn't lost, and banks nothing once a player is topped up. |
+
+## Barak's House vs. BARAK.PAS (original Pascal source)
+
+Task 15 built Barak's House as a recreation, believing the real `BARAK.EXE`
+source lost. Task 2 found it (`igms_to_port/barsrc.zip`'s `BARAK.PAS`/
+`BAR_VAR.PAS`, Seth Able Robinson's own released sample-IGM kit, "Version
+6.2; 04-12-94") and audited the recreation against it. The real program is a
+much bigger thing than this recreation -- a branching knock-in/walk-in
+narrative gating two real-time ANSI arcade minigames (a directional chase,
+and throwing your weapon at an animated flying wig) and a six-chest
+basement heist with movement and per-chest capture risk -- none of which
+this project's line-oriented `TermIO` can reproduce. Per this task's own
+explicit judgment call, that arcade content was not ported; the rows below
+cover only the numbers/flows the existing five-item recreation already
+models (see `igms/baraks_house/igm.py`'s module docstring for the full
+mechanic-by-mechanic table).
+
+| Deviation | Reason |
+|-----------|--------|
+| (S)earch the couch cushions: flat `random(5, 50)` gold, no source equivalent | The word "couch" never appears in `BARAK.PAS`. The closest source content is `chest()`'s basement heist -- a level-scaled reward (`random(20 * level^3) + 1` gold, or +1 gem, 50/50) gated behind six chests, directional movement, and a risk that "Barak's crazy mother" catches you and ends the run with nothing further -- a materially different (riskier, movement-based, multi-step) mechanic this recreation's single safe once-daily search doesn't model. Kept invented rather than grafting an unrelated heist formula onto a mechanic with no risk of loss. |
+| Whole-house once-per-day gate and forest-fight cost not ported | `BARAK.PAS` gates the *entire* visit once per day (`bb^.p[play]`, a 150-player flag array reset when `TIME.DAT`'s date rolls over) and spends a forest fight to enter at all (`dec(pl^.fights_left)`). This recreation instead gates the couch-search and training sub-actions individually (`couch:<id>`/`trained:<id>`, cleared by `daily_maint`) and charges no forest fight, matching the "Other Places" hub convention shared by all six starter IGMs (`pylord/engine/scenes/other_places.py` never deducts a fight to enter any of them). Changing that would be a cross-cutting, house-wide change out of scope for a single-IGM audit. |
+| (T)alk's quotes are five verbatim BARAK.PAS lines stitched together without their original context | Real lines pulled from four different branches (`knock()`'s greeting, `shoot()`'s chat opener and its books reaction, `walk_in()`'s threat and its beat-Barak reward line) and presented as flavor-only rotating quips, since the branching dialogue trees and fights they were originally part of are out of scope (see the arcade/narrative note above). |
+| Not ported: `sugar()` (borrow-sugar sub-flow, gem reward for laughing / fight for taking offense), the "read one of Barak's books" sub-flow (`history()`/`newspaper()` flavor text, or +1 to the reader's class skill counter capped at 40 via `skill()`), and `walk_in()`'s -1 charm penalties | Each is real BARAK.PAS content with no equivalent anywhere in this recreation's five-item menu. None is reachable from any action this port implements and none is covered by this task's brief/tests; listed here (and in the module docstring's "Not ported" section) so a future task doesn't have to rediscover the gap. |

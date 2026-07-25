@@ -1,10 +1,13 @@
-"""Behavior tests for Barak's House (Task 15).
+"""Behavior tests for Barak's House (Task 15; audited against BARAK.PAS in
+Task 2 -- see ``igms/baraks_house/igm.py``'s module docstring).
 
 ``contract_check`` covers the framework invariants (guardrails, store
 round-trip); these tests pin the IGM's own seeded gameplay: gold find
 amount, once-a-day gates (blocked within a visit and across visits via the
 flush/fresh-context pattern), the strength-training gain, mother's two
-outcomes, and ``daily_maint`` clearing the daily gates.
+outcomes (now pinned to BARAK.PAS's own recorded numbers -- ``hit := 1`` on
+getting caught, the "Ultra Ale" over-heal clamped to ``hp_max``), and
+``daily_maint`` clearing the daily gates.
 """
 
 from __future__ import annotations
@@ -24,7 +27,12 @@ async def test_contract():
     await contract_check(BaraksHouse)
 
 
-async def test_talk_rotates_quotes_via_rng():
+async def test_talk_uses_verbatim_barak_quote():
+    """(T)alk's quotes are lifted verbatim from BARAK.PAS dialogue (Task 2
+    audit) -- pin one exactly by literal text, not by re-importing
+    ``_QUOTES``, so a future edit can't silently drift back to invented
+    flavor text without the test noticing.
+    """
     database, repo = await make_db()
     p = await repo.create("Hero", "pw", "M")
     gctx = make_ctx(database, repo, p, keys=["T", "\r", "L"], rng=SeqRandom([2]))
@@ -32,12 +40,10 @@ async def test_talk_rotates_quotes_via_rng():
 
     await BaraksHouse().enter(ctx)
 
-    from igms.baraks_house.igm import _QUOTES
-
     out = "".join(ctx.term.output)
-    # Rendered output has backtick color codes translated to ANSI, so
-    # compare against the quote's plain text (strip the leading `` `0``).
-    assert _QUOTES[2].removeprefix("`0") in out
+    # BARAK.PAS's shoot(): sethln('  `0"Books?!  BOOKS?!  You know I can''t
+    # read!" `2Barak shouts, tears').
+    assert "Books?!  BOOKS?!  You know I can't read!" in out
 
 
 async def test_search_finds_gold_exact_amount():
@@ -104,6 +110,9 @@ async def test_train_grants_one_strength_once_per_day():
 
 
 async def test_mother_chases_you_out_ends_visit():
+    """BARAK.PAS sets ``pl^.hit := 1`` every time you're caught/defeated --
+    beard()'s decline-the-duel branch and run()'s chase-capture both use
+    this exact number. Adopted verbatim for the "broom" outcome (Task 2)."""
     database, repo = await make_db()
     p = await repo.create("Hero", "pw", "M")
     p.hp = 5
@@ -114,22 +123,29 @@ async def test_mother_chases_you_out_ends_visit():
 
     await igm.enter(ctx)
 
-    assert p.hp == 5  # flavor only, no stat change
+    assert p.hp == 1  # BARAK.PAS: `pl^.hit := 1`
     assert "broom" in "".join(ctx.term.output)
 
 
 async def test_mother_feeds_soup_heals_within_cap():
+    """BARAK.PAS's "Ultra Ale" reward is ``pl^.hit := pl^.hit_max + (pl^.
+    hit_max div 4)`` (chest()'s full-clear reward and walk_in()'s kick-and-
+    win branch). That formula always exceeds ``hp_max``, so it's a
+    guaranteed full heal once ``PlayerView`` clamps it -- exactly the
+    "formula exceeds a cap" case flagged in this task's brief. Starting hp
+    well below max (5, not 19) so the pre-audit flat ``+2`` and the
+    adopted formula would visibly disagree if the adoption were wrong."""
     database, repo = await make_db()
     p = await repo.create("Hero", "pw", "M")
     p.hp_max = 20
-    p.hp = 19
+    p.hp = 5
     gctx = make_ctx(database, repo, p, keys=["M", "\r", "L"], rng=SeqRandom([1]))
     igm = BaraksHouse()
     ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
-    assert p.hp == 20  # clamped to hp_max, not 21
+    assert p.hp == 20  # 20 + 20//4 = 25, clamped to hp_max by PlayerView
 
 
 async def test_daily_maint_clears_gates():
