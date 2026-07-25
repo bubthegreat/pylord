@@ -79,14 +79,21 @@ spec:
             - name: health
               containerPort: {{ .Values.health.port }}
               protocol: TCP
-          # `health` switches these to the HTTP endpoint in pylord/health.py
-          # (/healthz for liveness, /readyz for readiness, which also checks
-          # the database). Left off for one release on purpose: a chart that
-          # probes an endpoint the running image does not serve is a pod
-          # that never goes ready, and while ArgoCD tracked `main` the chart
-          # could reach the cluster ahead of the image that serves it. Once
-          # it tracks release tags the two always move together, and this
-          # flips on.
+          # Probed over HTTP on their own port (pylord/health.py). Against
+          # the telnet port every probe was a real session -- it negotiated,
+          # logged a connection and a disconnection -- and buried the actual
+          # players in the log.
+          #
+          # /readyz checks the database, so a pod that cannot reach MySQL
+          # leaves the Service rather than accepting players it cannot save.
+          # /healthz deliberately checks only the event loop: restarting the
+          # pod would not fix a database outage and would end every session
+          # in progress.
+          #
+          # The flag exists because this pairing is only safe when the chart
+          # and the image that serves the endpoint deploy together, which is
+          # what tracking release tags guarantees and tracking `main` did
+          # not -- the chart arrived first once and the pod crashlooped.
           {{- if .Values.health.probes }}
           startupProbe:
             httpGet:
