@@ -1,8 +1,7 @@
 import hashlib
 import hmac
 import os
-import sqlite3
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 SCRYPT_N = 16384
 SCRYPT_R = 8
@@ -94,69 +93,3 @@ class Player:
     fight_bonus: int = 0
     endurance_bought: int = 0
     fights_regen_at: str = ""
-
-
-_COLUMNS = [f.name for f in fields(Player)]
-_MUTABLE_COLUMNS = [c for c in _COLUMNS if c not in ("id", "name")]
-
-
-def _row_to_player(row: sqlite3.Row) -> Player:
-    return Player(**{col: row[col] for col in _COLUMNS})
-
-
-class PlayerRepo:
-    def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
-
-    def create(self, name: str, password: str, gender: str) -> Player:
-        password_hash = hash_password(password)
-        try:
-            with self.conn:
-                cursor = self.conn.execute(
-                    "INSERT INTO players (name, password_hash, gender) "
-                    "VALUES (:name, :password_hash, :gender)",
-                    {
-                        "name": name,
-                        "password_hash": password_hash,
-                        "gender": gender,
-                    },
-                )
-        except sqlite3.IntegrityError as exc:
-            raise ValueError(f"player name already exists: {name}") from exc
-
-        player = self.get(cursor.lastrowid)
-        assert player is not None
-        return player
-
-    def get(self, id: int) -> Player | None:
-        row = self.conn.execute(
-            "SELECT * FROM players WHERE id = ?", (id,)
-        ).fetchone()
-        return _row_to_player(row) if row is not None else None
-
-    def get_by_name(self, name: str) -> Player | None:
-        row = self.conn.execute(
-            "SELECT * FROM players WHERE name = ?", (name,)
-        ).fetchone()
-        return _row_to_player(row) if row is not None else None
-
-    def save(self, player: Player) -> None:
-        set_clause = ", ".join(f"{col} = :{col}" for col in _MUTABLE_COLUMNS)
-        params = {col: getattr(player, col) for col in _MUTABLE_COLUMNS}
-        params["id"] = player.id
-        with self.conn:
-            self.conn.execute(
-                f"UPDATE players SET {set_clause} WHERE id = :id", params
-            )
-
-    def all_players(self) -> list[Player]:
-        rows = self.conn.execute("SELECT * FROM players ORDER BY id").fetchall()
-        return [_row_to_player(row) for row in rows]
-
-    def check_password(self, name: str, password: str) -> Player | None:
-        player = self.get_by_name(name)
-        if player is None:
-            return None
-        if not verify_password(password, player.password_hash):
-            return None
-        return player

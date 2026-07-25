@@ -6,7 +6,7 @@ lord.js:9968-9971) -- both routed to this same scene by ``town.py``/
 
 lord.js's log is a rolling two-file pair (``lognow.lrd`` / ``logold.lrd``,
 swapped by ``create_log()`` the first time a new day is detected,
-reference/lord.js:3057-3075) fed by ``log_line()``/``ctx.news()`` calls
+reference/lord.js:3057-3075) fed by ``log_line()``/``await ctx.news()`` calls
 throughout the game plus one random "happenings" flavor line per day
 (lord.js:3040-3055, 3085). This project's ``daily_news`` table
 (``pylord/db.py``) already carries a ``day`` column (the same monotonic
@@ -35,14 +35,14 @@ if TYPE_CHECKING:
 _HEADER = "\n  `2The Daily Happenings....\n`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n"
 
 
-def _current_day(ctx: GameCtx) -> int:
-    return ctx.db.state.get_int("day", 1)
+async def _current_day(ctx: GameCtx) -> int:
+    return await ctx.db.state.get_int("day", 1)
 
 
 async def _show(ctx: GameCtx, *, today: bool) -> None:
-    day = _current_day(ctx)
+    day = await _current_day(ctx)
     target = day if today else day - 1
-    lines = ctx.db.news.for_day(target)
+    lines = await ctx.db.news.for_day(target)
     if not lines:
         if today:
             await ctx.io.write(f"{_HEADER}\n  Nothing has happened yet today.\n")

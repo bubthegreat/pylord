@@ -80,7 +80,7 @@ def _row(p: Player) -> str:
 
 @scene("list_warriors")
 async def list_warriors(ctx: GameCtx) -> str:
-    players = sorted(ctx.repo.all_players(), key=lambda p: p.exp, reverse=True)
+    players = sorted(await ctx.repo.all_players(), key=lambda p: p.exp, reverse=True)
     await ctx.io.write(_HEADER)
     for p in players:
         await ctx.io.write(_row(p) + "\n")

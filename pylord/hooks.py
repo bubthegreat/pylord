@@ -41,8 +41,7 @@ from pylord.engine import limits
 
 if TYPE_CHECKING:
     import random
-    import sqlite3
-
+    
     from pylord.engine.game import GameCtx
     from pylord.models import Player
     from pylord.terminal import TermIO
@@ -183,35 +182,33 @@ class PlayerView:
 
 
 class IgmStore:
-    """Per-IGM persistent key/value store backed by the ``igm_data`` table.
+    """Per-IGM persistent key/value store, namespaced by the IGM's ``key``.
 
-    Values are JSON-serializable Python objects, scoped to a single IGM's
-    ``key`` (so two IGMs may use the same key names without collision).
-    Writes (:meth:`set`/:meth:`delete`) are buffered in memory during a
-    visit and only touch the DB when :meth:`flush` is called -- which the
-    visit protocol does inside the visit's single transaction on a clean
-    exit, so a crashing IGM's store writes are never persisted.
+    Values are JSON-serialisable Python objects. The store a plugin sees is
+    a **snapshot loaded before the visit begins**, with writes buffered in
+    memory -- that is what lets ``get``/``set`` stay synchronous now the
+    database is async, and it keeps a crashing plugin from leaving anything
+    behind (the visit protocol simply drops the buffer).
     """
 
     _MISSING = object()
 
-    def __init__(self, conn: sqlite3.Connection, igm_key: str) -> None:
-        from pylord.data import IgmDataRepo
-
-        self._rows = IgmDataRepo(conn)
+    def __init__(self, igm_key: str, rows: dict[str, str] | None = None) -> None:
         self._key = igm_key
-        self._loaded: dict[str, Any] = {}
+        self._loaded: dict[str, Any] = {
+            k: json.loads(v) for k, v in (rows or {}).items()
+        }
         self._pending: dict[str, tuple[str, Any]] = {}
+
+    @property
+    def igm_key(self) -> str:
+        return self._key
 
     def get(self, k: str, default: Any = None) -> Any:
         if k in self._pending:
             op, val = self._pending[k]
             return default if op == "delete" else val
-        if k not in self._loaded:
-            raw = self._rows.get_raw(self._key, k)
-            self._loaded[k] = json.loads(raw) if raw is not None else self._MISSING
-        val = self._loaded[k]
-        return default if val is self._MISSING else val
+        return self._loaded.get(k, default)
 
     def set(self, k: str, v: Any) -> None:
         self._pending[k] = ("set", v)
@@ -219,22 +216,14 @@ class IgmStore:
     def delete(self, k: str) -> None:
         self._pending[k] = ("delete", None)
 
-    def flush(self) -> None:
-        """Apply buffered writes via raw ``execute`` (no commit of its own).
-
-        Must run inside the caller's open transaction so the whole visit
-        commits or rolls back atomically.
-        """
+    async def flush(self, tx: Any) -> None:
+        """Apply the buffered writes inside the caller's transaction."""
         for k, (op, val) in self._pending.items():
             if op == "delete":
-                self._rows.delete(self._key, k)
-                self._loaded[k] = self._MISSING
+                await tx.igm_data.delete(self._key, k)
+                self._loaded.pop(k, None)
             else:
-                self._rows.set_raw(self._key, k, json.dumps(val))
-                # Fold the write into the read cache: without this, a get()
-                # after flush() falls back to whatever the cache learned
-                # *before* the write (usually "missing") and reports the
-                # value as absent even though it is on disk.
+                await tx.igm_data.set_raw(self._key, k, json.dumps(val))
                 self._loaded[k] = val
         self._pending.clear()
 
@@ -251,20 +240,41 @@ class IgmContext:
     * ``rng``     -- the session RNG.
     * ``mail``/``news``/``other_players`` -- helper methods below.
 
-    News is buffered (see :meth:`news`) and flushed by the visit protocol
-    on a clean exit. Mail and store writes execute against the DB during
-    the visit but inside its single transaction, so a crash rolls them
-    back.
+    **Everything here is synchronous**, which is the contract published to
+    plugin authors. That works against an async database because a visit
+    loads what a plugin can read (its store rows, the roster) before
+    ``enter`` is called, and buffers everything it writes until the visit
+    ends cleanly -- see ``pylord/engine/scenes/other_places.py``.
     """
 
-    def __init__(self, gctx: GameCtx, igm: IGM) -> None:
+    def __init__(
+        self,
+        gctx: GameCtx,
+        igm: IGM,
+        store: IgmStore,
+        roster: list[PlayerSummary],
+    ) -> None:
         self._gctx = gctx
         self._igm = igm
         self.player = PlayerView(gctx.player)
         self.term: TermIO = gctx.io
-        self.store = IgmStore(gctx.conn, igm.key)
+        self.store = store
         self.rng = gctx.rng
+        self._roster = roster
         self._news_buffer: list[str] = []
+        self._mail_buffer: list[tuple[str, str | None, dict | None]] = []
+
+    @classmethod
+    async def create(cls, gctx: GameCtx, igm: IGM) -> IgmContext:
+        """Load the snapshot a synchronous plugin will read from."""
+        rows = await gctx.db.igm_data.all_for(igm.key)
+        me = gctx.player.id
+        roster = [
+            PlayerSummary(p.name, p.level, p.alive, p.class_type)
+            for p in await gctx.db.players.all_players()
+            if p.id != me
+        ]
+        return cls(gctx, igm, IgmStore(igm.key, rows), roster)
 
     def news(self, text: str) -> None:
         """Buffer a line for today's news; flushed on a clean visit exit."""
@@ -275,78 +285,121 @@ class IgmContext:
     ) -> None:
         """Send in-game mail to ``to_name`` from this IGM.
 
-        ``effect`` is an arbitrary JSON dict stored verbatim; it is applied
-        at the recipient's next login (Task 13). Runs a raw INSERT inside
-        the visit transaction (rolled back on a crashing visit).
+        Buffered like everything else: a plugin that crashes afterwards
+        sends nothing. An unknown recipient still raises immediately, so
+        the mistake surfaces in the plugin rather than silently at flush.
         """
-        recipient = self._gctx.repo.get_by_name(to_name)
-        if recipient is None:
+        known = {p.name.lower() for p in self._roster}
+        known.add(self._gctx.player.name.lower())
+        if to_name.lower() not in known:
             raise ValueError(f"no such player to mail: {to_name!r}")
-        self._gctx.db.mail.send(
-            recipient.id, self._igm.name, text=text, effect=effect
-        )
+        self._mail_buffer.append((to_name, text, effect))
 
     def other_players(self) -> list[PlayerSummary]:
         """Read-only summaries of every *other* player (self excluded)."""
-        me = self._gctx.player.id
-        return [
-            PlayerSummary(p.name, p.level, p.alive, p.class_type)
-            for p in self._gctx.repo.all_players()
-            if p.id != me
-        ]
+        return list(self._roster)
 
     # -- internal: called by the visit protocol on a clean exit ---------
 
-    def flush_news(self) -> None:
-        """Write buffered news lines via raw execute (no commit)."""
-        if not self._news_buffer:
-            return
-        day = self._gctx.db.state.get("day", "1")
-        for text in self._news_buffer:
-            self._gctx.db.news.add(day, text)
-        self._news_buffer.clear()
+    async def flush(self, tx: Any) -> None:
+        """Land the store, news and mail this visit produced."""
+        await self.store.flush(tx)
+
+        if self._news_buffer:
+            day = await tx.state.get("day", "1")
+            for text in self._news_buffer:
+                await tx.news.add(day, text)
+            self._news_buffer.clear()
+
+        for to_name, text, effect in self._mail_buffer:
+            recipient = await tx.players.get_by_name(to_name)
+            if recipient is not None:
+                await tx.mail.send(
+                    recipient.id, self._igm.name, text=text, effect=effect
+                )
+        self._mail_buffer.clear()
+
+
+class StateView:
+    """A read-only snapshot of the realm's ``game_state`` rows.
+
+    Loaded before a hook runs so an IGM can read realm-wide state -- the
+    game day, who Violet and Seth Able are married to -- without awaiting
+    and without a handle on the database. Writes are not offered: shared
+    realm state belongs to the engine, not to a plugin.
+    """
+
+    def __init__(self, rows: dict[str, str]) -> None:
+        self._rows = dict(rows)
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        return self._rows.get(key, default)
+
+    def get_int(self, key: str, default: int) -> int:
+        try:
+            return int(self._rows[key])
+        except (KeyError, TypeError, ValueError):
+            return default
 
 
 class IgmMaintContext:
     """Context handed to :meth:`IGM.daily_maint` during global maintenance.
 
     Simpler than :class:`IgmContext` -- there's no visiting player to
-    guard. Exposes the DB ``conn``, the resolved ``config`` dict, a
-    ``repo`` for bulk player reads/writes, and a per-IGM ``store``. The
-    registry commits each IGM's store after a clean ``daily_maint`` and
-    rolls it back on a crash (see
-    :meth:`pylord.igm_loader.IgmRegistry.run_daily_maint`).
-
-    ``repo.save()`` here is deliberately *not*
-    :meth:`pylord.models.PlayerRepo.save` -- that one self-commits via its
-    own ``with conn:``, and sqlite3 connections are not re-entrant context
-    managers, so a plugin calling it would commit the registry's
-    transaction early and break the rollback guarantee. It writes through
-    :meth:`pylord.data.Players.save_in_transaction` instead.
+    guard -- and synchronous for the same reason: the roster, this IGM's
+    rows and the realm's ``game_state`` are loaded before the hook runs,
+    and its writes are buffered until the maintenance pass commits them.
     """
 
     def __init__(
-        self, conn: sqlite3.Connection, config: dict[str, Any], igm_key: str
+        self,
+        igm_key: str,
+        config: dict[str, Any],
+        store: IgmStore,
+        players: list[Player],
+        state: StateView | None = None,
     ) -> None:
-        self.conn = conn
         self.config = config
-        self.repo = _MaintRepo(conn)
-        self.store = IgmStore(conn, igm_key)
+        self.store = store
+        self.state = state if state is not None else StateView({})
+        self._players = players
+        self.repo = _MaintRoster(players)
+
+    @classmethod
+    async def create(
+        cls, db: Any, config: dict[str, Any], igm_key: str
+    ) -> IgmMaintContext:
+        rows = await db.igm_data.all_for(igm_key)
+        players = await db.players.all_players()
+        state = StateView(await db.state.all_rows())
+        return cls(igm_key, config, IgmStore(igm_key, rows), players, state)
+
+    async def flush(self, tx: Any) -> None:
+        await self.store.flush(tx)
+        for player in self.repo.dirty:
+            await tx.players.save(player)
+        self.repo.dirty.clear()
 
 
-class _MaintRepo:
-    """``PlayerRepo`` with a non-committing ``save`` (see
-    :class:`IgmMaintContext`). Every read passes straight through."""
+class _MaintRoster:
+    """The roster a ``daily_maint`` hook sees: every player, loaded up
+    front, with saves buffered so the hook can stay synchronous."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        from pylord.data import Players
+    def __init__(self, players: list[Player]) -> None:
+        self._players = players
+        self.dirty: list[Player] = []
 
-        self._players = Players(conn)
-        self._repo = self._players
-        self._conn = conn
+    def all_players(self) -> list[Player]:
+        return list(self._players)
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._repo, name)
+    def get_by_name(self, name: str) -> Player | None:
+        return next(
+            (p for p in self._players if p.name.lower() == name.lower()), None
+        )
+
+    def get(self, player_id: int) -> Player | None:
+        return next((p for p in self._players if p.id == player_id), None)
 
     def save(self, player: Player) -> None:
-        self._players.save_in_transaction(player)
+        if player not in self.dirty:
+            self.dirty.append(player)

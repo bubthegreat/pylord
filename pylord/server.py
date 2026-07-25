@@ -4,10 +4,9 @@
 connection: it drives the name/password/character-creation dance and then
 hands off to ``run_session`` (the scene engine, Task 8) for the rest of the
 session. ``start`` wires that callback into ``telnetlib3.create_server``
-with one ``sqlite3.Connection`` shared by every connection the returned
-server accepts (safe because ``sqlite3`` connections are only unsafe across
-*threads*, and every connection here is driven from the same asyncio event
-loop thread).
+with one :class:`~pylord.data.Database` shared by every connection the
+returned server accepts -- it owns a connection pool, so sessions do not
+contend for a single connection.
 
 Class-selection wording ("Killing A Lot Of Woodland Creatures" / "Dabbling
 In The Mystical Forces" / "Lying, Cheating, And Stealing From The Blind")
@@ -22,22 +21,22 @@ from __future__ import annotations
 
 import logging
 import random
-import sqlite3
 import string
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import telnetlib3
+from sqlalchemy.exc import SQLAlchemyError
 from telnetlib3.telopt import ECHO, SGA, WILL
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
-from pylord import db, igm_loader
-from pylord.data import Database
+from pylord import data, igm_loader
+from pylord.data import Database, PlayersRepo
 from pylord.engine import daily, fights
 from pylord.engine.game import GameCtx, run_session
 from pylord.engine.scenes import mail as mail_scene
-from pylord.models import Player, PlayerRepo
+from pylord.models import Player
 from pylord.terminal import ConnectionClosed, TelnetIO
 
 NAME_MAXLEN = 20
@@ -158,12 +157,12 @@ async def _prompt_password(io: TelnetIO, prompt: str) -> str:
     return await io.readline(prompt, maxlen=PASSWORD_MAXLEN)
 
 
-async def _login_existing(io: TelnetIO, repo: PlayerRepo, name: str) -> Player | None:
+async def _login_existing(io: TelnetIO, repo: PlayersRepo, name: str) -> Player | None:
     """Password prompt, up to 3 tries. Returns the authenticated Player, or
     None if all 3 tries failed (caller disconnects)."""
     for attempt in range(3):
         password = await _prompt_password(io, "  `2Password: `%")
-        authed = repo.check_password(name, password)
+        authed = await repo.check_password(name, password)
         if authed is not None:
             return authed
         remaining = 2 - attempt
@@ -173,7 +172,7 @@ async def _login_existing(io: TelnetIO, repo: PlayerRepo, name: str) -> Player |
 
 
 async def _create_character(
-    io: TelnetIO, repo: PlayerRepo, name: str, game_config: dict[str, Any]
+    io: TelnetIO, repo: PlayersRepo, name: str, game_config: dict[str, Any]
 ) -> Player | None:
     """Full new-character flow: confirm name, splash, gender, class, set
     password, then create. Returns the new Player, or None if the caller
@@ -218,7 +217,7 @@ async def _create_character(
         await io.write("\n`)Passwords did not match. Try again.`0\n")
 
     try:
-        player = repo.create(name, pw1, gender)
+        player = await repo.create(name, pw1, gender)
     except ValueError:
         await io.write("\n`)That name was just taken by another warrior.`0\n")
         return None
@@ -236,12 +235,12 @@ async def _create_character(
     player.skill_uses = daily.skill_uses_for(player)
     player.last_played = datetime.now(UTC).date().isoformat()
     player.fights_regen_at = datetime.now(UTC).isoformat()
-    repo.save(player)
+    await repo.save(player)
     return player
 
 
 async def handle_connection(
-    reader, writer, *, conn, config: dict[str, Any], igms=None
+    reader, writer, *, database: Database, config: dict[str, Any], igms=None
 ) -> None:
     """telnetlib3 shell callback: login flow, then hand off to run_session.
 
@@ -264,7 +263,7 @@ async def handle_connection(
     writer.iac(WILL, SGA)
 
     io = TelnetIO(reader, writer)
-    repo = PlayerRepo(conn)
+    repo = database.players
 
     # Cheap once-per-day guard inside maintenance() itself (a single
     # SELECT once today's pass has already run) -- see
@@ -272,13 +271,15 @@ async def handle_connection(
     # batch pass rather than lord.js's per-player lazy wake_up(). UTC
     # (rather than host-local "today") avoids the game's day rollover
     # depending on whatever timezone the server process happens to run in.
-    daily.maintenance(conn, config, datetime.now(UTC).date().isoformat(), igms=igms)
+    await daily.maintenance(
+        database, config, datetime.now(UTC).date().isoformat(), igms=igms
+    )
 
     player: Player | None = None
     try:
         while player is None:
             name = await _prompt_name(io)
-            existing = repo.get_by_name(name)
+            existing = await repo.get_by_name(name)
 
             if existing is not None:
                 authed = await _login_existing(io, repo, name)
@@ -294,17 +295,16 @@ async def handle_connection(
             else:
                 player = await _create_character(io, repo, name, config.get("game", {}))
 
-        if await _check_gameover(io, conn, repo, player):
+        if await _check_gameover(io, database, repo, player):
             return
 
         player.online = 1
-        repo.save(player)
+        await repo.save(player)
 
         ctx = GameCtx(
             player=player,
-            repo=repo,
+            db=database,
             io=io,
-            conn=conn,
             config=config.get("game", {}),
             igms=igms,
         )
@@ -346,8 +346,8 @@ async def handle_connection(
         if player is not None:
             player.online = 0
             try:
-                repo.save(player)
-            except sqlite3.Error:
+                await repo.save(player)
+            except SQLAlchemyError:
                 # Best-effort cleanup: don't let a DB hiccup during
                 # shutdown stop us from still closing the connection below.
                 logger.exception(
@@ -358,7 +358,9 @@ async def handle_connection(
         writer.close()
 
 
-async def _check_gameover(io: TelnetIO, conn, repo: PlayerRepo, player: Player) -> bool:
+async def _check_gameover(
+    io: TelnetIO, database: Database, repo: Any, player: Player
+) -> bool:
     """Port of ``check_gameover()``. reference/lord.js:17293-17324.
 
     Once someone has finished the quest (``settings.win_deeds`` dragon
@@ -367,11 +369,11 @@ async def _check_gameover(io: TelnetIO, conn, repo: PlayerRepo, player: Player) 
     to a "PAY HOMAGE" screen instead of being allowed to play. Returns
     ``True`` when the session was ended this way.
     """
-    won_by = Database(conn).state.get("won_by")
+    won_by = await database.state.get("won_by")
     if won_by is None:
         return False
     try:
-        winner = repo.get(int(won_by))
+        winner = await repo.get(int(won_by))
     except (TypeError, ValueError):
         return False
     if winner is None:
@@ -405,25 +407,24 @@ async def start(config: dict[str, Any]):
     ``config["server"]`` is expected to look like config.toml's
     ``[server]`` table (``host``, ``port``, and this project's ``db`` path
     key -- see cli.py for how the CLI resolves that path). Opens and
-    migrates one ``sqlite3.Connection`` shared by every connection this
-    server accepts for as long as it runs.
+    Opens one connection pool (SQLite locally, MySQL in the homelab --
+    see ``pylord/data.py``) shared by every session this server accepts
+    for as long as it runs.
     """
     server_cfg = config.get("server", {})
     host = server_cfg.get("host", "0.0.0.0")
     port = server_cfg.get("port", 2323)
     db_path = server_cfg.get("db", "lord.db")
 
-    conn = db.connect(db_path)
-    db.migrate(conn)
+    database = await data.connect(db_path)
 
     # No session can exist before the listener does, so any `online` flag
     # still set here is stale -- left by a pod restart, a crash, or a
     # machine losing power mid-session. Left alone it would both inflate
     # "people on now" and lock that character out of their own account
     # ("already adventuring elsewhere") until someone edited the database.
-    database = Database(conn)
-    with database.transaction():
-        cleared = database.players.clear_online_flags()
+    async with database.transaction() as tx:
+        cleared = await tx.players.clear_online_flags()
     if cleared:
         logger.info("cleared %d stale online flag(s) from a previous run", cleared)
 
@@ -436,6 +437,8 @@ async def start(config: dict[str, Any]):
     logger.info("loaded %d enabled IGM(s) from %s", len(igms.enabled), igms_dir)
 
     async def shell(reader, writer) -> None:
-        await handle_connection(reader, writer, conn=conn, config=config, igms=igms)
+        await handle_connection(
+            reader, writer, database=database, config=config, igms=igms
+        )
 
     return await telnetlib3.create_server(host=host, port=port, shell=shell)

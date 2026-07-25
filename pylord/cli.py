@@ -71,13 +71,11 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def _open_repo(config: dict[str, Any]):
-    from pylord import db
-    from pylord.models import PlayerRepo
+async def _open_db(config: dict[str, Any]):
+    """Open (and if necessary create) the realm's database."""
+    from pylord import data
 
-    conn = db.connect(config["server"]["db"])
-    db.migrate(conn)
-    return PlayerRepo(conn)
+    return await data.connect(config["server"]["db"])
 
 
 _STATS_FIELDS = [
@@ -127,9 +125,6 @@ def _print_player_stats(player) -> None:
 
 
 def _cmd_edit(args: argparse.Namespace) -> int:
-    from pylord.engine import limits
-    from pylord.models import hash_password
-
     if not args.name:
         print("usage: pylord edit NAME [--gold N] [--gems N] [--level N] "
               "[--alive 0|1] [--reset-password PW]", file=sys.stderr)
@@ -140,9 +135,22 @@ def _cmd_edit(args: argparse.Namespace) -> int:
         print(f"config file not found: {config_path}", file=sys.stderr)
         return 1
     config = load_config(config_path)
-    repo = _open_repo(config)
 
-    player = repo.get_by_name(args.name)
+    async def _run() -> int:
+        database = await _open_db(config)
+        try:
+            return await _edit(database, args)
+        finally:
+            await database.dispose()
+
+    return asyncio.run(_run())
+
+
+async def _edit(database, args: argparse.Namespace) -> int:
+    from pylord.engine import limits
+    from pylord.models import hash_password
+
+    player = await database.players.get_by_name(args.name)
     if player is None:
         print(f"no such player: {args.name}", file=sys.stderr)
         return 1
@@ -176,7 +184,7 @@ def _cmd_edit(args: argparse.Namespace) -> int:
 
     print(f"{player.name}:")
     _print_table(["field", "before", "after"], changes)
-    repo.save(player)
+    await database.players.save(player)
     return 0
 
 
@@ -188,9 +196,19 @@ def _cmd_delete(args: argparse.Namespace) -> int:
         print(f"config file not found: {config_path}", file=sys.stderr)
         return 1
     config = load_config(config_path)
-    repo = _open_repo(config)
 
-    player = repo.get_by_name(args.name)
+    async def _run() -> int:
+        database = await _open_db(config)
+        try:
+            return await _delete(database, args)
+        finally:
+            await database.dispose()
+
+    return asyncio.run(_run())
+
+
+async def _delete(database, args: argparse.Namespace) -> int:
+    player = await database.players.get_by_name(args.name)
     if player is None:
         print(f"no such player: {args.name}", file=sys.stderr)
         return 1
@@ -205,12 +223,9 @@ def _cmd_delete(args: argparse.Namespace) -> int:
         _print_player_stats(player)
         return 1
 
-    from pylord.data import Database
-
-    database = Database(repo.conn)
-    with database.transaction() as tx:
-        tx.mail.delete_for(player.id)
-        tx.players.delete(player.id)  # also frees anyone married to them
+    async with database.transaction() as tx:
+        await tx.mail.delete_for(player.id)
+        await tx.players.delete(player.id)  # also frees anyone married to them
     print(f"deleted {player.name}")
     return 0
 
@@ -221,12 +236,18 @@ def _cmd_players(args: argparse.Namespace) -> int:
         print(f"config file not found: {config_path}", file=sys.stderr)
         return 1
     config = load_config(config_path)
-    repo = _open_repo(config)
 
-    players = repo.all_players()
-    rows = [[str(getattr(p, field)) for field in _ROSTER_FIELDS] for p in players]
-    _print_table(_ROSTER_FIELDS, rows)
-    return 0
+    async def _run() -> int:
+        database = await _open_db(config)
+        try:
+            players = await database.players.all_players()
+        finally:
+            await database.dispose()
+        rows = [[str(getattr(p, f)) for f in _ROSTER_FIELDS] for p in players]
+        _print_table(_ROSTER_FIELDS, rows)
+        return 0
+
+    return asyncio.run(_run())
 
 
 def _cmd_smoke(args: argparse.Namespace) -> int:

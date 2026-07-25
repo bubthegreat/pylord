@@ -71,7 +71,6 @@ instead), and the spouse/marriage side effects of waking up. See
 from __future__ import annotations
 
 import random as _random_module
-import sqlite3
 from typing import Any
 
 from pylord.data import Database
@@ -121,8 +120,8 @@ def _pregnancy(player, rng) -> str | None:
     return f"  `0{player.name} `2gives birth to a {child}!"
 
 
-def maintenance(
-    conn: sqlite3.Connection,
+async def maintenance(
+    db: Database,
     config: dict[str, Any],
     today: str,
     igms=None,
@@ -143,25 +142,19 @@ def maintenance(
     ``IgmRegistry.run_daily_maint``), so a bad IGM can't abort the daily
     reset.
     """
-    if Database(conn).state.get("last_maint") == today:
+    if await db.state.get("last_maint") == today:
         return
 
     game_cfg = (config or {}).get("game", {})
     player_fights = game_cfg.get("player_fights_per_day", _DEFAULT_PLAYER_FIGHTS)
     rng = _random_module.Random() if rng is None else rng
 
-    db = Database(conn)
-    repo = db.players
     news: list[str] = []
 
-    # One transaction for the whole pass. Every write below goes through
-    # Players.save_in_transaction (pylord/data.py) rather than
-    # PlayerRepo.save, which opens a transaction of its own --
-    # sqlite3 connections are not re-entrant context managers, so the
-    # nested commit would end this transaction early and a failure
-    # mid-pass could re-apply bank interest to everyone on the retry.
-    with db.transaction():
-        for player in repo.all_players():
+    # One transaction for the whole pass: a failure part-way through must
+    # not leave half the realm having been paid its bank interest.
+    async with db.transaction() as tx:
+        for player in await tx.players.all_players():
             if player.last_played == today:
                 # Already reset today by an earlier pass (or by a session
                 # that spanned the rollover) -- don't pay interest twice.
@@ -208,15 +201,15 @@ def maintenance(
 
             player.last_played = today
 
-            db.players.save_in_transaction(player)
+            await tx.players.save(player)
 
-        day = db.state.get_int("day", 1) + 1
-        db.state.set("day", day)
-        db.state.set("last_maint", today)
+        day = await db.state.get_int("day", 1) + 1
+        await tx.state.set("day", day)
+        await tx.state.set("last_maint", today)
         for line in news:
-            db.news.add(day, line)
+            await tx.news.add(day, line)
 
     # After the core reset has committed, let enabled IGMs run their own
     # daily hook (each contained; see IgmRegistry.run_daily_maint).
     if igms is not None:
-        igms.run_daily_maint(conn, config)
+        await igms.run_daily_maint(db, config)

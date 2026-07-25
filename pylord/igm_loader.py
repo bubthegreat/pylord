@@ -35,8 +35,7 @@ from pylord.hooks import IGM, ForestEvent, IgmMaintContext, InnEvent
 
 if TYPE_CHECKING:
     import random
-    import sqlite3
-
+    
 logger = logging.getLogger("pylord.igm")
 
 # A valid IGM key is a lowercase slug: starts alphanumeric, then
@@ -185,52 +184,27 @@ class IgmRegistry:
                 events.append((igm, event))
         return events
 
-    def run_daily_maint(
-        self, conn: sqlite3.Connection, config: dict[str, Any]
-    ) -> None:
+    async def run_daily_maint(self, db: Any, config: dict[str, Any]) -> None:
         """Run each enabled IGM's ``daily_maint`` hook, containing failures.
 
-        Each IGM runs in its own try/except: on a clean return its store is
-        flushed and committed; on an exception the transaction is rolled
-        back and the error logged, so one plugin's failure never aborts the
-        others or the surrounding maintenance pass.
+        Each plugin gets its own transaction: on a clean return its
+        buffered store writes and player saves land; on an exception
+        nothing of that plugin's does, and the error is logged, so one bad
+        plugin never aborts the others or the surrounding maintenance pass.
 
-        ``daily_maint`` is declared ``async`` for interface symmetry with
-        ``enter``, but the maintenance pass is synchronous and is itself
-        called from inside the server's running event loop (via
-        :func:`pylord.engine.daily.maintenance`), where ``asyncio.run``
-        would raise "cannot be called from a running event loop". The maint
-        context exposes no terminal, so a well-formed hook does only
-        synchronous DB work and completes on the first coroutine step --
-        :func:`_drive_sync` runs it without an event loop (and without a
-        second thread, keeping the sqlite connection on its owning thread).
+        The hook itself is synchronous by design (see
+        :class:`pylord.hooks.IgmMaintContext`) even though it is declared
+        ``async`` for symmetry with ``enter`` -- it reads a roster loaded
+        up front and writes into buffers, so it completes on the first
+        coroutine step.
         """
         for igm in self.enabled:
-            mctx = IgmMaintContext(conn, config, igm.key)
             try:
-                _drive_sync(igm.daily_maint(mctx))
-                mctx.store.flush()
-                conn.commit()
+                mctx = await IgmMaintContext.create(db, config, igm.key)
+                await igm.daily_maint(mctx)
+                async with db.transaction() as tx:
+                    await mctx.flush(tx)
             except Exception:
-                conn.rollback()
                 logger.exception("IGM %s daily_maint() failed", igm.key)
 
 
-def _drive_sync(coro) -> None:
-    """Run a coroutine that performs no real ``await`` to completion.
-
-    Used for ``IGM.daily_maint``: it has no terminal I/O to await, so a
-    well-formed hook finishes on the first ``send(None)``. If a hook *does*
-    suspend on a real awaitable, that's a programming error (the sync
-    maintenance pass can't pump an event loop here) and is surfaced loudly.
-    """
-    try:
-        coro.send(None)
-    except StopIteration:
-        return
-    else:
-        coro.close()
-        raise RuntimeError(
-            "IGM.daily_maint awaited real async I/O; daily_maint must be "
-            "synchronous DB-only work (no terminal, no awaiting)"
-        )

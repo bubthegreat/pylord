@@ -1,19 +1,17 @@
 import pytest
 
-from pylord import db
-from pylord.models import Player, PlayerRepo, hash_password, verify_password
+from pylord import data
+from pylord.models import Player, hash_password, verify_password
 
 
 @pytest.fixture
-def conn(tmp_path):
-    c = db.connect(tmp_path / "g.db")
-    db.migrate(c)
-    return c
+async def database(tmp_path):
+    return await data.connect(str(tmp_path / "g.db"))
 
 
 @pytest.fixture
-def repo(conn):
-    return PlayerRepo(conn)
+async def repo(database):
+    return database.players
 
 
 def test_hash_and_verify_password_roundtrip():
@@ -31,68 +29,68 @@ def test_hash_password_uses_random_salt():
     assert a != b  # different salts -> different hashes
 
 
-def test_create_and_get_by_name_roundtrip(repo):
-    created = repo.create("Zaphod", "hunter2", "M")
+async def test_create_and_get_by_name_roundtrip(repo):
+    created = await repo.create("Zaphod", "hunter2", "M")
     assert isinstance(created, Player)
     assert created.id is not None
     assert created.name == "Zaphod"
     assert created.gender == "M"
 
-    fetched = repo.get_by_name("zaphod")  # case-insensitive
+    fetched = await repo.get_by_name("zaphod")  # case-insensitive
     assert fetched is not None
     assert fetched.id == created.id
     assert fetched.name == "Zaphod"
 
 
-def test_get_by_id_roundtrip(repo):
-    created = repo.create("Ford", "towel", "M")
-    fetched = repo.get(created.id)
+async def test_get_by_id_roundtrip(repo):
+    created = await repo.create("Ford", "towel", "M")
+    fetched = await repo.get(created.id)
     assert fetched is not None
     assert fetched.name == "Ford"
 
 
-def test_get_returns_none_for_missing_id(repo):
-    assert repo.get(9999) is None
+async def test_get_returns_none_for_missing_id(repo):
+    assert await repo.get(9999) is None
 
 
-def test_get_by_name_returns_none_for_missing_name(repo):
-    assert repo.get_by_name("nobody") is None
+async def test_get_by_name_returns_none_for_missing_name(repo):
+    assert await repo.get_by_name("nobody") is None
 
 
-def test_check_password_wrong_password_returns_none(repo):
-    repo.create("Trillian", "correcthorse", "F")
-    assert repo.check_password("Trillian", "wrongpassword") is None
+async def test_check_password_wrong_password_returns_none(repo):
+    await repo.create("Trillian", "correcthorse", "F")
+    assert await repo.check_password("Trillian", "wrongpassword") is None
 
 
-def test_check_password_correct_password_returns_player(repo):
-    repo.create("Trillian", "correcthorse", "F")
-    result = repo.check_password("Trillian", "correcthorse")
+async def test_check_password_correct_password_returns_player(repo):
+    await repo.create("Trillian", "correcthorse", "F")
+    result = await repo.check_password("Trillian", "correcthorse")
     assert result is not None
     assert result.name == "Trillian"
 
 
-def test_check_password_unknown_name_returns_none(repo):
-    assert repo.check_password("Nobody", "whatever") is None
+async def test_check_password_unknown_name_returns_none(repo):
+    assert await repo.check_password("Nobody", "whatever") is None
 
 
-def test_save_persists_gold_change(repo):
-    created = repo.create("Arthur", "dontpanic", "M")
+async def test_save_persists_gold_change(repo):
+    created = await repo.create("Arthur", "dontpanic", "M")
     created.gold = 12345
-    repo.save(created)
+    await repo.save(created)
 
-    fetched = repo.get(created.id)
+    fetched = await repo.get(created.id)
     assert fetched.gold == 12345
 
 
-def test_create_duplicate_name_case_insensitive_raises_value_error(repo):
-    repo.create("Marvin", "paranoid", "M")
+async def test_create_duplicate_name_case_insensitive_raises_value_error(repo):
+    await repo.create("Marvin", "paranoid", "M")
     with pytest.raises(ValueError):
-        repo.create("marvin", "otherpassword", "M")
+        await repo.create("marvin", "otherpassword", "M")
 
 
-def test_all_players_returns_all(repo):
-    repo.create("A", "pw1", "M")
-    repo.create("B", "pw2", "F")
-    players = repo.all_players()
+async def test_all_players_returns_all(repo):
+    await repo.create("A", "pw1", "M")
+    await repo.create("B", "pw2", "F")
+    players = await repo.all_players()
     names = {p.name for p in players}
     assert names == {"A", "B"}

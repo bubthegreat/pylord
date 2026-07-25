@@ -27,12 +27,12 @@ async def test_contract():
 
 
 async def test_dig_finds_gold_cache_exact_amount():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
-    gctx = make_ctx(conn, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([0, 123]))
+    gctx = make_ctx(database, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([0, 123]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -40,11 +40,11 @@ async def test_dig_finds_gold_cache_exact_amount():
 
 
 async def test_dig_finds_rare_gem():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
-    gctx = make_ctx(conn, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([4]))
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([4]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -52,12 +52,12 @@ async def test_dig_finds_rare_gem():
 
 
 async def test_dig_finds_nothing():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 50
-    gctx = make_ctx(conn, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([5]))
+    gctx = make_ctx(database, repo, p, keys=["D", "\r", "L"], rng=SeqRandom([5]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -67,12 +67,12 @@ async def test_dig_finds_nothing():
 
 
 async def test_digs_blocked_after_five_per_day():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = WarriorsGraveyard()
     keys = ["D", "\r"] * 6 + ["L"]
-    gctx = make_ctx(conn, repo, p, keys=keys, rng=SeqRandom([5, 5, 5, 5, 5]))
-    ctx = make_igm_ctx(gctx, igm)
+    gctx = make_ctx(database, repo, p, keys=keys, rng=SeqRandom([5, 5, 5, 5, 5]))
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -82,14 +82,14 @@ async def test_digs_blocked_after_five_per_day():
 
 
 async def test_undead_fight_victory_grants_exp_and_gold():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.gold = 100
     exp_before = p.exp
     igm = WarriorsGraveyard()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["D", "A", "\r", "L"],
@@ -98,7 +98,7 @@ async def test_undead_fight_victory_grants_exp_and_gold():
         # roll=2 (no gem/bonus-gold effect), victory gold roll=50.
         rng=SeqRandom([7, 0, 4, 9, 2, 50]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -113,14 +113,14 @@ async def test_undead_fight_victory_overkill_credits_gem():
     """Fight._loot_bonus's roll==0 branch sets fight.gem_found and already
     announces "You find a gem!" in the round text; this pins that the
     reward is actually credited to the player, not just narrated."""
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.gold = 100
     gems_before = p.gems
     igm = WarriorsGraveyard()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["D", "A", "\r", "L"],
@@ -128,7 +128,7 @@ async def test_undead_fight_victory_overkill_credits_gem():
         # loot-bonus roll=0 -> gem_found.
         rng=SeqRandom([7, 0, 4, 9, 0, 50]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -141,13 +141,13 @@ async def test_undead_fight_victory_overkill_credits_bonus_gold():
     announces "You find more gold than expected!" in the round text; this
     pins that the fight's gold reward is actually doubled, not just
     narrated -- same doubling pattern as forest.py's _victory."""
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.gold = 100
     igm = WarriorsGraveyard()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["D", "A", "\r", "L"],
@@ -155,7 +155,7 @@ async def test_undead_fight_victory_overkill_credits_bonus_gold():
         # victory gold roll=50, doubled to 100.
         rng=SeqRandom([7, 0, 4, 9, 1, 50]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -164,8 +164,8 @@ async def test_undead_fight_victory_overkill_credits_bonus_gold():
 
 
 async def test_undead_fight_loss_no_kill_guard_floors_hp_to_one():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.hp = 1
     p.hp_max = 20
@@ -173,7 +173,7 @@ async def test_undead_fight_loss_no_kill_guard_floors_hp_to_one():
     p.defense = 1
     igm = WarriorsGraveyard()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["D", "A", "\r"],
@@ -183,7 +183,7 @@ async def test_undead_fight_loss_no_kill_guard_floors_hp_to_one():
         # atk = 7 - defense(1) = 6, kills the 1-hp player.
         rng=SeqRandom([7, 1, 5, 3, 0]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -193,14 +193,14 @@ async def test_undead_fight_loss_no_kill_guard_floors_hp_to_one():
 
 
 async def test_hag_refuses_trade_at_low_hp():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 5
     p.hp_max = 20
     strength_before = p.strength
-    gctx = make_ctx(conn, repo, p, keys=["O", "\r", "L"], rng=SeqRandom([]))
+    gctx = make_ctx(database, repo, p, keys=["O", "\r", "L"], rng=SeqRandom([]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -210,14 +210,14 @@ async def test_hag_refuses_trade_at_low_hp():
 
 
 async def test_hag_trades_hp_for_strength():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 15
     p.hp_max = 20
     strength_before = p.strength
-    gctx = make_ctx(conn, repo, p, keys=["O", "S", "\r", "L"], rng=SeqRandom([]))
+    gctx = make_ctx(database, repo, p, keys=["O", "S", "\r", "L"], rng=SeqRandom([]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -226,15 +226,15 @@ async def test_hag_trades_hp_for_strength():
 
 
 async def test_hag_trade_blocked_second_time_same_day():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 15
     p.hp_max = 20
     igm = WarriorsGraveyard()
     gctx = make_ctx(
-        conn, repo, p, keys=["O", "D", "\r", "O", "\r", "L"], rng=SeqRandom([])
+        database, repo, p, keys=["O", "D", "\r", "O", "\r", "L"], rng=SeqRandom([])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -243,14 +243,14 @@ async def test_hag_trade_blocked_second_time_same_day():
 
 
 async def test_ghost_listen_grants_flat_exp_once_per_day():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     exp_before = p.exp
     gctx = make_ctx(
-        conn, repo, p, keys=["G", "L", "\r", "G", "\r", "L"], rng=SeqRandom([])
+        database, repo, p, keys=["G", "L", "\r", "G", "\r", "L"], rng=SeqRandom([])
     )
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -259,12 +259,12 @@ async def test_ghost_listen_grants_flat_exp_once_per_day():
 
 
 async def test_ghost_flee_grants_no_exp():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     exp_before = p.exp
-    gctx = make_ctx(conn, repo, p, keys=["G", "F", "\r", "L"], rng=SeqRandom([]))
+    gctx = make_ctx(database, repo, p, keys=["G", "F", "\r", "L"], rng=SeqRandom([]))
     igm = WarriorsGraveyard()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -272,22 +272,18 @@ async def test_ghost_flee_grants_no_exp():
 
 
 async def test_daily_maint_clears_all_gates():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = WarriorsGraveyard()
-    mctx = make_maint_ctx(conn, {}, igm.key)
+    mctx = await make_maint_ctx(database, {}, igm.key)
     mctx.store.set(f"digs:{p.id}", 5)
     mctx.store.set(f"hag:{p.id}", True)
     mctx.store.set(f"ghost:{p.id}", True)
-    mctx.store.flush()
-    conn.commit()
-
-    mctx2 = make_maint_ctx(conn, {}, igm.key)
+    await mctx.store.flush(database)
+    mctx2 = await make_maint_ctx(database, {}, igm.key)
     await igm.daily_maint(mctx2)
-    mctx2.store.flush()
-    conn.commit()
-
-    mctx3 = make_maint_ctx(conn, {}, igm.key)
+    await mctx2.store.flush(database)
+    mctx3 = await make_maint_ctx(database, {}, igm.key)
     assert mctx3.store.get(f"digs:{p.id}", 0) == 0
     assert mctx3.store.get(f"hag:{p.id}", False) is False
     assert mctx3.store.get(f"ghost:{p.id}", False) is False

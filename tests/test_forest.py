@@ -9,7 +9,7 @@ Two testing styles are used:
   ``random.Random(0)``. Used for a couple of end-to-end sanity checks
   where the exact RNG draw sequence has already been hand-verified (see
   the comments beside each).
-- ``_ctx(...)`` builds a ``GameCtx`` directly (mirroring
+- ``await _ctx(...)`` builds a ``GameCtx`` directly (mirroring
   ``tests/test_game.py``'s own helper) so individual forest.py functions
   (``_run_fight``, ``_pick_monster``, ``_look_to_kill``) can be exercised
   with a fully-controlled ``Player`` and RNG, sidestepping
@@ -22,13 +22,12 @@ from __future__ import annotations
 
 import random
 
-from pylord import db
+from pylord import data as storage
 from pylord.engine import data
 from pylord.engine.game import GameCtx
 from pylord.engine.scenes import forest as forest_mod
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
-from tests.harness import play, screen
+from tests.harness import play, query_one, screen
 
 
 class _SeqRNG:
@@ -45,15 +44,14 @@ class _SeqRNG:
         return self._values.pop(0)
 
 
-def _ctx(overrides=None, rng=None, keys=None):
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
+async def _ctx(overrides=None, rng=None, keys=None):
+    database = await storage.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
     for key, value in (overrides or {}).items():
         setattr(player, key, value)
     io = FakeIO(keys or [])
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn)
+    ctx = GameCtx(player=player, db=database, io=io)
     if rng is not None:
         ctx.rng = rng
     return ctx
@@ -126,7 +124,7 @@ async def test_view_stats_option_routes_to_stats_then_town():
 
 
 async def test_no_fights_left_shows_message_and_stays_in_forest():
-    ctx = _ctx(overrides={"forest_fights": 0}, keys=["l", "z", "r"])
+    ctx = await _ctx(overrides={"forest_fights": 0}, keys=["l", "z", "r"])
     result = await forest_mod.forest(ctx)
     text = screen(ctx.io)
     assert "You are too tired." in text
@@ -142,7 +140,7 @@ async def test_run_success_ends_fight_with_no_loot():
     """A fresh ``random.Random(0)`` fed straight into ``attempt_run()`` as
     the *first* draw gives ``randrange(9) == 6`` (!= 1 -> not caught)."""
     monster = data.MONSTERS[1][0]  # Small Thief
-    ctx = _ctx(rng=random.Random(0), keys=["r", "z"])
+    ctx = await _ctx(rng=random.Random(0), keys=["r", "z"])
     died = await forest_mod._run_fight(ctx, monster)
     assert died is False
     assert ctx.player.hp == ctx.player.hp_max  # untouched -- no counter-attack
@@ -161,7 +159,7 @@ async def test_run_fail_applies_enemy_counter_attack():
     infers this wording from the HP delta (it can't re-read the enemy's
     ``Round`` -- ``attempt_run()`` only returns ``bool``)."""
     monster = data.MONSTERS[1][0]  # Small Thief
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"strength": 10, "defense": 1, "hp": 20, "hp_max": 20},
         rng=random.Random(6),
         keys=["r", "a", "a", "z"],
@@ -182,7 +180,7 @@ async def test_skill_attack_decrements_skill_uses():
     Thief, 9 hp) overkills it (damage > player.str(10)), which both kills
     the thief and rolls a "find a gem" loot bonus."""
     monster = data.MONSTERS[1][0]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "class_type": 1,
             "skill_dk": 5,
@@ -216,7 +214,7 @@ async def test_mystical_multi_point_spell_decrements_exact_cost():
     ``fight.ran_away`` is set unconditionally (``:7311-7312``).
     """
     monster = data.MONSTERS[1][0]  # Small Thief
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"class_type": 2, "skill_my": 4, "skill_uses": 4},
         rng=random.Random(0),
         keys=["s", "z"],
@@ -248,7 +246,7 @@ async def test_mystical_cast_fails_when_uses_below_cheapest_tier():
 
 
 async def test_skill_option_hidden_when_no_uses_left():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"class_type": 1, "skill_dk": 5, "skill_uses": 0},
     )
     options = forest_mod._battle_options(ctx.player)
@@ -261,7 +259,7 @@ async def test_death_zeroes_gold_loses_ten_percent_exp_and_marks_dead():
     monster) does 8 damage without killing it, then
     ``Fight.enemy_attack()`` hits back for 105 -- lethal."""
     monster = data.Monster("Big Bear", "Claws", 200, 1000, 999, 50, "The bear wins.")
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "strength": 10,
             "defense": 0,
@@ -282,31 +280,31 @@ async def test_death_zeroes_gold_loses_ten_percent_exp_and_marks_dead():
     assert "You have been killed by Big Bear" in text
     assert "GOLD ON HAND WAS LOST." in text
     assert "TEN PERCENT OF EXPERIENCE LOST." in text
-    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
-    assert "has been killed by" in row["text"]
-    assert "Big Bear" in row["text"]
+    row = await query_one(ctx.db, "SELECT text FROM daily_news")
+    assert "has been killed by" in row.text
+    assert "Big Bear" in row.text
 
 
 # --- _pick_monster() -- normal + wildcard selection ---------------------
 
 
-def test_pick_monster_level_one_is_always_the_level_one_block():
-    ctx = _ctx(overrides={"level": 1}, rng=_SeqRNG([5]))
+async def test_pick_monster_level_one_is_always_the_level_one_block():
+    ctx = await _ctx(overrides={"level": 1}, rng=_SeqRNG([5]))
     monster = forest_mod._pick_monster(ctx)
     assert monster == data.MONSTERS[1][5]
 
 
-def test_pick_monster_normal_case_uses_own_level_block():
+async def test_pick_monster_normal_case_uses_own_level_block():
     # randrange(6) -> 0 (!= 2: normal branch), randrange(10) -> 7
-    ctx = _ctx(overrides={"level": 3}, rng=_SeqRNG([0, 7]))
+    ctx = await _ctx(overrides={"level": 3}, rng=_SeqRNG([0, 7]))
     monster = forest_mod._pick_monster(ctx)
     assert monster == data.MONSTERS[3][7]
 
 
-def test_pick_monster_wildcard_case_reaches_a_lower_level_block():
+async def test_pick_monster_wildcard_case_reaches_a_lower_level_block():
     # randrange(6) -> 2 (wildcard branch), randrange(player.level=5) -> 0
     # (-> level 1), randrange(10) -> 3
-    ctx = _ctx(overrides={"level": 5}, rng=_SeqRNG([2, 0, 3]))
+    ctx = await _ctx(overrides={"level": 5}, rng=_SeqRNG([2, 0, 3]))
     monster = forest_mod._pick_monster(ctx)
     assert monster == data.MONSTERS[1][3]
 
@@ -316,7 +314,7 @@ def test_pick_monster_wildcard_case_reaches_a_lower_level_block():
 
 async def test_vulture_banks_all_gold():
     """reference/lord.js:15260-15272 -- the hidden `B` key."""
-    ctx = _ctx(overrides={"gold": 750, "bank": 100}, keys=["b", "r"])
+    ctx = await _ctx(overrides={"gold": 750, "bank": 100}, keys=["b", "r"])
     await forest_mod.forest(ctx)
     assert ctx.player.gold == 0
     assert ctx.player.bank == 850
@@ -325,7 +323,7 @@ async def test_vulture_banks_all_gold():
 
 async def test_forest_menu_shows_the_status_line():
     """reference/lord.js:15227-15246."""
-    ctx = _ctx(overrides={"gold": 42, "gems": 7}, keys=["r"])
+    ctx = await _ctx(overrides={"gold": 42, "gems": 7}, keys=["r"])
     await forest_mod.forest(ctx)
     text = screen(ctx.io)
     assert "HitPoints: (" in text
@@ -335,14 +333,14 @@ async def test_forest_menu_shows_the_status_line():
 
 async def test_class_flavor_keys_just_print_a_line():
     """reference/lord.js:15319-15352."""
-    ctx = _ctx(keys=["t", "r"])
+    ctx = await _ctx(keys=["t", "r"])
     await forest_mod.forest(ctx)
     assert "Thieving skills cannot help you here" in screen(ctx.io)
 
 
 async def test_jennie_codeword_grants_an_extra_forest_fight():
     """reference/lord.js:15396-15419 -- J, then E-N-N-I-E, then BABE."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"high_spirits": 1, "forest_fights": 5},
         keys=["j", "e", "n", "n", "i", "e", "BABE", " ", "r"],
     )
@@ -354,14 +352,14 @@ async def test_jennie_codeword_grants_an_extra_forest_fight():
 
 async def test_jennie_needs_high_spirits():
     """reference/lord.js:15397 -- a low-spirits player gets nothing."""
-    ctx = _ctx(overrides={"high_spirits": 0, "forest_fights": 5}, keys=["j", "r"])
+    ctx = await _ctx(overrides={"high_spirits": 0, "forest_fights": 5}, keys=["j", "r"])
     await forest_mod.forest(ctx)
     assert ctx.player.forest_fights == 5
     assert "Jennie" not in screen(ctx.io)
 
 
 async def test_jennie_wrong_answer_gets_the_shrug():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"high_spirits": 1},
         keys=["j", "e", "n", "n", "i", "e", "ZZZZ", " ", "r"],
     )
@@ -371,7 +369,7 @@ async def test_jennie_wrong_answer_gets_the_shrug():
 
 async def test_jennie_ugly_answer_ends_the_session():
     """reference/lord.js:15488-15497."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"high_spirits": 1, "hp": 20, "hp_max": 20},
         keys=["j", "e", "n", "n", "i", "e", "UGLY", " "],
     )
@@ -386,7 +384,7 @@ async def test_jennie_ugly_answer_ends_the_session():
 
 async def test_hag_heals_for_a_gem():
     """reference/lord.js:14524-14570."""
-    ctx = _ctx(overrides={"gems": 2, "hp": 5, "hp_max": 40}, keys=["y", "x"])
+    ctx = await _ctx(overrides={"gems": 2, "hp": 5, "hp_max": 40}, keys=["y", "x"])
     await forest_mod._event_hag(ctx)
     assert ctx.player.gems == 1
     assert ctx.player.hp == 40
@@ -394,13 +392,13 @@ async def test_hag_heals_for_a_gem():
 
 
 async def test_hag_raises_max_hp_when_you_are_already_whole():
-    ctx = _ctx(overrides={"gems": 1, "hp": 40, "hp_max": 40}, keys=["y", "x"])
+    ctx = await _ctx(overrides={"gems": 1, "hp": 40, "hp_max": 40}, keys=["y", "x"])
     await forest_mod._event_hag(ctx)
     assert ctx.player.hp_max == 41
 
 
 async def test_hag_punishes_a_promise_you_cannot_keep():
-    ctx = _ctx(overrides={"gems": 0, "hp": 40, "hp_max": 40}, keys=["y", "x"])
+    ctx = await _ctx(overrides={"gems": 0, "hp": 40, "hp_max": 40}, keys=["y", "x"])
     await forest_mod._event_hag(ctx)
     assert ctx.player.hp == 1
     assert "no gems, fool" in screen(ctx.io)
@@ -408,14 +406,14 @@ async def test_hag_punishes_a_promise_you_cannot_keep():
 
 async def test_pretty_stick_grants_charm():
     """reference/lord.js:14638-14661 -- random(2)+1 charm, on random(3)==1."""
-    ctx = _ctx(overrides={"charm": 5}, rng=_SeqRNG([1, 1]), keys=["x"])
+    ctx = await _ctx(overrides={"charm": 5}, rng=_SeqRNG([1, 1]), keys=["x"])
     await forest_mod._event_stick(ctx)
     assert ctx.player.charm == 7  # 5 + (1 + 1)
     assert "YOU GET 2 CHARM" in screen(ctx.io)
 
 
 async def test_ugly_stick_costs_charm_but_never_below_zero():
-    ctx = _ctx(overrides={"charm": 1}, rng=_SeqRNG([1, 0]), keys=["x"])
+    ctx = await _ctx(overrides={"charm": 1}, rng=_SeqRNG([1, 0]), keys=["x"])
     await forest_mod._event_stick(ctx)
     assert ctx.player.charm == 0
     assert "LOSE 2 CHARM" in screen(ctx.io)
@@ -423,7 +421,7 @@ async def test_ugly_stick_costs_charm_but_never_below_zero():
 
 async def test_horse_trader_sells_you_a_horse():
     """reference/lord.js:14682-14738 -- level * 10000."""
-    ctx = _ctx(overrides={"level": 2, "gold": 50_000}, keys=["b", "y", "x"])
+    ctx = await _ctx(overrides={"level": 2, "gold": 50_000}, keys=["b", "y", "x"])
     await forest_mod._event_horse_trader(ctx)
     assert ctx.player.horse == 1
     assert ctx.player.gold == 30_000
@@ -431,7 +429,7 @@ async def test_horse_trader_sells_you_a_horse():
 
 async def test_horse_trader_buys_it_back_for_half():
     """reference/lord.js:14747 -- level * 5000."""
-    ctx = _ctx(overrides={"level": 2, "horse": 1, "gold": 0}, keys=["s", "y", "x"])
+    ctx = await _ctx(overrides={"level": 2, "horse": 1, "gold": 0}, keys=["s", "y", "x"])
     await forest_mod._event_horse_trader(ctx)
     assert ctx.player.horse == 0
     assert ctx.player.gold == 10_000
@@ -439,7 +437,7 @@ async def test_horse_trader_buys_it_back_for_half():
 
 async def test_troll_wounds_a_warrior():
     """reference/lord.js:14975-14996."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"class_type": 1, "hp": 50, "hp_max": 50},
         rng=_SeqRNG([4]),
         keys=["x"],
@@ -450,14 +448,14 @@ async def test_troll_wounds_a_warrior():
 
 
 async def test_troll_never_touches_a_thief():
-    ctx = _ctx(overrides={"class_type": 3, "hp": 50, "hp_max": 50}, keys=["x"])
+    ctx = await _ctx(overrides={"class_type": 3, "hp": 50, "hp_max": 50}, keys=["x"])
     await forest_mod._event_troll(ctx)
     assert ctx.player.hp == 50
     assert "thieving instincts" in screen(ctx.io)
 
 
 async def test_troll_can_kill_and_takes_everything():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"class_type": 1, "hp": 3, "hp_max": 50, "gold": 900, "gems": 4},
         rng=_SeqRNG([9]),
         keys=["x"],
@@ -465,8 +463,8 @@ async def test_troll_can_kill_and_takes_everything():
     await forest_mod._event_troll(ctx)
     p = ctx.player
     assert (p.hp, p.gold, p.gems, p.alive) == (0, 0, 0, 0)
-    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
-    assert row is not None and "troll" in row["text"]
+    row = await query_one(ctx.db, "SELECT text FROM daily_news")
+    assert row is not None and "troll" in row.text
 
 
 def test_most_event_slots_now_do_something():

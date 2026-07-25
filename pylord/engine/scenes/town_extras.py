@@ -49,7 +49,7 @@ async def announce(ctx: GameCtx) -> str:
         lines.append(f"  `%{line}")
     if lines:
         body = "\n".join(lines)
-        ctx.news(f"  `0{ctx.player.name}`2 Announces:`%\n{body}")
+        await ctx.news(f"  `0{ctx.player.name}`2 Announces:`%\n{body}")
         await ctx.io.write("\n  Announcement Made!\n")
     await ctx.io.pause()
     return "town"
@@ -67,7 +67,7 @@ async def who_is_on(ctx: GameCtx) -> str:
         "\n                         `%Warriors in the Realm Now\n"
         "`2-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n"
     )
-    online = [p for p in ctx.repo.all_players() if p.online]
+    online = [p for p in await ctx.repo.all_players() if p.online]
     if not online:
         await ctx.io.write("\n  `2Nobody else is in the realm right now.\n")
     for p in online:
@@ -79,9 +79,9 @@ async def who_is_on(ctx: GameCtx) -> str:
 @scene("game_stats")
 async def game_stats(ctx: GameCtx) -> str:
     """Port of ``show_game_stats()``. reference/lord.js:16251-16276."""
-    day = ctx.db.state.get("day", "1")
+    day = await ctx.db.state.get("day", "1")
     win_deeds = ctx.config.get("win_deeds", 3)  # reference/lord.js:1852
-    players = ctx.repo.all_players()  # counted below, both totals
+    players = await ctx.repo.all_players()  # counted below, both totals
 
     lines = [
         "",

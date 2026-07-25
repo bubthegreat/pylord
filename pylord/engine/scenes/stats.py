@@ -72,17 +72,17 @@ def _skill_lines(p) -> list[str]:
     return out
 
 
-def _marriage_lines(ctx: GameCtx) -> list[str]:
+async def _marriage_lines(ctx: GameCtx) -> list[str]:
     """reference/lord.js:5843-5857 -- the NPC marriages live in shared
     game state, a player-to-player one on the player's own record."""
     p = ctx.player
     out = []
-    if npc_state.married_to_violet(ctx.conn) == p.id:
+    if await npc_state.married_to_violet(ctx.db) == p.id:
         out.append("  `2You are married to `#Violet`2.")
-    if npc_state.married_to_seth(ctx.conn) == p.id:
+    if await npc_state.married_to_seth(ctx.db) == p.id:
         out.append("  `2You are married to `%Seth Able`2.")
     if p.married_to is not None and p.married_to > -1:
-        spouse = ctx.repo.get(p.married_to)
+        spouse = await ctx.repo.get(p.married_to)
         if spouse is not None:
             out.append(f"  `2You are married to `%{spouse.name}`2.")
     return out
@@ -104,7 +104,7 @@ async def stats(ctx: GameCtx) -> str:
         f"`2  Charm        : `0{p.charm:<17} `2Gems               : `0{p.gems}",
         "",
     ]
-    lines.extend(_marriage_lines(ctx))
+    lines.extend(await _marriage_lines(ctx))
     if p.kids == 1:  # reference/lord.js:5858-5861
         lines.append("  `2You have `01`2 child.")
     elif p.kids > 1:  # reference/lord.js:5862-5866

@@ -463,7 +463,7 @@ async def _death(ctx: GameCtx, monster: Monster) -> None:
     p.exp -= p.exp // 10  # reference/lord.js:15072, 10% exp loss
     p.alive = 0  # reference/lord.js:15073 (player.on_now = false)
 
-    ctx.news(f"  `5{p.name}`2 has been killed by `0{monster.name}`2!")  # lord.js:15069
+    await ctx.news(f"  `5{p.name}`2 has been killed by `0{monster.name}`2!")  # lord.js:15069
 
     lines = [
         "",
@@ -774,8 +774,8 @@ async def _event_troll(ctx: GameCtx) -> None:
         "  `2The troll made off with you coin purse and gem sack!\n\n"
         "  `4You have been killed by the troll!`2\n"
     )
-    ctx.news(f"`0{p.name} `2was killed by a troll in the forest!")
-    ctx.save()
+    await ctx.news(f"`0{p.name} `2was killed by a troll in the forest!")
+    await ctx.save()
     await ctx.io.pause()
 
 

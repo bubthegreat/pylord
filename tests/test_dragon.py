@@ -3,17 +3,16 @@ docstring for lord.js line-number citations behind every formula/message
 ported here, and the field-by-field reset citations in ``_victory``.
 
 Follows tests/test_training.py's/tests/test_forest.py's established style:
-a local ``_SeqRNG`` for deterministic combat rolls, and a local ``_ctx()``
+a local ``_SeqRNG`` for deterministic combat rolls, and a local ``await _ctx()``
 helper for a fully-controlled ``Player``."""
 
 from __future__ import annotations
 
-from pylord import db
+from pylord import data
 from pylord.engine.game import GameCtx
 from pylord.engine.scenes import dragon as dragon_mod
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
-from tests.harness import play, screen
+from tests.harness import play, query_one, screen
 
 
 class _SeqRNG:
@@ -26,15 +25,14 @@ class _SeqRNG:
         return self._values.pop(0)
 
 
-def _ctx(overrides=None, rng=None, keys=None, config=None):
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
+async def _ctx(overrides=None, rng=None, keys=None, config=None):
+    database = await data.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
     for key, value in (overrides or {}).items():
         setattr(player, key, value)
     io = FakeIO(keys or [])
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn, config=config or {})
+    ctx = GameCtx(player=player, db=database, io=io, config=config or {})
     if rng is not None:
         ctx.rng = rng
     return ctx
@@ -53,7 +51,7 @@ async def test_dragon_reachable_from_town():
 
 
 async def test_gate_refuses_level_below_12():
-    ctx = _ctx(overrides={"level": 11}, keys=["x"])
+    ctx = await _ctx(overrides={"level": 11}, keys=["x"])
     result = await dragon_mod.dragon(ctx)
     assert result == "town"
     assert "not yet" in screen(ctx.io)
@@ -61,14 +59,14 @@ async def test_gate_refuses_level_below_12():
 
 
 async def test_seen_dragon_blocks_second_attempt_same_day():
-    ctx = _ctx(overrides={"level": 12, "seen_dragon": 1}, keys=["x"])
+    ctx = await _ctx(overrides={"level": 12, "seen_dragon": 1}, keys=["x"])
     result = await dragon_mod.dragon(ctx)
     assert result == "town"
     assert "shaking so badly" in screen(ctx.io)
 
 
 async def test_return_from_pre_fight_menu_does_not_start_a_fight():
-    ctx = _ctx(overrides={"level": 12}, keys=["r", "x"])
+    ctx = await _ctx(overrides={"level": 12}, keys=["r", "x"])
     result = await dragon_mod.dragon(ctx)
     assert result == "town"
     assert ctx.player.seen_dragon == 0
@@ -89,7 +87,7 @@ async def test_dragon_win_resets_every_field_and_increments_king_count():
     end the session instead -- see the separate quest-over test below, so
     this test starts from king_count=0).
     """
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "level": 12, "strength": 40000, "hp": 500, "hp_max": 500,
             "charm": 77, "skill_dk": 15, "kids": 2, "married_to": 999,
@@ -133,15 +131,15 @@ async def test_dragon_win_resets_every_field_and_increments_king_count():
     assert "You have defeated The Red Dragon!" in text
     assert "YOUR QUEST IS NOT OVER" in text
 
-    news_row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    news_row = await query_one(ctx.db, "SELECT text FROM daily_news")
     assert news_row is not None
-    assert "Hero" in news_row["text"]
-    assert "slain the" in news_row["text"]
-    assert "Red Dragon" in news_row["text"]
+    assert "Hero" in news_row.text
+    assert "slain the" in news_row.text
+    assert "Red Dragon" in news_row.text
 
 
 async def test_dragon_win_reset_honors_configured_forest_and_player_fights():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"level": 12, "strength": 40000, "hp": 500, "hp_max": 500},
         # First draw is the opening initiative roll (0 -> tmp 1, the
         # player strikes first, reference/lord.js:7375-7391).
@@ -161,7 +159,7 @@ async def test_dragon_win_at_win_deeds_threshold_ends_session():
     immediately instead of showing "quest not over" -- reference/lord.js
     :12183-12196. One fewer more() prompt than a normal win (no "YOU FEEL
     STRANGE" epilogue tail)."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "level": 12, "strength": 40000, "hp": 500, "hp_max": 500,
             "king_count": 2,
@@ -178,11 +176,9 @@ async def test_dragon_win_at_win_deeds_threshold_ends_session():
     assert "YOUR QUEST IS OVER" in text
     assert "YOUR QUEST IS NOT OVER" not in text
 
-    row = ctx.conn.execute(
-        "SELECT value FROM game_state WHERE key = 'won_by'"
-    ).fetchone()
+    row = await query_one(ctx.db, "SELECT value FROM game_state WHERE key = 'won_by'")
     assert row is not None
-    assert row["value"] == str(ctx.player.id)
+    assert row.value == str(ctx.player.id)
 
 
 # --- Seeded loss: death, no exp penalty (unlike forest/PvP) -------------
@@ -199,7 +195,7 @@ async def test_dragon_loss_kills_player_with_no_experience_penalty():
                               -- reference/lord.js:6704-6720)
         randrange(30) -> 0   (Dragon's power-move check, != 1: no boost)
     """
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "level": 12, "strength": 0, "defense": 0, "hp": 5, "hp_max": 5,
             "gold": 999, "exp": 555,
@@ -216,11 +212,11 @@ async def test_dragon_loss_kills_player_with_no_experience_penalty():
     assert p.gold == 0
     assert p.exp == 555  # unchanged -- no experience penalty on a dragon loss
 
-    news_row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    news_row = await query_one(ctx.db, "SELECT text FROM daily_news")
     assert news_row is not None
-    assert "Red Dragon" in news_row["text"]
-    assert "has killed" in news_row["text"]
-    assert "Hero" in news_row["text"]
+    assert "Red Dragon" in news_row.text
+    assert "has killed" in news_row.text
+    assert "Hero" in news_row.text
 
     text = screen(ctx.io)
     assert "rips your head off" in text
@@ -233,7 +229,7 @@ async def test_config_is_read_the_way_the_server_builds_it(tmp_path):
     context the way the server does and assert the knob lands."""
     from pylord.server import handle_connection  # noqa: F401 -- documents the source
 
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"level": 12, "strength": 40000, "hp": 500, "hp_max": 500},
         rng=_SeqRNG([0, 0, 0]),
         keys=["a", "a", "x", "x", "x", "x", "x", "x"],
@@ -246,7 +242,7 @@ async def test_config_is_read_the_way_the_server_builds_it(tmp_path):
 
 async def test_dragon_win_records_latest_hero_and_resets_flirts():
     """reference/lord.js:12170-12181."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "level": 12, "strength": 40000, "hp": 500, "hp_max": 500,
             "flirts_today": 3,
@@ -257,7 +253,5 @@ async def test_dragon_win_records_latest_hero_and_resets_flirts():
     await dragon_mod.dragon(ctx)
     assert ctx.player.flirts_today == 0
     assert ctx.player.high_spirits == 1
-    row = ctx.conn.execute(
-        "SELECT value FROM game_state WHERE key = 'latesthero'"
-    ).fetchone()
-    assert row is not None and row["value"] == "Hero"
+    row = await query_one(ctx.db, "SELECT value FROM game_state WHERE key = 'latesthero'")
+    assert row is not None and row.value == "Hero"

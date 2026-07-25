@@ -151,19 +151,17 @@ async def test_stats_shows_skills_class_and_family():
 async def test_stats_shows_npc_marriage():
     """reference/lord.js:5843-5852 -- the NPC marriages live in shared
     game state (pylord/engine/npc_state.py)."""
-    from pylord import db
+    from pylord import data
     from pylord.engine import npc_state
     from pylord.engine.game import GameCtx
     from pylord.engine.scenes.stats import stats as stats_scene
-    from pylord.models import PlayerRepo
     from pylord.terminal import FakeIO
 
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
-    npc_state.set_married_to_violet(conn, player.id)
+    database = await data.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
+    await npc_state.set_married_to_violet(database, player.id)
 
     io = FakeIO([" "])
-    await stats_scene(GameCtx(player=player, repo=repo, io=io, conn=conn))
+    await stats_scene(GameCtx(player=player, db=database, io=io))
     assert "married to Violet" in screen(io)

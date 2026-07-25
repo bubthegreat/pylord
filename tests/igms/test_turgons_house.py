@@ -26,13 +26,13 @@ async def test_contract():
 
 
 async def test_search_guard_dog_bites():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 10
     p.hp_max = 20
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0, 2]))
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0, 2]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -41,13 +41,13 @@ async def test_search_guard_dog_bites():
 
 
 async def test_search_guard_dog_no_kill_guard_floors_hp_to_one():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 1
     p.hp_max = 20
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0, 3]))
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([0, 3]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -55,11 +55,11 @@ async def test_search_guard_dog_no_kill_guard_floors_hp_to_one():
 
 
 async def test_search_finds_gems_exact_amount():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([1, 2]))
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([1, 2]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -67,12 +67,12 @@ async def test_search_finds_gems_exact_amount():
 
 
 async def test_search_meets_turgon_off_duty_grants_flat_exp():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     exp_before = p.exp
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([2]))
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([2]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -80,11 +80,11 @@ async def test_search_meets_turgon_off_duty_grants_flat_exp():
 
 
 async def test_search_finds_coupon_once():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([3]))
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([3]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -93,13 +93,13 @@ async def test_search_finds_coupon_once():
 
 
 async def test_search_second_coupon_folds_into_nothing():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = TurgonsHouse()
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "\r", "S", "\r", "L"], rng=SeqRandom([3, 3])
+        database, repo, p, keys=["S", "\r", "S", "\r", "L"], rng=SeqRandom([3, 3])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -109,17 +109,17 @@ async def test_search_second_coupon_folds_into_nothing():
 
 
 async def test_search_blocked_after_three_per_day():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = TurgonsHouse()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["S", "\r", "S", "\r", "S", "\r", "S", "\r", "L"],
         rng=SeqRandom([9, 9, 9]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -129,15 +129,15 @@ async def test_search_blocked_after_three_per_day():
 
 
 async def test_talk_grants_defense_once_per_day_at_level_6():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 6
     defense_before = p.defense
     gctx = make_ctx(
-        conn, repo, p, keys=["T", "\r", "T", "\r", "L"], rng=SeqRandom([0, 0])
+        database, repo, p, keys=["T", "\r", "T", "\r", "L"], rng=SeqRandom([0, 0])
     )
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -145,13 +145,13 @@ async def test_talk_grants_defense_once_per_day_at_level_6():
 
 
 async def test_talk_below_level_6_grants_no_defense():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 5
     defense_before = p.defense
-    gctx = make_ctx(conn, repo, p, keys=["T", "\r", "L"], rng=SeqRandom([0]))
+    gctx = make_ctx(database, repo, p, keys=["T", "\r", "L"], rng=SeqRandom([0]))
     igm = TurgonsHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -159,22 +159,18 @@ async def test_talk_below_level_6_grants_no_defense():
 
 
 async def test_daily_maint_clears_searches_and_talked_but_not_coupon():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = TurgonsHouse()
-    mctx = make_maint_ctx(conn, {}, igm.key)
+    mctx = await make_maint_ctx(database, {}, igm.key)
     mctx.store.set(f"searches:{p.id}", 3)
     mctx.store.set(f"talked:{p.id}", True)
     mctx.store.set(f"coupon:{p.id}", True)
-    mctx.store.flush()
-    conn.commit()
-
-    mctx2 = make_maint_ctx(conn, {}, igm.key)
+    await mctx.store.flush(database)
+    mctx2 = await make_maint_ctx(database, {}, igm.key)
     await igm.daily_maint(mctx2)
-    mctx2.store.flush()
-    conn.commit()
-
-    mctx3 = make_maint_ctx(conn, {}, igm.key)
+    await mctx2.store.flush(database)
+    mctx3 = await make_maint_ctx(database, {}, igm.key)
     assert mctx3.store.get(f"searches:{p.id}", 0) == 0
     assert mctx3.store.get(f"talked:{p.id}", False) is False
     assert mctx3.store.get(f"coupon:{p.id}", False) is True

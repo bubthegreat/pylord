@@ -17,14 +17,13 @@ import asyncio
 
 import telnetlib3
 
-from pylord import db
+from pylord import data
 from pylord.e2e import (
     LordClient,
     edit_player,
     running_server,
     wait_offline,
 )
-from pylord.models import PlayerRepo
 from pylord.server import start
 
 _CONNECT_KWARGS = {"connect_minwait": 0.05, "connect_maxwait": 1.0}
@@ -78,6 +77,23 @@ async def _wait_until(predicate, timeout: float = 2.0, interval: float = 0.05) -
             await asyncio.sleep(interval)
 
     await asyncio.wait_for(_poll(), timeout)
+
+
+async def _wait_until_player(database, name, timeout=5.0):
+    """The server writes the row as it finishes the signup dance."""
+    async def _present():
+        while await database.players.get_by_name(name) is None:
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(_present(), timeout)
+
+
+async def _wait_until_offline(database, name, timeout=5.0):
+    async def _offline():
+        while (await database.players.get_by_name(name)).online:
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(_offline(), timeout)
 
 
 async def test_server_negotiates_character_at_a_time_mode(tmp_path):
@@ -157,17 +173,16 @@ async def test_new_character_creation_view_stats_and_quit(tmp_path):
 
         writer.close()
 
-        conn = db.connect(str(db_path))
+        database = await data.connect(str(db_path))
         try:
-            repo = PlayerRepo(conn)
-            await _wait_until(lambda: repo.get_by_name("Zaphod") is not None)
-            player = repo.get_by_name("Zaphod")
+            await _wait_until_player(database, "Zaphod")
+            player = await database.players.get_by_name("Zaphod")
             assert player is not None
             assert player.gender == "M"
             assert player.class_type == 1  # K -> Death Knight / warrior
-            await _wait_until(lambda: repo.get_by_name("Zaphod").online == 0)
+            await _wait_until_offline(database, "Zaphod")
         finally:
-            conn.close()
+            await database.dispose()
     finally:
         server.close()
         await server.wait_closed()
@@ -212,15 +227,14 @@ async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
         await recv.until("Town Square")
         writer.close()
 
-        conn = db.connect(str(db_path))
+        database = await data.connect(str(db_path))
         try:
-            repo = PlayerRepo(conn)
-            await _wait_until(lambda: repo.get_by_name("Trillian") is not None)
-            player = repo.get_by_name("Trillian")
+            await _wait_until_player(database, "Trillian")
+            player = await database.players.get_by_name("Trillian")
             assert player.forest_fights == 20
             assert player.player_fights == 7
         finally:
-            conn.close()
+            await database.dispose()
     finally:
         server.close()
         await server.wait_closed()
@@ -229,9 +243,9 @@ async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
 async def test_wrong_password_three_times_disconnects(tmp_path):
     server, port, db_path = await _start_test_server(tmp_path)
     try:
-        setup_conn = db.connect(str(db_path))
-        PlayerRepo(setup_conn).create("Marvin", "correcthorse", "M")
-        setup_conn.close()
+        setup_db = await data.connect(str(db_path))
+        await setup_db.players.create("Marvin", "correcthorse", "M")
+        await setup_db.dispose()
 
         reader, writer = await telnetlib3.open_connection(
             host="127.0.0.1", port=port, **_CONNECT_KWARGS
@@ -255,13 +269,13 @@ async def test_wrong_password_three_times_disconnects(tmp_path):
         eof = await asyncio.wait_for(reader.read(1), 1.0)
         assert eof == ""
 
-        conn = db.connect(str(db_path))
+        database = await data.connect(str(db_path))
         try:
-            player = PlayerRepo(conn).get_by_name("Marvin")
+            player = await database.players.get_by_name("Marvin")
             assert player is not None
             assert player.online == 0  # never logged in successfully
         finally:
-            conn.close()
+            await database.dispose()
     finally:
         server.close()
         await server.wait_closed()
@@ -320,15 +334,12 @@ async def test_quest_over_redirects_every_login_to_pay_homage(tmp_path):
             client.close()
         winner = await wait_offline(db_path, "Winner")
 
-        conn = db.connect(str(db_path))
+        database = await data.connect(str(db_path))
         try:
-            conn.execute(
-                "INSERT INTO game_state (key, value) VALUES ('won_by', ?)",
-                (str(winner.id),),
-            )
-            conn.commit()
+            async with database.transaction() as tx:
+                await tx.state.set("won_by", winner.id)
         finally:
-            conn.close()
+            await database.dispose()
 
         client = await LordClient.connect("127.0.0.1", port)
         try:
@@ -370,23 +381,22 @@ async def test_startup_clears_stale_online_flags(tmp_path):
     """A pod restart mid-session leaves online=1 behind, which locks the
     player out of their own character and inflates "people on now"."""
     db_path = tmp_path / "lord.db"
-    conn = db.connect(str(db_path))
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    ghost = repo.create("Ghost", "pw", "M")
+    database = await data.connect(str(db_path))
+    repo = database.players
+    ghost = await repo.create("Ghost", "pw", "M")
     ghost.online = 1
-    repo.save(ghost)
-    conn.close()
+    await repo.save(ghost)
+    await database.dispose()
 
     server = await start(
         {"server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)}, "game": {}}
     )
     try:
-        conn = db.connect(str(db_path))
+        database = await data.connect(str(db_path))
         try:
-            assert PlayerRepo(conn).get_by_name("Ghost").online == 0
+            assert (await database.players.get_by_name("Ghost")).online == 0
         finally:
-            conn.close()
+            await database.dispose()
     finally:
         server.close()
         await server.wait_closed()

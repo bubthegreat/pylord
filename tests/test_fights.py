@@ -8,40 +8,38 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from pylord import db
+from pylord import data
 from pylord.engine import daily, fights
 from pylord.engine.game import GameCtx
 from pylord.engine.scenes import training as training_mod
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
 from tests.harness import play, screen
 
 _NOW = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
 
 
-def _repo():
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    return conn, PlayerRepo(conn)
+async def _repo():
+    database = await data.connect(":memory:")
+    return database, database.players
 
 
 # --- capacity --------------------------------------------------------------
 
 
-def test_max_is_the_configured_allowance_plus_trained_bonus():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_max_is_the_configured_allowance_plus_trained_bonus():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     assert fights.max_forest_fights(p, {}) == 15
     p.fight_bonus = 4
     assert fights.max_forest_fights(p, {}) == 19
     assert fights.max_forest_fights(p, {"forest_fights_per_day": 20}) == 24
 
 
-def test_endurance_price_rises_only_with_purchases():
+async def test_endurance_price_rises_only_with_purchases():
     """You pay for what you have trained. Neither the free point a master
     grants nor the level that came with it moves the price."""
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     assert fights.endurance_cost(p, {}) == 1_000
     p.endurance_bought = 2
     assert fights.endurance_cost(p, {}) == 3_000
@@ -56,9 +54,9 @@ def test_endurance_price_rises_only_with_purchases():
 # --- regeneration ----------------------------------------------------------
 
 
-def test_one_fight_returns_per_interval_up_to_the_ceiling():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_one_fight_returns_per_interval_up_to_the_ceiling():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.forest_fights = 0
     p.fights_regen_at = (_NOW - timedelta(minutes=47)).isoformat()
 
@@ -70,9 +68,9 @@ def test_one_fight_returns_per_interval_up_to_the_ceiling():
     assert fights._parse(p.fights_regen_at) == _NOW - timedelta(minutes=2)
 
 
-def test_regen_stops_at_the_players_ceiling():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_regen_stops_at_the_players_ceiling():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.forest_fights = 14
     p.fight_bonus = 0  # ceiling 15
     p.fights_regen_at = (_NOW - timedelta(hours=8)).isoformat()
@@ -85,9 +83,9 @@ def test_regen_stops_at_the_players_ceiling():
     assert fights._parse(p.fights_regen_at) == _NOW
 
 
-def test_a_trained_player_regenerates_past_the_base_allowance():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_a_trained_player_regenerates_past_the_base_allowance():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.fight_bonus = 5  # ceiling 20
     p.forest_fights = 15
     p.fights_regen_at = (_NOW - timedelta(hours=3)).isoformat()
@@ -97,9 +95,9 @@ def test_a_trained_player_regenerates_past_the_base_allowance():
     assert p.forest_fights == 20
 
 
-def test_nothing_accrues_before_a_full_interval():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_nothing_accrues_before_a_full_interval():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.forest_fights = 0
     started = (_NOW - timedelta(minutes=14)).isoformat()
     p.fights_regen_at = started
@@ -109,9 +107,9 @@ def test_nothing_accrues_before_a_full_interval():
     assert p.fights_regen_at == started  # clock untouched
 
 
-def test_regen_can_be_switched_off():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_regen_can_be_switched_off():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.forest_fights = 0
     p.fights_regen_at = (_NOW - timedelta(days=1)).isoformat()
 
@@ -119,9 +117,9 @@ def test_regen_can_be_switched_off():
     assert p.forest_fights == 0
 
 
-def test_regen_interval_is_configurable():
-    _conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_regen_interval_is_configurable():
+    _conn, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.forest_fights = 0
     p.fights_regen_at = (_NOW - timedelta(minutes=30)).isoformat()
 
@@ -131,27 +129,27 @@ def test_regen_interval_is_configurable():
 # --- the daily reset fills to the trained ceiling ---------------------------
 
 
-def test_daily_reset_fills_to_the_trained_maximum():
-    conn, repo = _repo()
-    p = repo.create("Hero", "pw", "M")
+async def test_daily_reset_fills_to_the_trained_maximum():
+    database, repo = await _repo()
+    p = await repo.create("Hero", "pw", "M")
     p.fight_bonus = 7
     p.forest_fights = 0
-    repo.save(p)
+    await repo.save(p)
 
-    daily.maintenance(conn, {"game": {}}, "2026-07-24")
+    await daily.maintenance(database, {"game": {}}, "2026-07-24")
 
-    assert repo.get(p.id).forest_fights == 22
+    assert (await repo.get(p.id)).forest_fights == 22
 
 
 # --- Turgon's endurance training -------------------------------------------
 
 
 async def _training_ctx(keys, **overrides):
-    conn, repo = _repo()
-    player = repo.create("Hero", "pw", "M")
+    database, repo = await _repo()
+    player = await repo.create("Hero", "pw", "M")
     for key, value in overrides.items():
         setattr(player, key, value)
-    return GameCtx(player=player, repo=repo, io=FakeIO(keys), conn=conn)
+    return GameCtx(player=player, db=database, io=FakeIO(keys))
 
 
 async def test_endurance_training_buys_a_permanent_fight():

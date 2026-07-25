@@ -43,7 +43,7 @@ skill attacks are available exactly as in every other fight (``battle()``'s
 skill-attack battle loop.
 
 **Victory** (``:12116-12217``): news fanfare (``log_line``, ``:12134``,
-ported to ``ctx.news()``), then the full epilogue/reset. The three
+ported to ``await ctx.news()``), then the full epilogue/reset. The three
 class-specific epilogue stories (``:11922-12065``) are long, purely-flavor
 prose; this port condenses each to a couple of sentences capturing the same
 beats (own class's fate, Barak's jab, the town's reaction) rather than
@@ -300,7 +300,7 @@ async def _defeat(ctx: GameCtx) -> None:
         "  delicately rips your head off, with the finesse only a Dragon well\n"
         "  practiced in the art could do.\n\n"
     )
-    ctx.news(f"  `2The `4Red Dragon `2has killed `5{p.name}`2!")  # lord.js:12113
+    await ctx.news(f"  `2The `4Red Dragon `2has killed `5{p.name}`2!")  # lord.js:12113
     await ctx.io.pause()
 
 
@@ -342,7 +342,7 @@ async def _victory(ctx: GameCtx) -> bool:
         "  children.\n\n"
         "  THANKS TO YOU, THE HORROR HAS ENDED!\n\n"
     )
-    ctx.news(f"`.  `%{p.name} `2has slain the `4Red Dragon`2 and become a hero.")  # lord.js:12134
+    await ctx.news(f"`.  `%{p.name} `2has slain the `4Red Dragon`2 and become a hero.")  # lord.js:12134
     await ctx.io.pause()
 
     await ctx.io.write(_EPILOGUES.get(p.class_type, _EPILOGUES[1]) + "\n")
@@ -380,14 +380,14 @@ async def _victory(ctx: GameCtx) -> bool:
     p.high_spirits = 1  # reference/lord.js:12171
 
     # reference/lord.js:12181 -- the realm remembers its latest hero.
-    with ctx.db.transaction() as db:
-        db.state.set("latesthero", p.name)
+    async with ctx.db.transaction() as tx:
+        await tx.state.set("latesthero", p.name)
 
     win_deeds = game_cfg.get("win_deeds", _DEFAULT_WIN_DEEDS)
     if win_deeds > 0 and p.king_count >= win_deeds:  # reference/lord.js:12183-12196
         # lord.js overwrites state.won_by unconditionally (:12184-12185).
-        with ctx.db.transaction() as db:
-            db.state.set("won_by", p.id)
+        async with ctx.db.transaction() as tx:
+            await tx.state.set("won_by", p.id)
         await ctx.io.write(
             "\n`c  `%** YOUR QUEST IS OVER **`0\n\n"
             "  `2You must indeed be the chosen one.  The ancient magic that\n"

@@ -6,19 +6,18 @@ the post-review correction on which key (`Q` vs `A`) actually shows
 
 Follows tests/test_forest.py's established style: ``play(keys)`` for a
 smoke test through the full town -> training session, and a local
-``_ctx()`` helper to drive ``training()``/its private helpers directly
+``await _ctx()`` helper to drive ``training()``/its private helpers directly
 with a fully-controlled ``Player`` and RNG.
 """
 
 from __future__ import annotations
 
-from pylord import db
+from pylord import data as storage
 from pylord.engine import data
 from pylord.engine.game import GameCtx
 from pylord.engine.scenes import training as training_mod
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
-from tests.harness import play, screen
+from tests.harness import play, query_one, screen
 
 
 class _SeqRNG:
@@ -31,15 +30,14 @@ class _SeqRNG:
         return self._values.pop(0)
 
 
-def _ctx(overrides=None, rng=None, keys=None):
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
+async def _ctx(overrides=None, rng=None, keys=None):
+    database = await storage.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
     for key, value in (overrides or {}).items():
         setattr(player, key, value)
     io = FakeIO(keys or [])
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn)
+    ctx = GameCtx(player=player, db=database, io=io)
     if rng is not None:
         ctx.rng = rng
     return ctx
@@ -63,7 +61,7 @@ async def test_ask_under_threshold_shows_generic_need_more_exp():
     exp_reward=100. lord.js's ask() (needstr1 is NOT shown here -- see
     module docstring's post-review correction)."""
     trainer = data.MASTERS[1]
-    ctx = _ctx(keys=["x"])
+    ctx = await _ctx(keys=["x"])
     await training_mod._ask(ctx, trainer)
     text = screen(ctx.io)
     assert "more experience" in text
@@ -72,7 +70,7 @@ async def test_ask_under_threshold_shows_generic_need_more_exp():
 
 async def test_ask_over_threshold_shows_needstr1_quote():
     trainer = data.MASTERS[1]
-    ctx = _ctx(overrides={"exp": trainer.exp_reward + 1}, keys=["x"])
+    ctx = await _ctx(overrides={"exp": trainer.exp_reward + 1}, keys=["x"])
     await training_mod._ask(ctx, trainer)
     text = screen(ctx.io)
     assert trainer.needstr1 in text
@@ -83,7 +81,7 @@ async def test_ask_over_threshold_shows_needstr1_quote():
 
 async def test_attack_under_threshold_refuses_without_a_fight():
     trainer = data.MASTERS[1]
-    ctx = _ctx(keys=["x", "x", "x", "x"])  # 4 pauses in the comedic sequence
+    ctx = await _ctx(keys=["x", "x", "x", "x"])  # 4 pauses in the comedic sequence
     await training_mod._attack_master(ctx, trainer)
     text = screen(ctx.io)
     assert "not ready for your testing" in text
@@ -93,7 +91,7 @@ async def test_attack_under_threshold_refuses_without_a_fight():
 
 async def test_attack_seen_master_gate_refuses_second_attempt_same_day():
     trainer = data.MASTERS[1]
-    ctx = _ctx(overrides={"seen_master": 1}, keys=["x"])
+    ctx = await _ctx(overrides={"seen_master": 1}, keys=["x"])
     await training_mod._attack_master(ctx, trainer)
     text = screen(ctx.io)
     assert "too late" in text
@@ -115,7 +113,7 @@ async def test_master_win_grants_level_and_exact_stat_gains():
     500 damage one-shots Halder (hp=30) on the very first swing.
     """
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000,
@@ -146,12 +144,12 @@ async def test_master_win_grants_level_and_exact_stat_gains():
     # equivalent) -- and it, not the player's own screen, is where
     # "Ultimate Warrior" text would go (this isn't a level-12 win, so it
     # shouldn't appear at all here).
-    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    row = await query_one(ctx.db, "SELECT text FROM daily_news")
     assert row is not None
-    assert "Hero" in row["text"]
-    assert "has beaten" in row["text"]
-    assert "Halder" in row["text"]
-    assert "Ultimate Warrior" not in row["text"]
+    assert "Hero" in row.text
+    assert "has beaten" in row.text
+    assert "Halder" in row.text
+    assert "Ultimate Warrior" not in row.text
     assert "Ultimate Warrior" not in text
 
 
@@ -161,7 +159,7 @@ async def test_level_11_to_12_win_broadcasts_ultimate_warrior_to_news_only():
     `log_line(mline)`) -- it is never printed to the winning player's own
     screen (post-review Important fix)."""
     trainer = data.MASTERS[11]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "level": 11,
             "exp": trainer.exp_reward + 1,
@@ -178,11 +176,11 @@ async def test_level_11_to_12_win_broadcasts_ultimate_warrior_to_news_only():
     assert "YOU ARE NOW LEVEL 12" in text
     assert "Ultimate Warrior" not in text  # never shown to the player
 
-    row = ctx.conn.execute("SELECT text FROM daily_news").fetchone()
+    row = await query_one(ctx.db, "SELECT text FROM daily_news")
     assert row is not None
-    assert "Ultimate Warrior" in row["text"]
-    assert "Hero" in row["text"]
-    assert "Turgon" in row["text"]
+    assert "Ultimate Warrior" in row.text
+    assert "Hero" in row.text
+    assert "Turgon" in row.text
 
 
 async def test_master_loss_heals_and_shows_mercy_no_death():
@@ -198,7 +196,7 @@ async def test_master_loss_heals_and_shows_mercy_no_death():
     the master resurrects and fully heals instead.
     """
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 0,
@@ -222,7 +220,7 @@ async def test_master_loss_heals_and_shows_mercy_no_death():
 
 
 async def test_level_12_shows_dragon_message_and_returns_to_town():
-    ctx = _ctx(overrides={"level": 12}, keys=["x"])
+    ctx = await _ctx(overrides={"level": 12}, keys=["x"])
     result = await training_mod.training(ctx)
     text = screen(ctx.io)
     assert "Your master is Turgon" in text
@@ -237,7 +235,7 @@ async def test_master_win_raises_class_rank_and_uses():
     """reference/lord.js:15803 -> raise_class() (:10578-10771): +1 rank per
     win, and every 4th rank also raises a Death Knight's uses per day."""
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000,
@@ -260,7 +258,7 @@ async def test_master_win_raises_class_rank_and_uses():
 
 async def test_master_win_reports_lessons_needed_between_use_raises():
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000, "hp": 200, "hp_max": 200,
@@ -278,7 +276,7 @@ async def test_master_win_reports_lessons_needed_between_use_raises():
 async def test_mystical_rank_raises_uses_every_win():
     """reference/lord.js:10671-10676 -- a Mystical gets a point per rank."""
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000, "hp": 200, "hp_max": 200,
@@ -296,7 +294,7 @@ async def test_mystical_rank_raises_uses_every_win():
 async def test_rank_forty_masters_the_class_and_offers_a_new_profession():
     """reference/lord.js:10620-10625."""
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000, "hp": 200, "hp_max": 200,
@@ -315,7 +313,7 @@ async def test_rank_forty_masters_the_class_and_offers_a_new_profession():
 
 async def test_already_mastered_class_is_not_raised_again():
     trainer = data.MASTERS[1]
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={
             "exp": trainer.exp_reward + 1,
             "strength": 1000, "hp": 200, "hp_max": 200,

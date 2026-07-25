@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from pylord import db
+from pylord import data
 from pylord.engine.game import GameCtx
 from pylord.hooks import IGM, ForestEvent, IgmContext, IgmStore, IgmViolation
-from pylord.models import PlayerRepo
 from pylord.terminal import ConnectionClosed, FakeIO
+from tests.harness import query_one
 from tests.igm_contract import contract_check
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -29,15 +29,14 @@ _DUP_DIR = _FIXTURES / "igms_dup"
 # --- helpers ----------------------------------------------------------
 
 
-def _db():
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    return conn, PlayerRepo(conn)
+async def _db():
+    database = await data.connect(":memory:")
+    return database, database.players
 
 
-def _ctx(conn, repo, player, keys=None, igms=None):
+def _ctx(database, repo, player, keys=None, igms=None):
     io = FakeIO(keys or [])
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn, rng=random.Random(0))
+    ctx = GameCtx(player=player, db=database, io=io, rng=random.Random(0))
     ctx.igms = igms
     return ctx
 
@@ -120,7 +119,7 @@ def test_registry_forest_events_collection():
     assert event.weight == 3
 
 
-def test_daily_maint_exception_contained(caplog):
+async def test_daily_maint_exception_contained(caplog):
     from pylord import igm_loader
 
     class BadMaint(IGM):
@@ -145,14 +144,14 @@ def test_daily_maint_exception_contained(caplog):
         async def daily_maint(self, ctx):
             ctx.store.set("ran", True)
 
-    conn, _repo = _db()
+    database, _repo = await _db()
     reg = igm_loader.IgmRegistry([BadMaint(), GoodMaint()])
     with caplog.at_level("ERROR", logger="pylord.igm"):
-        reg.run_daily_maint(conn, {})  # must not raise
+        await reg.run_daily_maint(database, {})  # must not raise
     # the good IGM still ran + committed despite the bad one crashing.
-    row = conn.execute(
+    row = await query_one(database, 
         "SELECT v FROM igm_data WHERE igm_key='goodmaint' AND k='ran'"
-    ).fetchone()
+    )
     assert row is not None
     assert caplog.records
 
@@ -174,16 +173,16 @@ async def test_daily_maint_runs_inside_event_loop():
         async def daily_maint(self, ctx):
             ctx.store.set("ok", 1)
 
-    conn, _repo = _db()
+    database, _repo = await _db()
     reg = igm_loader.IgmRegistry([LoopMaint()])
-    reg.run_daily_maint(conn, {})  # must not raise
-    row = conn.execute(
+    await reg.run_daily_maint(database, {})  # must not raise
+    row = await query_one(database, 
         "SELECT v FROM igm_data WHERE igm_key='loopmaint' AND k='ok'"
-    ).fetchone()
+    )
     assert row is not None
 
 
-def test_daily_maintenance_threads_registry():
+async def test_daily_maintenance_threads_registry():
     # daily.maintenance should invoke registry.run_daily_maint after the
     # core per-player reset.
     from pylord import igm_loader
@@ -200,65 +199,65 @@ def test_daily_maintenance_threads_registry():
         async def daily_maint(self, ctx):
             ctx.store.set("day_seen", True)
 
-    conn, repo = _db()
-    repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    await repo.create("Hero", "pw", "M")
     reg = igm_loader.IgmRegistry([Tracker()])
-    daily.maintenance(conn, {"game": {}}, "2026-07-24", igms=reg)
-    row = conn.execute(
+    await daily.maintenance(database, {"game": {}}, "2026-07-24", igms=reg)
+    row = await query_one(database, 
         "SELECT v FROM igm_data WHERE igm_key='tracker' AND k='day_seen'"
-    ).fetchone()
+    )
     assert row is not None
 
 
 # --- PlayerView validation -------------------------------------------
 
 
-def test_playerview_blocks_level_write():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_playerview_blocks_level_write():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     with pytest.raises(IgmViolation):
         igm_ctx.player.level = 99
 
 
-def test_playerview_blocks_name_and_id():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_playerview_blocks_name_and_id():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     with pytest.raises(IgmViolation):
         igm_ctx.player.name = "Cheater"
     with pytest.raises(IgmViolation):
         igm_ctx.player.id = 7
 
 
-def test_playerview_clamps_negative_gold():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_playerview_clamps_negative_gold():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.gold = -5
     assert p.gold == 0
 
 
-def test_playerview_clamps_hp_to_hp_max():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+async def test_playerview_clamps_hp_to_hp_max():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp_max = 30
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.hp = 999
     assert p.hp == 30
     igm_ctx.player.hp = -50
     assert p.hp == 0
 
 
-def test_playerview_stat_floors():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_playerview_stat_floors():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.strength = -3
     igm_ctx.player.defense = 0
     igm_ctx.player.charm = -1
@@ -271,26 +270,26 @@ def test_playerview_stat_floors():
     assert p.hp_max == 0
 
 
-def test_playerview_exp_cap():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_playerview_exp_cap():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.exp = 5_000_000_000
     assert p.exp == 2_000_000_000
     igm_ctx.player.exp = -1
     assert p.exp == 0
 
 
-def test_playerview_stat_caps_at_32000():
+async def test_playerview_stat_caps_at_32000():
     """Post-review: PlayerView now shares its bounds with
     pylord.engine.effects.apply_effect (pylord/engine/limits.py), which
     caps hp_max/strength/defense/charm at 32,000 -- previously PlayerView
     floored these but never capped them."""
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.strength = 99_999
     igm_ctx.player.defense = 99_999
     igm_ctx.player.charm = 99_999
@@ -301,26 +300,26 @@ def test_playerview_stat_caps_at_32000():
     assert p.hp_max == 32_000
 
 
-def test_playerview_forest_and_player_fights_now_validated():
+async def test_playerview_forest_and_player_fights_now_validated():
     """Post-review: forest_fights/player_fights are floored at 0 and
     capped at 32,000 by the shared pylord/engine/limits.py bounds --
     previously PlayerView passed them through completely unvalidated."""
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.player.forest_fights = -5
     igm_ctx.player.player_fights = 99_999
     assert p.forest_fights == 0
     assert p.player_fights == 32_000
 
 
-def test_playerview_reads_pass_through():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+async def test_playerview_reads_pass_through():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 123
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     assert igm_ctx.player.gold == 123
     assert igm_ctx.player.name == "Hero"
 
@@ -328,67 +327,68 @@ def test_playerview_reads_pass_through():
 # --- store ------------------------------------------------------------
 
 
-def test_store_isolation_between_keys():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    a = IgmContext(ctx, _StubIGM("aaa"))
-    b = IgmContext(ctx, _StubIGM("bbb"))
+async def test_store_isolation_between_keys():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    a = await IgmContext.create(ctx, _StubIGM("aaa"))
+    b = await IgmContext.create(ctx, _StubIGM("bbb"))
     a.store.set("shared", "from_a")
     b.store.set("shared", "from_b")
-    a.store.flush()
-    b.store.flush()
-    conn.commit()
-    a2 = IgmContext(ctx, _StubIGM("aaa"))
-    b2 = IgmContext(ctx, _StubIGM("bbb"))
+    await a.store.flush(database)
+    await b.store.flush(database)
+    a2 = await IgmContext.create(ctx, _StubIGM("aaa"))
+    b2 = await IgmContext.create(ctx, _StubIGM("bbb"))
     assert a2.store.get("shared") == "from_a"
     assert b2.store.get("shared") == "from_b"
 
 
-def test_store_delete():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    s = IgmContext(ctx, _StubIGM("zzz"))
+async def test_store_delete():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    s = await IgmContext.create(ctx, _StubIGM("zzz"))
     s.store.set("k", {"n": 1})
-    s.store.flush()
-    conn.commit()
-    s2 = IgmContext(ctx, _StubIGM("zzz"))
+    await s.store.flush(database)
+    s2 = await IgmContext.create(ctx, _StubIGM("zzz"))
     assert s2.store.get("k") == {"n": 1}
     s2.store.delete("k")
-    s2.store.flush()
-    conn.commit()
-    s3 = IgmContext(ctx, _StubIGM("zzz"))
+    await s2.store.flush(database)
+    s3 = await IgmContext.create(ctx, _StubIGM("zzz"))
     assert s3.store.get("k", "gone") == "gone"
 
 
 # --- mail / other_players --------------------------------------------
 
 
-def test_mail_insert():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    recipient = repo.create("Villager", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_mail_insert():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    recipient = await repo.create("Villager", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     igm_ctx.mail("Villager", text="Hello!", effect={"gold": 5})
-    conn.commit()
-    row = conn.execute(
-        "SELECT to_id, from_name, text, effect FROM mail WHERE to_id=?",
-        (recipient.id,),
-    ).fetchone()
+    # Buffered until the visit ends cleanly, so nothing is on disk yet.
+    assert await query_one(database, "SELECT 1 FROM mail") is None
+    await igm_ctx.flush(database)
+
+    row = await query_one(
+        database,
+        "SELECT to_id, from_name, text, effect FROM mail WHERE to_id = :tid",
+        tid=recipient.id,
+    )
     assert row is not None
-    assert row["from_name"] == _StubIGM().name
-    assert row["text"] == "Hello!"
-    assert '"gold": 5' in row["effect"]
+    assert row.from_name == _StubIGM().name
+    assert row.text == "Hello!"
+    assert '"gold": 5' in row.effect
 
 
-def test_other_players_excludes_self():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    repo.create("Ally", "pw", "M")
-    ctx = _ctx(conn, repo, p)
-    igm_ctx = IgmContext(ctx, _StubIGM())
+async def test_other_players_excludes_self():
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    await repo.create("Ally", "pw", "M")
+    ctx = _ctx(database, repo, p)
+    igm_ctx = await IgmContext.create(ctx, _StubIGM())
     summaries = igm_ctx.other_players()
     names = {s.name for s in summaries}
     assert "Ally" in names
@@ -423,23 +423,23 @@ class _CleanIGM(IGM):
         ctx.news("clean news line")
 
 
-def _visit_ctx(conn, repo, player, igm):
+def _visit_ctx(database, repo, player, igm):
     from pylord import igm_loader
 
     reg = igm_loader.IgmRegistry([igm])
-    ctx = _ctx(conn, repo, player, keys=[" "], igms=reg)
+    ctx = _ctx(database, repo, player, keys=[" "], igms=reg)
     return ctx
 
 
 async def test_crash_restores_player_and_rolls_back_store():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     p.hp = 20
     p.hp_max = 20
-    repo.save(p)
+    await repo.save(p)
     original = p  # the object server.handle_connection would also hold
-    ctx = _visit_ctx(conn, repo, p, _CrashIGM())
+    ctx = _visit_ctx(database, repo, p, _CrashIGM())
 
     from pylord.engine.scenes.other_places import _visit
 
@@ -457,20 +457,20 @@ async def test_crash_restores_player_and_rolls_back_store():
     assert ctx.player.hp == 20
     # store write rolled back
     assert (
-        conn.execute(
+        await query_one(database, 
             "SELECT 1 FROM igm_data WHERE igm_key='crash'"
-        ).fetchone()
+        )
         is None
     )
     # news dropped
     assert (
-        conn.execute(
+        await query_one(database, 
             "SELECT 1 FROM daily_news WHERE text LIKE '%dropped%'"
-        ).fetchone()
+        )
         is None
     )
     # mail rolled back
-    assert conn.execute("SELECT 1 FROM mail").fetchone() is None
+    assert await query_one(database, "SELECT 1 FROM mail") is None
     # flavor message shown
     out = "".join(ctx.io.output)
     assert "strange force" in out
@@ -491,12 +491,12 @@ class _DisconnectIGM(IGM):
 async def test_disconnect_midvisit_restores_before_reraise_and_cleanup_save():
     from pylord.terminal import ConnectionClosed as _CC
 
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
-    repo.save(p)
+    await repo.save(p)
     original = p
-    ctx = _visit_ctx(conn, repo, p, _DisconnectIGM())
+    ctx = _visit_ctx(database, repo, p, _DisconnectIGM())
 
     from pylord.engine.scenes.other_places import _visit
 
@@ -512,50 +512,50 @@ async def test_disconnect_midvisit_restores_before_reraise_and_cleanup_save():
 
     # Simulate server.handle_connection's cleanup: online = 0; repo.save.
     original.online = 0
-    repo.save(original)
+    await repo.save(original)
 
-    reloaded = repo.get(p.id)
+    reloaded = await repo.get(p.id)
     assert reloaded.gold == 100  # rollback survived the cleanup save
     assert reloaded.online == 0
     # store write rolled back too
     assert (
-        conn.execute("SELECT 1 FROM igm_data WHERE igm_key='disconnect'").fetchone()
+        await query_one(database, "SELECT 1 FROM igm_data WHERE igm_key='disconnect'")
         is None
     )
 
 
 async def test_clean_visit_flushes_everything():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
-    repo.save(p)
+    await repo.save(p)
     igm = _CleanIGM()
-    ctx = _visit_ctx(conn, repo, p, igm)
+    ctx = _visit_ctx(database, repo, p, igm)
 
     from pylord.engine.scenes.other_places import _visit
 
     await _visit(ctx, igm)
 
-    reloaded = repo.get(p.id)
+    reloaded = await repo.get(p.id)
     assert reloaded.gold == 150
     assert (
-        conn.execute(
+        await query_one(database, 
             "SELECT v FROM igm_data WHERE igm_key='clean' AND k='count'"
-        ).fetchone()
+        )
         is not None
     )
     assert (
-        conn.execute(
+        await query_one(database, 
             "SELECT 1 FROM daily_news WHERE text = 'clean news line'"
-        ).fetchone()
+        )
         is not None
     )
 
 
 async def test_other_places_empty_registry_returns_to_town():
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p, keys=[" "], igms=None)
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p, keys=[" "], igms=None)
 
     from pylord.engine.scenes.other_places import other_places
 
@@ -567,13 +567,13 @@ async def test_other_places_empty_registry_returns_to_town():
 async def test_other_places_lists_and_visits():
     from pylord import igm_loader
 
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
     reg = igm_loader.IgmRegistry([_CleanIGM()])
     # lord.js numbers the places (reference/lord.js:17020-17064): "1"
     # selects the single IGM, " " answers the visit's internal pause, then
     # "Q" leaves the (looping) hub.
-    ctx = _ctx(conn, repo, p, keys=["1", " ", "Q"], igms=reg)
+    ctx = _ctx(database, repo, p, keys=["1", " ", "Q"], igms=reg)
 
     from pylord.engine.scenes.other_places import other_places
 
@@ -623,14 +623,17 @@ class _StubIGM(IGM):
 
 
 async def test_maint_repo_save_does_not_commit_the_registrys_transaction():
-    """A plugin calling ctx.repo.save() inside daily_maint must not end the
-    registry's transaction early -- sqlite3 connections are not re-entrant
-    context managers, so PlayerRepo.save's own ``with conn:`` would commit
-    it and break the rollback-on-crash guarantee."""
+    """A plugin saving a player inside daily_maint must not end the
+    registry's transaction early.
+
+    ``ctx.repo`` hands the hook a buffered roster rather than the live
+    repository, so a ``save()`` marks the player dirty and the maintenance
+    pass writes it at the end -- one transaction, still able to roll back
+    as a unit if a later IGM crashes."""
     from pylord import igm_loader
 
-    conn, repo = _db()
-    player = repo.create("Hero", "pw", "M")
+    database, repo = await _db()
+    player = await repo.create("Hero", "pw", "M")
 
     class _Greedy(IGM):
         key = "greedy"
@@ -640,15 +643,15 @@ async def test_maint_repo_save_does_not_commit_the_registrys_transaction():
             pass
 
         async def daily_maint(self, ctx):
-            victim = ctx.repo.get_by_name("Hero")
+            victim = await ctx.repo.get_by_name("Hero")
             victim.gold = 999_999
-            ctx.repo.save(victim)
+            await ctx.repo.save(victim)
             raise RuntimeError("boom, after the write")
 
     registry = igm_loader.IgmRegistry([_Greedy()])
-    registry.run_daily_maint(conn, {})
+    registry.run_daily_maint(database, {})
 
-    assert repo.get(player.id).gold == 500  # rolled back, not committed
+    assert (await repo.get(player.id)).gold == 500  # rolled back, not committed
 
 
 # --- The two event hooks are actually consumed ----------------------------
@@ -676,9 +679,9 @@ async def test_igm_forest_event_can_fire_in_the_forest():
         def forest_event(self, rng):
             return ForestEvent(weight=100, run=_run)
 
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p, keys=[" "])
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p, keys=[" "])
     ctx.igms = igm_loader.IgmRegistry([EventIGM()])
     # weight 100 against 15 base slots: pick a roll inside the plugin range.
     ctx.rng = random.Random(3)
@@ -710,9 +713,9 @@ async def test_igm_inn_event_appears_on_the_inn_menu():
         def inn_event(self, rng):
             return InnEvent(label="Slip into the back room", run=_run)
 
-    conn, repo = _db()
-    p = repo.create("Hero", "pw", "M")
-    ctx = _ctx(conn, repo, p, keys=["1", "R"])
+    database, repo = await _db()
+    p = await repo.create("Hero", "pw", "M")
+    ctx = _ctx(database, repo, p, keys=["1", "R"])
     ctx.igms = igm_loader.IgmRegistry([InnIGM()])
 
     await inn_mod.inn(ctx)
@@ -722,22 +725,25 @@ async def test_igm_inn_event_appears_on_the_inn_menu():
     assert visited == [True]
 
 
-def test_store_reads_its_own_writes_after_a_flush():
+async def test_store_reads_its_own_writes_after_a_flush():
     """flush() used to leave the read cache saying "missing", so a get()
     after it reported a value that was already on disk as absent."""
-    conn, _repo = _db()
-    store = IgmStore(conn, "cache")
+    database, _repo = await _db()
+    store = IgmStore("cache")
 
-    assert store.get("rate") is None  # caches the miss
+    assert store.get("rate") is None
     store.set("rate", 175)
-    store.flush()
+    await store.flush(database)
 
     assert store.get("rate") == 175
-    assert IgmStore(conn, "cache").get("rate") == 175  # and it really persisted
+    # ... and it really persisted, so the next visit's snapshot sees it.
+    reloaded = IgmStore("cache", await database.igm_data.all_for("cache"))
+    assert reloaded.get("rate") == 175
 
     store.delete("rate")
-    store.flush()
+    await store.flush(database)
     assert store.get("rate") is None
+    assert IgmStore("cache", await database.igm_data.all_for("cache")).get("rate") is None
 
 
 def test_discover_prefers_the_first_directory_for_a_duplicate_key(tmp_path):

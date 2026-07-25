@@ -70,7 +70,7 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
     lost-update bug). Now either both commit or neither does, and a
     dropped commit is safe to retry: the row is still unread, so the next
     login re-shows and re-applies the very same letter."""
-    rows = ctx.db.mail.unread_for(ctx.player.id)
+    rows = await ctx.db.mail.unread_for(ctx.player.id)
     if not rows:
         return 0
 
@@ -78,16 +78,16 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
         "\n  `%** YOU ARE STOPPED BY A MESSENGER WITH THE FOLLOWING NEWS: **`0\n"
     )
     for row in rows:
-        await ctx.io.write(f"\n  `0{row['from_name']} `2sent you this:\n")
-        if row["text"]:
-            await ctx.io.write(f"{row['text']}\n")
-        if row["effect"]:
-            apply_effect(ctx.player, json.loads(row["effect"]))
+        await ctx.io.write(f"\n  `0{row.from_name} `2sent you this:\n")
+        if row.text:
+            await ctx.io.write(f"{row.text}\n")
+        if row.effect:
+            apply_effect(ctx.player, json.loads(row.effect))
         # The read flag and the effect's stat changes land together, so a
         # dropped commit re-shows the letter instead of losing what it gave.
-        with ctx.db.transaction() as db:
-            db.mail.mark_read(row["id"])
-            db.players.save_in_transaction(ctx.player)
+        async with ctx.db.transaction() as tx:
+            await tx.mail.mark_read(row.id)
+            await tx.players.save(ctx.player)
     await ctx.io.pause()
     return len(rows)
 
@@ -102,7 +102,7 @@ async def _find_player(ctx: GameCtx) -> Player | None:
     needle = raw.strip().upper()
     if not needle:
         return None
-    for candidate in ctx.repo.all_players():
+    for candidate in await ctx.repo.all_players():
         if needle in candidate.name.upper():
             choice = await ctx.io.menu(
                 {"Y": "yes", "N": "no"},
@@ -148,8 +148,8 @@ async def mail(ctx: GameCtx) -> str:
 
     lines = await _compose(ctx)
     body = "\n".join(lines)
-    with ctx.db.transaction() as db:
-        db.mail.send(recipient.id, p.name, text=body)
+    async with ctx.db.transaction() as tx:
+        await tx.mail.send(recipient.id, p.name, text=body)
 
     if recipient.id == p.id:  # reference/lord.js:3295-3300
         await ctx.io.write("\n  You are a very stupid individual.\n")

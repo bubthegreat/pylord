@@ -14,7 +14,6 @@ registered) and is left to raise ``KeyError`` rather than being swallowed.
 from __future__ import annotations
 
 import random
-import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -22,7 +21,7 @@ from pylord.data import Database
 from pylord.engine import data
 
 if TYPE_CHECKING:
-    from pylord.models import Player, PlayerRepo
+    from pylord.models import Player
     from pylord.terminal import TermIO
 
 SceneFn = Callable[["GameCtx"], Awaitable["str | None"]]
@@ -58,41 +57,38 @@ class GameCtx:
     def __init__(
         self,
         player: Player,
-        repo: PlayerRepo,
+        db: Database,
         io: TermIO,
-        conn: sqlite3.Connection,
         config: dict[str, Any] | None = None,
         rng: random.Random | None = None,
         igms: Any = None,
     ) -> None:
         self.player = player
-        self.repo = repo
+        self.db = db
+        # Scenes have always said ``ctx.repo``; it is the players
+        # repository on the database now, and its methods are awaited.
+        self.repo = db.players
         self.io = io
-        self.conn = conn
-        # Every query the engine makes goes through here; ``conn`` remains
-        # only for the few places still holding a raw connection (and for
-        # tests asserting against the database).
-        self.db = Database(conn)
         self.config: dict[str, Any] = {} if config is None else config
         self.rng: random.Random = random.Random() if rng is None else rng
         # Task 12: the session's IgmRegistry (None when no IGMs are wired
         # in, e.g. most unit tests). Consumed by the "other_places" scene.
         self.igms = igms
 
-    def news(self, text: str) -> None:
+    async def news(self, text: str) -> None:
         """Append ``text`` to today's daily news log.
 
         Day comes from ``game_state`` key ``'day'``, defaulting to "1" when
         that row hasn't been set yet.
         """
-        day = self.db.state.get("day", "1")
-        with self.db.transaction() as db:
-            db.news.add(day, text)
+        day = await self.db.state.get("day", "1")
+        async with self.db.transaction() as tx:
+            await tx.news.add(day, text)
 
-    def save(self) -> None:
+    async def save(self) -> None:
         """Persist ``self.player`` inside a transaction."""
-        with self.db.transaction() as db:
-            db.players.save_in_transaction(self.player)
+        async with self.db.transaction() as tx:
+            await tx.players.save(self.player)
 
 
 async def grant_exp(ctx: GameCtx, amount: int) -> None:
@@ -138,4 +134,4 @@ async def run_session(ctx: GameCtx, start: str = "town") -> None:
     while key is not None:
         scene_fn = SCENES[key]
         key = await scene_fn(ctx)
-    ctx.save()
+    await ctx.save()

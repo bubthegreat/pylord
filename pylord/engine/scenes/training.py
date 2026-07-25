@@ -413,7 +413,7 @@ async def _victory(ctx: GameCtx, trainer: Master, fight: Fight, last_round) -> N
     if p.level == 12:
         pronoun = "He" if p.gender == "M" else "She"
         mline += f"\n  {pronoun} has become the Ultimate Warrior!"
-    ctx.news(mline)
+    await ctx.news(mline)
     # No pause() here -- lord.js's win branch has no more()/more_nomail()
     # call anywhere between the stat-gain text and the news broadcast; the
     # player falls straight back to turgons()'s own prompt() (this

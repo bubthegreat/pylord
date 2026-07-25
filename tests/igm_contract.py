@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import random
 
-from pylord import db
+from pylord import data
 from pylord.hooks import IGM, IgmContext
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO, OutOfKeys
 
 # A generous scripted key queue so most ``enter()`` implementations run to
@@ -35,10 +34,9 @@ async def contract_check(igm_cls: type[IGM], keys: list[str] | None = None) -> N
     assert inst.name, "IGM.name must be non-empty"
     assert type(inst).enter is not IGM.enter, "IGM must override enter()"
 
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("ContractTester", "pw", "M")
+    database = await data.connect(":memory:")
+    repo = database.players
+    player = await repo.create("ContractTester", "pw", "M")
 
     before = {
         "id": player.id,
@@ -53,8 +51,8 @@ async def contract_check(igm_cls: type[IGM], keys: list[str] | None = None) -> N
     # plugin in isolation, without the full scene loop.
     from pylord.engine.game import GameCtx
 
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn, rng=random.Random(0))
-    igm_ctx = IgmContext(ctx, inst)
+    ctx = GameCtx(player=player, db=database, io=io, rng=random.Random(0))
+    igm_ctx = await IgmContext.create(ctx, inst)
 
     try:
         await inst.enter(igm_ctx)
@@ -75,9 +73,8 @@ async def contract_check(igm_cls: type[IGM], keys: list[str] | None = None) -> N
     # read it back through a fresh context scoped to the same key. This
     # exercises the storage path every IGM relies on for persistence.
     igm_ctx.store.set("__contract_probe__", {"ok": True})
-    igm_ctx.store.flush()
-    conn.commit()
-    fresh = IgmContext(ctx, inst)
+    await igm_ctx.store.flush(database)
+    fresh = await IgmContext.create(ctx, inst)
     assert fresh.store.get("__contract_probe__") == {"ok": True}, (
         "IgmStore did not round-trip through the database"
     )

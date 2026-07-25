@@ -3,23 +3,21 @@ docstring for lord.js line-number citations."""
 
 from __future__ import annotations
 
-from pylord import db
+from pylord import data
 from pylord.engine.game import GameCtx
 from pylord.engine.scenes import healer as healer_mod
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
 from tests.harness import play, screen
 
 
-def _ctx(overrides=None, keys=None):
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
+async def _ctx(overrides=None, keys=None):
+    database = await data.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
     for key, value in (overrides or {}).items():
         setattr(player, key, value)
     io = FakeIO(keys or [])
-    return GameCtx(player=player, repo=repo, io=io, conn=conn)
+    return GameCtx(player=player, db=database, io=io)
 
 
 async def test_healer_reachable_from_town():
@@ -32,7 +30,7 @@ async def test_healer_reachable_from_town():
 async def test_full_heal_costs_exact_gold_per_hp():
     """Cost is 5 * level per HP (level=1 -> 5/hp); healing 10 of 20 missing
     HP costs 50 gold."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"hp": 10, "hp_max": 20, "gold": 500, "level": 1}, keys=["h", "x"]
     )
     result = await healer_mod.healer(ctx)
@@ -43,7 +41,7 @@ async def test_full_heal_costs_exact_gold_per_hp():
 
 async def test_full_heal_partial_when_cant_afford():
     """Only 40 gold at 5/hp affords exactly 8 hp; need is 10 -- partial."""
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"hp": 10, "hp_max": 20, "gold": 40, "level": 1},
         keys=["h", "x", "r"],
     )
@@ -55,7 +53,7 @@ async def test_full_heal_partial_when_cant_afford():
 
 
 async def test_heal_some_exact_amount():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"hp": 5, "hp_max": 20, "gold": 500, "level": 1},
         keys=["c", "6", "r"],
     )
@@ -65,7 +63,7 @@ async def test_heal_some_exact_amount():
 
 
 async def test_heal_some_refused_when_over_healing():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"hp": 18, "hp_max": 20, "gold": 500, "level": 1},
         keys=["c", "5", "r"],
     )
@@ -77,7 +75,7 @@ async def test_heal_some_refused_when_over_healing():
 
 
 async def test_heal_some_refused_when_gold_insufficient():
-    ctx = _ctx(
+    ctx = await _ctx(
         overrides={"hp": 5, "hp_max": 20, "gold": 10, "level": 1},
         keys=["c", "5", "r"],
     )

@@ -31,7 +31,7 @@ _HEADER = (
 
 @scene("hall")
 async def hall(ctx: GameCtx) -> str:
-    heroes = [p for p in ctx.repo.all_players() if p.king_count > 0]
+    heroes = [p for p in await ctx.repo.all_players() if p.king_count > 0]
     heroes.sort(key=lambda p: (p.king_count, p.level, p.exp), reverse=True)
 
     await ctx.io.write(_HEADER)

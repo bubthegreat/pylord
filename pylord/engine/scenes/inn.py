@@ -202,7 +202,7 @@ async def _run_carry_violet(ctx: GameCtx) -> None:
             "thing!\n\n  She calls you a dirty old man!\n"
         )
         insult = "dirty old man" if ctx.rng.randrange(2) else "bastard"
-        ctx.news(f"`#  Violet `2calls `0{p.name} `2a `){insult}`2!")
+        await ctx.news(f"`#  Violet `2calls `0{p.name} `2a `){insult}`2!")
     elif p.charm > 32:
         if ctx.rng.randrange(3) == 1:
             await grant_exp(ctx, p.level * 40)
@@ -212,7 +212,7 @@ async def _run_carry_violet(ctx: GameCtx) -> None:
                 "saunter downstairs.  The drunks are mystified!\n\n"
                 f"  `0YOU GET `%{p.level * 40}`0 EXPERIENCE!\n"
             )
-            ctx.news(f"`5  {p.name} `%Got laid by `#Violet`%!")
+            await ctx.news(f"`5  {p.name} `%Got laid by `#Violet`%!")
         else:
             await ctx.io.write(
                 "  She tells you she's just too busy today.  You saunter "
@@ -225,7 +225,7 @@ async def _run_carry_violet(ctx: GameCtx) -> None:
             "kicks you in the groin!  The entire bar laughs at your "
             "misfortune!!\n\n  `4YOUR HITPOINTS GO DOWN TO 1!\n"
         )
-        ctx.news(f"`0  {p.name} `2got kicked in the groin by `#Violet`2!")
+        await ctx.news(f"`0  {p.name} `2got kicked in the groin by `#Violet`2!")
     await ctx.io.pause()
 
 
@@ -243,7 +243,7 @@ async def _run_seduce_seth(ctx: GameCtx) -> None:
             "thing!\n\n  He calls you a filthy harlot!\n"
         )
         insult = ("filthy harlot", "slut")[ctx.rng.randrange(2)]
-        ctx.news(f"`%  Seth Able `2calls `0{p.name} `2a `){insult}`2!")
+        await ctx.news(f"`%  Seth Able `2calls `0{p.name} `2a `){insult}`2!")
     elif p.charm >= 32:
         if ctx.rng.randrange(4) == 2:
             await grant_exp(ctx, p.level * 40)
@@ -253,7 +253,7 @@ async def _run_seduce_seth(ctx: GameCtx) -> None:
                 "downstairs.  The drunks are mystified!\n\n"
                 f"  `0YOU GET `%{p.level * 40} `0EXPERIENCE!\n"
             )
-            ctx.news(f"`0  {p.name} `2got laid by `%Seth Able`2!")
+            await ctx.news(f"`0  {p.name} `2got laid by `%Seth Able`2!")
         else:
             await ctx.io.write(
                 "  He tells you he is too exhausted from last night!  You "
@@ -266,7 +266,7 @@ async def _run_seduce_seth(ctx: GameCtx) -> None:
             "The entire bar laughs at your misfortune!!\n\n"
             "  `4YOUR HITPOINTS GO DOWN TO 1!\n"
         )
-        ctx.news(f"`5  {p.name} `2 was called a whore by `%Seth Able`2!")
+        await ctx.news(f"`5  {p.name} `2 was called a whore by `%Seth Able`2!")
     await ctx.io.pause()
 
 
@@ -311,7 +311,7 @@ async def _blocked_from_marrying(ctx: GameCtx, npc: str) -> bool:
     """
     p = ctx.player
     if p.married_to is not None and p.married_to > -1:
-        spouse = ctx.repo.get(p.married_to)
+        spouse = await ctx.repo.get(p.married_to)
         name = spouse.name if spouse is not None else "your spouse"
         title = "wife" if p.gender == "M" else "husband"
         await ctx.io.write(
@@ -323,9 +323,9 @@ async def _blocked_from_marrying(ctx: GameCtx, npc: str) -> bool:
 
     other = "Seth Able" if npc == "Violet" else "Violet"
     already = (
-        npc_state.married_to_seth(ctx.conn)
+        await npc_state.married_to_seth(ctx.db)
         if npc == "Violet"
-        else npc_state.married_to_violet(ctx.conn)
+        else await npc_state.married_to_violet(ctx.db)
     )
     if already == p.id:
         await ctx.io.write(
@@ -362,7 +362,7 @@ async def _marriage_violet(ctx: GameCtx) -> None:
     for bound, text in _VIOLET_MARRIAGE_LADDER:
         if p.charm < bound:
             await ctx.io.write(f"{text}\n\n  `%THE ENTIRE BAR LAUGHS AT YOUR MISFORTUNE!\n")
-            ctx.news(f"`2  `#Violet`2 has refused to marry `0{p.name}`2!")
+            await ctx.news(f"`2  `#Violet`2 has refused to marry `0{p.name}`2!")
             await ctx.io.pause()
             return
     await ctx.io.write('`#  "Yes!  I WILL marry you!" `2she laughs!\n\n')
@@ -373,7 +373,7 @@ async def _marriage_violet(ctx: GameCtx) -> None:
         elsewhere_text="`2As you walk up to the chapel, you see Violet "
         "walking out...on the arm of {other}!",
     )
-    if npc_state.married_to_violet(ctx.conn) == p.id:
+    if await npc_state.married_to_violet(ctx.db) == p.id:
         await grant_exp(ctx, p.level * 1000)
         p.seen_violet = 0
         await ctx.io.write(
@@ -382,7 +382,7 @@ async def _marriage_violet(ctx: GameCtx) -> None:
             "her job and take care of your house.\n\n"
             f"  `%YOU RECEIVE {p.level * 1000} EXPERIENCE!\n"
         )
-        ctx.news(
+        await ctx.news(
             f"`2  `#Violet`2 has `%MARRIED `0{p.name}`2!!!!!\n"
             "`2  She `%QUITS`2 her job at the bar to the towns dismay!"
         )
@@ -414,13 +414,13 @@ async def _marriage_seth(ctx: GameCtx) -> None:
         elsewhere_text="`0Seth Able has just married {other}!  You run away "
         "sobbing.",
     )
-    if npc_state.married_to_seth(ctx.conn) == p.id:
+    if await npc_state.married_to_seth(ctx.db) == p.id:
         if p.lays > 0:
             await ctx.io.write(
                 "  Wearing a slightly off-white dress you walk demurely "
                 "down the aisle.\n"
             )
-            ctx.news(f"`)  ** `0{p.name} `2has MARRIED `%Seth Able`2!`) **")
+            await ctx.news(f"`)  ** `0{p.name} `2has MARRIED `%Seth Able`2!`) **")
         else:
             await grant_exp(ctx, p.level * 5000)
             await ctx.io.write(
@@ -428,7 +428,7 @@ async def _marriage_seth(ctx: GameCtx) -> None:
                 f"the aisle.  You feel heavenly!  You receive {p.level * 5000} "
                 "experience!\n"
             )
-            ctx.news(
+            await ctx.news(
                 f"`)  ** `0{p.name} `2has MARRIED `%Seth Able`2 in "
                 "`%WHITE`2!`) **"
             )
@@ -439,13 +439,13 @@ async def _marry_npc(ctx: GameCtx, *, get_current, set_current, elsewhere_text: 
     """Shared "claim the singleton NPC spouse" race: first come, first
     served. reference/lord.js:9459-9468 (Violet) / 8911-8942 (Seth)."""
     p = ctx.player
-    current = get_current(ctx.conn)
+    current = await get_current(ctx.db)
     if current != npc_state.NONE and current != p.id:
-        other = ctx.repo.get(current)
+        other = await ctx.repo.get(current)
         other_name = other.name if other is not None else "another warrior"
         await ctx.io.write(f"  {elsewhere_text.format(other=other_name)}\n\n")
         return
-    set_current(ctx.conn, p.id)
+    await set_current(ctx.db, p.id)
 
 
 async def _flirt(ctx: GameCtx) -> None:
@@ -458,7 +458,7 @@ async def _flirt(ctx: GameCtx) -> None:
         await ctx.io.write("\n\n  You would rather flirt with Seth Able.\n")
         return
 
-    married_to_violet = npc_state.married_to_violet(ctx.conn)
+    married_to_violet = await npc_state.married_to_violet(ctx.db)
     if married_to_violet != npc_state.NONE:
         if p.seen_violet:
             await ctx.io.write(
@@ -540,7 +540,7 @@ async def _bard_menu(ctx: GameCtx) -> None:
             await ctx.io.write("\n\n  You would rather flirt with Violet.\n")
             continue
 
-        married_to_seth = npc_state.married_to_seth(ctx.conn)
+        married_to_seth = await npc_state.married_to_seth(ctx.db)
         if married_to_seth != npc_state.NONE:
             if married_to_seth == p.id:
                 if p.seen_violet:
@@ -557,7 +557,7 @@ async def _bard_menu(ctx: GameCtx) -> None:
                 # Homewrecking sub-branch (reference/lord.js:9322-9386) --
                 # simplified to a status line; the full seduce-someone-else's-
                 # spouse mail mechanic is out of scope for this task.
-                other = ctx.repo.get(married_to_seth)
+                other = await ctx.repo.get(married_to_seth)
                 name = other.name if other is not None else "another warrior"
                 await ctx.io.write(
                     f"\n\n  `2Seth Able is already spoken for -- he belongs "
@@ -757,7 +757,7 @@ async def _bribe_attack(ctx: GameCtx) -> bool:
     while True:
         sleepers = [
             pl
-            for pl in ctx.repo.all_players()
+            for pl in await ctx.repo.all_players()
             if pl.at_inn and pl.alive and pl.id != p.id
         ]
         await ctx.io.write(
@@ -859,8 +859,8 @@ async def _sneak_attack(ctx: GameCtx, target: Player, subj: str) -> bool:
         f"  `0{p.name}`2 has broken into your room at the Inn!"
     )  # reference/lord.js:8079-8081 -- sent immediately, before the fight,
     # regardless of its outcome (unlike run_attack()'s own win/loss-only mail).
-    with ctx.db.transaction() as db:
-        db.mail.send(target.id, p.name, text=mail_body)
+    async with ctx.db.transaction() as tx:
+        await tx.mail.send(target.id, p.name, text=mail_body)
     await ctx.io.pause()
     return await pvp_mod.run_attack(ctx, target, from_inn=True)
 

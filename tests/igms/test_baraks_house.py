@@ -25,10 +25,10 @@ async def test_contract():
 
 
 async def test_talk_rotates_quotes_via_rng():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
-    gctx = make_ctx(conn, repo, p, keys=["T", "\r", "L"], rng=SeqRandom([2]))
-    ctx = make_igm_ctx(gctx, BaraksHouse())
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["T", "\r", "L"], rng=SeqRandom([2]))
+    ctx = await make_igm_ctx(gctx, BaraksHouse())
 
     await BaraksHouse().enter(ctx)
 
@@ -41,12 +41,12 @@ async def test_talk_rotates_quotes_via_rng():
 
 
 async def test_search_finds_gold_exact_amount():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([17]))
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([17]))
     igm = BaraksHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -54,14 +54,14 @@ async def test_search_finds_gold_exact_amount():
 
 
 async def test_search_blocked_second_time_same_visit():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "\r", "S", "\r", "L"], rng=SeqRandom([10])
+        database, repo, p, keys=["S", "\r", "S", "\r", "L"], rng=SeqRandom([10])
     )
     igm = BaraksHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -70,21 +70,20 @@ async def test_search_blocked_second_time_same_visit():
 
 
 async def test_search_blocked_across_visits_via_store_flush():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     igm = BaraksHouse()
 
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([5]))
-    ctx1 = make_igm_ctx(gctx, igm)
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([5]))
+    ctx1 = await make_igm_ctx(gctx, igm)
     await igm.enter(ctx1)
-    ctx1.store.flush()
-    conn.commit()
+    await ctx1.store.flush(database)
     assert p.gold == 105
 
     # Fresh context/visit, same player -- the gate must persist through the DB.
-    gctx2 = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([]))
-    ctx2 = make_igm_ctx(gctx2, igm)
+    gctx2 = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([]))
+    ctx2 = await make_igm_ctx(gctx2, igm)
     await igm.enter(ctx2)
 
     assert p.gold == 105  # blocked -- no second payout
@@ -92,12 +91,12 @@ async def test_search_blocked_across_visits_via_store_flush():
 
 
 async def test_train_grants_one_strength_once_per_day():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     strength_before = p.strength
-    gctx = make_ctx(conn, repo, p, keys=["A", "\r", "A", "\r", "L"], rng=SeqRandom([]))
+    gctx = make_ctx(database, repo, p, keys=["A", "\r", "A", "\r", "L"], rng=SeqRandom([]))
     igm = BaraksHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -105,13 +104,13 @@ async def test_train_grants_one_strength_once_per_day():
 
 
 async def test_mother_chases_you_out_ends_visit():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp = 5
     p.hp_max = 20
-    gctx = make_ctx(conn, repo, p, keys=["M", "\r"], rng=SeqRandom([0]))
+    gctx = make_ctx(database, repo, p, keys=["M", "\r"], rng=SeqRandom([0]))
     igm = BaraksHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -120,13 +119,13 @@ async def test_mother_chases_you_out_ends_visit():
 
 
 async def test_mother_feeds_soup_heals_within_cap():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.hp_max = 20
     p.hp = 19
-    gctx = make_ctx(conn, repo, p, keys=["M", "\r", "L"], rng=SeqRandom([1]))
+    gctx = make_ctx(database, repo, p, keys=["M", "\r", "L"], rng=SeqRandom([1]))
     igm = BaraksHouse()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -134,20 +133,16 @@ async def test_mother_feeds_soup_heals_within_cap():
 
 
 async def test_daily_maint_clears_gates():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     igm = BaraksHouse()
-    mctx = make_maint_ctx(conn, {}, igm.key)
+    mctx = await make_maint_ctx(database, {}, igm.key)
     mctx.store.set(f"couch:{p.id}", True)
     mctx.store.set(f"trained:{p.id}", True)
-    mctx.store.flush()
-    conn.commit()
-
-    mctx2 = make_maint_ctx(conn, {}, igm.key)
+    await mctx.store.flush(database)
+    mctx2 = await make_maint_ctx(database, {}, igm.key)
     await igm.daily_maint(mctx2)
-    mctx2.store.flush()
-    conn.commit()
-
-    mctx3 = make_maint_ctx(conn, {}, igm.key)
+    await mctx2.store.flush(database)
+    mctx3 = await make_maint_ctx(database, {}, igm.key)
     assert mctx3.store.get(f"couch:{p.id}", False) is False
     assert mctx3.store.get(f"trained:{p.id}", False) is False

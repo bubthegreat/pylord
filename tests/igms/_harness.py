@@ -22,10 +22,9 @@ scripting a full realistic shuffle.
 
 from __future__ import annotations
 
-from pylord import db
+from pylord import data
 from pylord.engine.game import GameCtx
 from pylord.hooks import IgmContext, IgmMaintContext
-from pylord.models import PlayerRepo
 from pylord.terminal import FakeIO
 
 
@@ -63,21 +62,22 @@ class SeqRandom:
             x[i], x[j] = x[j], x[i]
 
 
-def make_db():
-    """A fresh, migrated in-memory DB + repo."""
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    return conn, PlayerRepo(conn)
+async def make_db():
+    """A fresh in-memory database, and its players repository."""
+    database = await data.connect(":memory:")
+    return database, database.players
 
 
-def make_ctx(conn, repo, player, keys=None, rng=None) -> GameCtx:
+def make_ctx(database, repo, player, keys=None, rng=None) -> GameCtx:
     io = FakeIO(list(keys) if keys is not None else [])
-    return GameCtx(player=player, repo=repo, io=io, conn=conn, rng=rng)
+    return GameCtx(player=player, db=database, io=io, rng=rng)
 
 
-def make_igm_ctx(gctx: GameCtx, igm) -> IgmContext:
-    return IgmContext(gctx, igm)
+async def make_igm_ctx(gctx: GameCtx, igm) -> IgmContext:
+    """The context an IGM sees: a snapshot loaded up front, writes
+    buffered -- exactly what the visit protocol builds."""
+    return await IgmContext.create(gctx, igm)
 
 
-def make_maint_ctx(conn, config, igm_key: str) -> IgmMaintContext:
-    return IgmMaintContext(conn, config or {}, igm_key)
+async def make_maint_ctx(database, config, igm_key: str) -> IgmMaintContext:
+    return await IgmMaintContext.create(database, config or {}, igm_key)

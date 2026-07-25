@@ -79,26 +79,25 @@ async def _visit(ctx: GameCtx, igm: IGM) -> None:
 
 
 async def run_guarded(ctx: GameCtx, igm: IGM, run) -> None:
-    """Run ``run(igm_ctx)`` -- an ``IGM.enter`` or a hook callable such as
-    a ``ForestEvent``/``InnEvent``'s ``run`` -- inside the visit sandbox:
-    one transaction, a player snapshot restored in place on any failure,
-    and buffered news/store writes flushed only on a clean return.
+    """Run ``run(igm_ctx)`` -- an ``IGM.enter`` or a hook callable such as a
+    ``ForestEvent``/``InnEvent``'s ``run`` -- inside the visit sandbox.
+
+    The sandbox is now a *buffer*, not an open transaction. A visit spends
+    most of its life waiting for a player to press a key, and a database
+    connection must not be held open for that. So the plugin reads a
+    snapshot loaded up front and writes into buffers; on a clean return
+    everything lands in one short transaction, and on any failure the
+    buffers are dropped and the player is restored in place.
     """
-    conn = ctx.conn
-    # Close any implicit transaction from earlier this session so our
-    # rollback can only affect this visit.
-    conn.commit()
     snapshot = replace(ctx.player)
-    igm_ctx = IgmContext(ctx, igm)
+    igm_ctx = await IgmContext.create(ctx, igm)
 
     try:
         await run(igm_ctx)
     except (ConnectionClosed, OutOfKeys):
-        conn.rollback()
         _restore_in_place(ctx.player, snapshot)
         raise
     except Exception:
-        conn.rollback()
         _restore_in_place(ctx.player, snapshot)
         logger.exception("IGM %s crashed during a hook", igm.key)
         await ctx.io.write(
@@ -106,13 +105,11 @@ async def run_guarded(ctx: GameCtx, igm: IGM, run) -> None:
         )
         return
 
-    # Clean exit: flush everything the visit produced, atomically. Skip the
-    # player UPDATE when nothing was written (PlayerView tracks this).
-    igm_ctx.store.flush()
-    igm_ctx.flush_news()
-    if igm_ctx.player.dirty:
-        ctx.db.players.save_in_transaction(ctx.player)
-    conn.commit()
+    # Clean exit: everything the visit produced lands together.
+    async with ctx.db.transaction() as tx:
+        await igm_ctx.flush(tx)
+        if igm_ctx.player.dirty:
+            await tx.players.save(ctx.player)
 
 
 @scene("other_places")

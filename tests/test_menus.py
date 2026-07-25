@@ -76,21 +76,19 @@ async def test_enter_in_a_battle_takes_the_default_attack():
     forest events depends on the seed."""
     import random
 
-    from pylord import db
+    from pylord import data as storage
     from pylord.engine import data
     from pylord.engine.game import GameCtx
     from pylord.engine.scenes import forest as forest_mod
-    from pylord.models import PlayerRepo
     from pylord.terminal import FakeIO
 
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create("Hero", "pw", "M")
+    database = await storage.connect(":memory:")
+    repo = database.players
+    player = await repo.create("Hero", "pw", "M")
     player.strength, player.hp, player.hp_max = 30_000, 3_000, 3_000
     # Enter to swing, then whatever pauses the victory text asks for.
     io = FakeIO(["\r", "x", "x", "x"])
-    ctx = GameCtx(player=player, repo=repo, io=io, conn=conn, rng=random.Random(0))
+    ctx = GameCtx(player=player, db=database, io=io, rng=random.Random(0))
 
     await forest_mod._run_fight(ctx, data.MONSTERS[1][0])
 

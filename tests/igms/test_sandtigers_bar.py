@@ -21,16 +21,16 @@ async def test_contract():
 
 
 async def test_dice_win_doubles_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["D", "50", "\r", "L"],
         rng=SeqRandom([6, 1]),  # player rolls 6, house rolls 1
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -38,16 +38,16 @@ async def test_dice_win_doubles_bet():
 
 
 async def test_dice_loss_takes_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["D", "50", "\r", "L"],
         rng=SeqRandom([1, 6]),  # player rolls 1, house rolls 6
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -55,16 +55,16 @@ async def test_dice_loss_takes_bet():
 
 
 async def test_dice_tie_pushes():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["D", "50", "\r", "L"],
         rng=SeqRandom([3, 3]),
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -75,14 +75,14 @@ async def test_dice_tie_pushes():
 
 
 async def test_bet_over_gold_refused():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 20
     gctx = make_ctx(
-        conn, repo, p, keys=["D", "50", "\r", "L"], rng=SeqRandom([])
+        database, repo, p, keys=["D", "50", "\r", "L"], rng=SeqRandom([])
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -91,15 +91,15 @@ async def test_bet_over_gold_refused():
 
 
 async def test_bet_over_max_bet_refused():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.gold = 5000
     gctx = make_ctx(
-        conn, repo, p, keys=["D", "1500", "\r", "L"], rng=SeqRandom([])
+        database, repo, p, keys=["D", "1500", "\r", "L"], rng=SeqRandom([])
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -108,14 +108,14 @@ async def test_bet_over_max_bet_refused():
 
 
 async def test_bet_zero_declines_quietly():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p, keys=["D", "0", "\r", "L"], rng=SeqRandom([])
+        database, repo, p, keys=["D", "0", "\r", "L"], rng=SeqRandom([])
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -126,16 +126,16 @@ async def test_bet_zero_declines_quietly():
 
 
 async def test_coin_flip_win_then_cash_out():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["C", "20", "K", "\r", "L"],
         rng=SeqRandom([0]),  # one winning flip, then cash out
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -144,16 +144,16 @@ async def test_coin_flip_win_then_cash_out():
 
 
 async def test_coin_flip_chain_continues_then_loses_pot():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["C", "20", "C", "\r", "L"],
         rng=SeqRandom([0, 1]),  # win once (pot=40), continue, then lose
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -161,16 +161,16 @@ async def test_coin_flip_chain_continues_then_loses_pot():
 
 
 async def test_coin_flip_immediate_loss():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["C", "20", "\r", "L"],
         rng=SeqRandom([1]),
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -181,16 +181,16 @@ async def test_coin_flip_immediate_loss():
 
 
 async def test_guess_cup_correct_pays_3x():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["G", "30", "2", "\r", "L"],
         rng=SeqRandom([2]),  # correct cup is 2
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -198,16 +198,16 @@ async def test_guess_cup_correct_pays_3x():
 
 
 async def test_guess_cup_wrong_loses_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 100
     gctx = make_ctx(
-        conn, repo, p,
+        database, repo, p,
         keys=["G", "30", "1", "\r", "L"],
         rng=SeqRandom([2]),  # correct cup is 2, player guessed 1
     )
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -218,11 +218,11 @@ async def test_guess_cup_wrong_loses_bet():
 
 
 async def test_stories_rotate_via_rng():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
-    gctx = make_ctx(conn, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([1]))
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    gctx = make_ctx(database, repo, p, keys=["S", "\r", "L"], rng=SeqRandom([1]))
     igm = SandtigersBar()
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 

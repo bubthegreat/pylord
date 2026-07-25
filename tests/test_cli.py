@@ -2,45 +2,57 @@
 
 Each test writes a throwaway ``config.toml`` + sqlite db under ``tmp_path``
 (the same DB-path-resolution rule ``load_config`` documents), seeds a player
-via ``PlayerRepo`` directly, then drives ``main()`` with a monkeypatched
+via ``PlayerRepo`` directly, then drives ``await _run()`` with a monkeypatched
 ``sys.argv`` -- exactly how a sysop would invoke the real ``pylord`` CLI.
 """
 
 from __future__ import annotations
 
-from pylord import db
+import asyncio
+
+from pylord import data
 from pylord.cli import main
-from pylord.models import PlayerRepo, verify_password
+from pylord.models import verify_password
 
 
-def _make_config(tmp_path):
+async def _run(argv):
+    """Drive ``await _run()`` the way a sysop's shell does.
+
+    ``await _run()`` owns its own ``asyncio.run()``, which cannot be nested
+    inside the loop these async tests already run on, so it goes to a
+    worker thread -- and that is also closer to the real invocation than
+    reaching past it into the private ``_edit``/``_delete`` coroutines.
+    """
+    return await asyncio.to_thread(main, argv)
+
+
+async def _make_config(tmp_path):
     db_path = tmp_path / "lord.db"
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         f'[server]\ndb = "{db_path}"\n\n[game]\n'
     )
-    conn = db.connect(str(db_path))
-    db.migrate(conn)
-    return config_path, conn
+    database = await data.connect(str(db_path))
+    return config_path, database
 
 
-def _seed_player(conn, name="Hero", **overrides):
-    repo = PlayerRepo(conn)
-    player = repo.create(name, "pw", "M")
+async def _seed_player(database, name="Hero", **overrides):
+    repo = database.players
+    player = await repo.create(name, "pw", "M")
     for key, value in overrides.items():
         setattr(player, key, value)
-    repo.save(player)
+    await repo.save(player)
     return player
 
 
-def test_edit_gold_persists(tmp_path, capsys):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, gold=500)
+async def test_edit_gold_persists(tmp_path, capsys):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, gold=500)
 
-    rc = main(["edit", "Hero", "--config", str(config_path), "--gold", "1234"])
+    rc = await _run(["edit", "Hero", "--config", str(config_path), "--gold", "1234"])
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.gold == 1234
     out = capsys.readouterr().out
     assert "gold" in out.lower()
@@ -48,46 +60,46 @@ def test_edit_gold_persists(tmp_path, capsys):
     assert "1234" in out
 
 
-def test_edit_level_99_clamps_to_12(tmp_path, capsys):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, level=5)
+async def test_edit_level_99_clamps_to_12(tmp_path, capsys):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, level=5)
 
-    rc = main(["edit", "Hero", "--config", str(config_path), "--level", "99"])
+    rc = await _run(["edit", "Hero", "--config", str(config_path), "--level", "99"])
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.level == 12
 
 
-def test_edit_level_0_clamps_to_1(tmp_path):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, level=5)
+async def test_edit_level_0_clamps_to_1(tmp_path):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, level=5)
 
-    rc = main(["edit", "Hero", "--config", str(config_path), "--level", "0"])
+    rc = await _run(["edit", "Hero", "--config", str(config_path), "--level", "0"])
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.level == 1
 
 
-def test_edit_unknown_player_exits_1(tmp_path, capsys):
-    config_path, _conn = _make_config(tmp_path)
+async def test_edit_unknown_player_exits_1(tmp_path, capsys):
+    config_path, _conn = await _make_config(tmp_path)
 
-    rc = main(["edit", "Nobody", "--config", str(config_path), "--gold", "1"])
+    rc = await _run(["edit", "Nobody", "--config", str(config_path), "--gold", "1"])
 
     assert rc == 1
     err = capsys.readouterr().err
     assert "Nobody" in err
 
 
-def test_edit_no_flags_prints_stats_without_modifying(tmp_path, capsys):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, gold=777, level=3)
+async def test_edit_no_flags_prints_stats_without_modifying(tmp_path, capsys):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, gold=777, level=3)
 
-    rc = main(["edit", "Hero", "--config", str(config_path)])
+    rc = await _run(["edit", "Hero", "--config", str(config_path)])
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.gold == 777
     assert reloaded.level == 3
     out = capsys.readouterr().out
@@ -95,12 +107,11 @@ def test_edit_no_flags_prints_stats_without_modifying(tmp_path, capsys):
     assert "777" in out
 
 
-def test_edit_gems_and_alive_and_reset_password(tmp_path):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, gems=0, alive=1)
+async def test_edit_gems_and_alive_and_reset_password(tmp_path):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, gems=0, alive=1)
 
-    rc = main(
-        [
+    rc = await _run([
             "edit",
             "Hero",
             "--config",
@@ -115,28 +126,28 @@ def test_edit_gems_and_alive_and_reset_password(tmp_path):
     )
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.gems == 5
     assert reloaded.alive == 0
     assert verify_password("newpass", reloaded.password_hash)
 
 
-def test_edit_lowercase_name_finds_player(tmp_path):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, gold=500)
+async def test_edit_lowercase_name_finds_player(tmp_path):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, gold=500)
 
-    rc = main(["edit", "hero", "--config", str(config_path), "--gold", "42"])
+    rc = await _run(["edit", "hero", "--config", str(config_path), "--gold", "42"])
 
     assert rc == 0
-    reloaded = PlayerRepo(conn).get_by_name("Hero")
+    reloaded = await database.players.get_by_name("Hero")
     assert reloaded.gold == 42
 
 
-def test_players_lists_roster_with_created_player(tmp_path, capsys):
-    config_path, conn = _make_config(tmp_path)
-    _seed_player(conn, name="Hero", level=4, gold=999)
+async def test_players_lists_roster_with_created_player(tmp_path, capsys):
+    config_path, database = await _make_config(tmp_path)
+    await _seed_player(database, name="Hero", level=4, gold=999)
 
-    rc = main(["players", "--config", str(config_path)])
+    rc = await _run(["players", "--config", str(config_path)])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -149,70 +160,59 @@ def test_players_lists_roster_with_created_player(tmp_path, capsys):
     assert "online" in out.lower()
 
 
-def _config_with_player(tmp_path, name="Doomed", **fields):
-    from pylord import db
-    from pylord.models import PlayerRepo
-
+async def _config_with_player(tmp_path, name="Doomed", **fields):
+    from pylord import data
+    
     db_path = tmp_path / "lord.db"
-    conn = db.connect(str(db_path))
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
-    player = repo.create(name, "pw", "M")
+    database = await data.connect(str(db_path))
+    repo = database.players
+    player = await repo.create(name, "pw", "M")
     for key, value in fields.items():
         setattr(player, key, value)
-    repo.save(player)
-    conn.close()
+    await repo.save(player)
+    await database.dispose()
 
     config = tmp_path / "config.toml"
     config.write_text(f'[server]\ndb = "{db_path}"\n\n[game]\n')
     return config, db_path
 
 
-def test_delete_requires_yes(tmp_path, capsys):
-    config, db_path = _config_with_player(tmp_path)
-    assert main(["delete", "Doomed", "--config", str(config)]) == 1
+async def test_delete_requires_yes(tmp_path, capsys):
+    config, db_path = await _config_with_player(tmp_path)
+    assert await _run(["delete", "Doomed", "--config", str(config)]) == 1
     assert "pass --yes" in capsys.readouterr().out
 
-    from pylord import db
-    from pylord.models import PlayerRepo
-
-    conn = db.connect(str(db_path))
-    assert PlayerRepo(conn).get_by_name("Doomed") is not None
+    database = await data.connect(str(db_path))
+    assert await database.players.get_by_name("Doomed") is not None
 
 
-def test_delete_removes_the_player_and_their_mail(tmp_path):
-    from pylord import db
-    from pylord.models import PlayerRepo
+async def test_delete_removes_the_player_and_their_mail(tmp_path):
+    config, db_path = await _config_with_player(tmp_path)
+    database = await data.connect(str(db_path))
+    doomed = await database.players.get_by_name("Doomed")
+    async with database.transaction() as tx:
+        await tx.mail.send(doomed.id, "Someone", text="hi")
+    await database.dispose()
 
-    config, db_path = _config_with_player(tmp_path)
-    conn = db.connect(str(db_path))
-    doomed = PlayerRepo(conn).get_by_name("Doomed")
-    conn.execute(
-        "INSERT INTO mail (to_id, from_name, text, created, read) "
-        "VALUES (?, 'Someone', 'hi', '2026-07-24', 0)",
-        (doomed.id,),
-    )
-    conn.commit()
-    conn.close()
+    assert await _run(["delete", "Doomed", "--config", str(config), "--yes"]) == 0
 
-    assert main(["delete", "Doomed", "--config", str(config), "--yes"]) == 0
-
-    conn = db.connect(str(db_path))
-    assert PlayerRepo(conn).get_by_name("Doomed") is None
-    assert conn.execute("SELECT COUNT(*) FROM mail").fetchone()[0] == 0
+    database = await data.connect(str(db_path))
+    assert await database.players.get_by_name("Doomed") is None
+    assert await database.mail.unread_for(doomed.id) == []
+    await database.dispose()
 
 
-def test_delete_refuses_while_the_player_is_online(tmp_path, capsys):
-    config, _db_path = _config_with_player(tmp_path, online=1)
-    assert main(["delete", "Doomed", "--config", str(config), "--yes"]) == 1
+async def test_delete_refuses_while_the_player_is_online(tmp_path, capsys):
+    config, _db_path = await _config_with_player(tmp_path, online=1)
+    assert await _run(["delete", "Doomed", "--config", str(config), "--yes"]) == 1
     assert "online right now" in capsys.readouterr().err
 
 
-def test_serve_configures_logging(tmp_path, monkeypatch):
+async def test_serve_configures_logging(tmp_path, monkeypatch):
     """Engine logs (crashing IGMs, DB errors) are invisible without this."""
     import logging
 
-    config, _db_path = _config_with_player(tmp_path)
+    config, _db_path = await _config_with_player(tmp_path)
     logging.getLogger().handlers.clear()
 
     started = {}
@@ -222,7 +222,7 @@ def test_serve_configures_logging(tmp_path, monkeypatch):
         raise KeyboardInterrupt  # unwind before the server really runs
 
     monkeypatch.setattr("pylord.server.start", _fake_start)
-    main(["serve", "--config", str(config)])
+    await _run(["serve", "--config", str(config)])
 
     assert logging.getLogger().handlers, "no logging handler was installed"
     assert logging.getLogger().level == logging.INFO

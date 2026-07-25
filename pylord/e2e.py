@@ -37,8 +37,7 @@ from pathlib import Path
 
 import telnetlib3
 
-from pylord import db
-from pylord.models import PlayerRepo
+from pylord import data
 from pylord.server import start
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -242,47 +241,44 @@ async def wait_offline(db_path: Path, name: str, timeout: float = 5.0):
 
     The server writes a player's row in its disconnect ``finally``, so a
     test that closes the socket and reads immediately can race it."""
-    conn = db.connect(str(db_path))
+    database = await data.connect(str(db_path))
     try:
-        repo = PlayerRepo(conn)
 
         async def _offline():
-            while (p := repo.get_by_name(name)) is None or p.online:
+            while (p := await database.players.get_by_name(name)) is None or p.online:
                 await asyncio.sleep(0.05)
             return p
 
         return await asyncio.wait_for(_offline(), timeout)
     finally:
-        conn.close()
+        await database.dispose()
 
 
 async def edit_player(db_path: Path, name: str, **fields) -> None:
     """Apply field changes straight to the database, once the character is
     logged off (the server writes the row on disconnect, so editing while
     a session is live would be overwritten)."""
-    conn = db.connect(str(db_path))
+    database = await data.connect(str(db_path))
     try:
-        repo = PlayerRepo(conn)
-
         async def _offline() -> None:
-            while (p := repo.get_by_name(name)) is None or p.online:
+            while (p := await database.players.get_by_name(name)) is None or p.online:
                 await asyncio.sleep(0.05)
 
         await asyncio.wait_for(_offline(), 5.0)
-        player = repo.get_by_name(name)
+        player = await database.players.get_by_name(name)
         for key, value in fields.items():
             setattr(player, key, value)
-        repo.save(player)
+        await database.players.save(player)
     finally:
-        conn.close()
+        await database.dispose()
 
 
 async def read_player(db_path: Path, name: str):
-    conn = db.connect(str(db_path))
+    database = await data.connect(str(db_path))
     try:
-        return PlayerRepo(conn).get_by_name(name)
+        return await database.players.get_by_name(name)
     finally:
-        conn.close()
+        await database.dispose()
 
 
 # --- the walkthrough ------------------------------------------------------

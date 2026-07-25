@@ -46,10 +46,10 @@ _PHRASES = (
 @scene("conjugality")
 async def conjugality(ctx: GameCtx) -> str:
     await ctx.io.write(_HEADER)
-    players = ctx.repo.all_players()
+    players = await ctx.repo.all_players()
     by_id = {p.id: p for p in players}
-    married_to_violet = npc_state.married_to_violet(ctx.conn)
-    married_to_seth = npc_state.married_to_seth(ctx.conn)
+    married_to_violet = await npc_state.married_to_violet(ctx.db)
+    married_to_seth = await npc_state.married_to_seth(ctx.db)
 
     some = False
     phrase_i = 0

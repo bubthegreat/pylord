@@ -14,12 +14,28 @@ import re
 
 # Import for side effect: registers every scene module into game.SCENES.
 import pylord.engine.scenes  # noqa: F401
-from pylord import db
+from pylord import data
 from pylord.engine.game import GameCtx, run_session
-from pylord.models import Player, PlayerRepo
+from pylord.models import Player
 from pylord.terminal import FakeIO, OutOfKeys
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+async def query(database, sql: str, **params):
+    """Run raw SQL for an assertion. Tests may look at the database
+    directly; game code goes through the repositories."""
+    from sqlalchemy import text
+
+    statement = text(sql)
+    return await database.fetch_all(
+        statement.bindparams(**params) if params else statement
+    )
+
+
+async def query_one(database, sql: str, **params):
+    rows = await query(database, sql, **params)
+    return rows[0] if rows else None
 
 
 def screen(io: FakeIO) -> str:
@@ -48,26 +64,23 @@ async def play(
     """
     start = config.pop("start", "town")
 
-    conn = db.connect(":memory:")
-    db.migrate(conn)
-    repo = PlayerRepo(conn)
+    database = await data.connect(":memory:")
+    repo = database.players
 
     if player is None:
-        player = repo.create("Tester", "pw", "M")
+        player = await repo.create("Tester", "pw", "M")
     for key, value in (overrides or {}).items():
         setattr(player, key, value)
 
     io = FakeIO(keys)
-    ctx = GameCtx(
-        player=player, repo=repo, io=io, conn=conn, config=config, igms=igms
-    )
+    ctx = GameCtx(player=player, db=database, io=io, config=config, igms=igms)
     ctx.rng = random.Random(0)
 
     try:
         await run_session(ctx, start=start)
     except OutOfKeys:
-        ctx.save()
+        await ctx.save()
 
-    reloaded = repo.get(player.id)
+    reloaded = await repo.get(player.id)
     assert reloaded is not None
     return io, reloaded

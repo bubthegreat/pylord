@@ -70,15 +70,15 @@ async def test_contract():
 
 
 async def test_blackjack_player_natural_pays_three_to_two():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     offsets = _shuffle_offsets(52, {0: ("A", "S"), 2: ("K", "H")})
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -87,15 +87,15 @@ async def test_blackjack_player_natural_pays_three_to_two():
 
 
 async def test_blackjack_dealer_natural_only_player_loses():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     offsets = _shuffle_offsets(52, {1: ("A", "S"), 3: ("K", "H")})
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -103,8 +103,8 @@ async def test_blackjack_dealer_natural_only_player_loses():
 
 
 async def test_blackjack_both_natural_is_push():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     offsets = _shuffle_offsets(
         52,
@@ -117,9 +117,9 @@ async def test_blackjack_both_natural_is_push():
     )
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -127,8 +127,8 @@ async def test_blackjack_both_natural_is_push():
 
 
 async def test_blackjack_normal_win_after_standing():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     # Player: 10S + 9H = 19, stands. Dealer: 2H + 2C = 4 (default identity),
     # then hits 9D (13) then 5D (18) and stops (>= 17). Player 19 beats 18.
@@ -143,9 +143,9 @@ async def test_blackjack_normal_win_after_standing():
     )
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "S", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "S", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -153,8 +153,8 @@ async def test_blackjack_normal_win_after_standing():
 
 
 async def test_blackjack_bust_on_hit_loses_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     # Player: 10S + 9H = 19, hits 5D -> 24, busts.
     offsets = _shuffle_offsets(
@@ -167,9 +167,9 @@ async def test_blackjack_bust_on_hit_loses_bet():
     )
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "H", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "H", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -183,8 +183,8 @@ async def test_blackjack_dealer_stands_on_soft_seventeen():
     exactly the two dealt cards at value 17 -- if the dealer wrongly hit
     on soft 17 it would draw a third card and the value/hand text would
     no longer read "AD 6C ... (17)"."""
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     # Player: KS + QH = 20, stands. Dealer: AD + 6C = soft 17, must stand.
     offsets = _shuffle_offsets(
@@ -198,9 +198,9 @@ async def test_blackjack_dealer_stands_on_soft_seventeen():
     )
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["B", "100", "S", "\r", "L"], rng=SeqRandom(offsets)
+        database, repo, p, keys=["B", "100", "S", "\r", "L"], rng=SeqRandom(offsets)
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -221,12 +221,12 @@ async def test_blackjack_dealer_stands_on_soft_seventeen():
 
 
 async def test_bet_over_gold_on_hand_refused():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 50
     igm = LordCasino()
-    gctx = make_ctx(conn, repo, p, keys=["S", "500", "\r", "L"], rng=SeqRandom([]))
-    ctx = make_igm_ctx(gctx, igm)
+    gctx = make_ctx(database, repo, p, keys=["S", "500", "\r", "L"], rng=SeqRandom([]))
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -235,13 +235,13 @@ async def test_bet_over_gold_on_hand_refused():
 
 
 async def test_bet_over_level_scaled_max_refused():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.level = 1
     p.gold = 100_000
     igm = LordCasino()
-    gctx = make_ctx(conn, repo, p, keys=["S", "5000", "\r", "L"], rng=SeqRandom([]))
-    ctx = make_igm_ctx(gctx, igm)
+    gctx = make_ctx(database, repo, p, keys=["S", "5000", "\r", "L"], rng=SeqRandom([]))
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -253,15 +253,15 @@ async def test_bet_over_level_scaled_max_refused():
 
 
 async def test_slots_triple_seven_pays_ten_x():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     # _SLOT_SYMBOLS = (Cherry, Lemon, Bell, Bar, Seven); index 4 = Seven.
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([4, 4, 4])
+        database, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([4, 4, 4])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -270,15 +270,15 @@ async def test_slots_triple_seven_pays_ten_x():
 
 
 async def test_slots_two_matching_is_a_push():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     # Cherry, Cherry, Lemon -- two match, not three.
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([0, 0, 1])
+        database, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([0, 0, 1])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -286,15 +286,15 @@ async def test_slots_two_matching_is_a_push():
 
 
 async def test_slots_no_match_loses_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     # Cherry, Lemon, Bell -- no match at all.
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([0, 1, 2])
+        database, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([0, 1, 2])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -302,14 +302,14 @@ async def test_slots_no_match_loses_bet():
 
 
 async def test_slots_triple_lemon_has_no_jackpot_tier_pushes_instead():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     gctx = make_ctx(
-        conn, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([1, 1, 1])
+        database, repo, p, keys=["S", "100", "\r", "L"], rng=SeqRandom([1, 1, 1])
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -320,18 +320,18 @@ async def test_slots_triple_lemon_has_no_jackpot_tier_pushes_instead():
 
 
 async def test_roulette_number_bet_hit_pays_35x():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["R", "100", "N", "17", "\r", "L"],
         rng=SeqRandom([17]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -340,18 +340,18 @@ async def test_roulette_number_bet_hit_pays_35x():
 
 
 async def test_roulette_number_bet_miss_loses_bet():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["R", "100", "N", "17", "\r", "L"],
         rng=SeqRandom([18]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -359,19 +359,19 @@ async def test_roulette_number_bet_miss_loses_bet():
 
 
 async def test_roulette_color_bet_hit_pays_2x():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     # 1 is a red number.
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["R", "100", "C", "R", "\r", "L"],
         rng=SeqRandom([1]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 
@@ -379,18 +379,18 @@ async def test_roulette_color_bet_hit_pays_2x():
 
 
 async def test_roulette_color_bet_miss_on_green_zero():
-    conn, repo = make_db()
-    p = repo.create("Hero", "pw", "M")
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
     p.gold = 1000
     igm = LordCasino()
     gctx = make_ctx(
-        conn,
+        database,
         repo,
         p,
         keys=["R", "100", "C", "R", "\r", "L"],
         rng=SeqRandom([0]),
     )
-    ctx = make_igm_ctx(gctx, igm)
+    ctx = await make_igm_ctx(gctx, igm)
 
     await igm.enter(ctx)
 

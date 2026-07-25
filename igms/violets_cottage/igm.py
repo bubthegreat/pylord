@@ -27,7 +27,7 @@ module docstring: the guardrailed façade is scoped on purpose). But
 reachable through ``ctx.player`` either.
 
 :class:`~pylord.hooks.IgmMaintContext` (what :meth:`daily_maint` receives)
-*does* expose ``.conn``/``.repo`` (there's no visiting player to guard
+*does* expose ``.state``/``.repo`` (there's no visiting player to guard
 there), so this IGM bridges the two: once a day, :meth:`daily_maint` asks
 ``npc_state.married_to_violet`` who (if anyone) is married to Violet and
 caches a per-player boolean (``married_violet:<player_id>``) in its own
@@ -157,7 +157,7 @@ class VioletsCottage(IGM):
         await ctx.term.pause()
 
     async def daily_maint(self, ctx: IgmMaintContext) -> None:
-        married_id = npc_state.married_to_violet(ctx.conn)
+        married_id = ctx.state.get_int(npc_state.KEY_VIOLET, npc_state.NONE)
         for player in ctx.repo.all_players():
             ctx.store.delete(f"impress:{player.id}")
             ctx.store.delete(f"tea:{player.id}")

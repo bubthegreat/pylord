@@ -207,7 +207,7 @@ async def find_attackable(ctx: GameCtx) -> Player | None:
     needle = raw.strip().upper()
     if not needle:
         return None
-    for candidate in ctx.repo.all_players():
+    for candidate in await ctx.repo.all_players():
         if needle in candidate.name.upper():
             choice = await ctx.io.menu(
                 {"Y": "yes", "N": "no"},
@@ -246,7 +246,7 @@ async def run_attack(ctx: GameCtx, target: Player, *, from_inn: bool) -> bool:
     # (reference/lord.js:16480, player.put() ahead of attack_player()), so
     # a drop mid-fight can't leave the victim dead and looted while the
     # attacker's spent fight and taken loot vanish.
-    ctx.save()
+    await ctx.save()
 
     await ctx.io.write(
         f"\n\n  `2** `%PLAYER FIGHT `2**\n\n  You have encountered {target.name}`2!!\n\n"
@@ -367,10 +367,10 @@ async def _win(ctx: GameCtx, target: Player, fight: Fight, from_inn: bool) -> No
     # notification mail and the news line either all land or none do.
     # (These used to be three separate commits, so a failure between them
     # could leave a killed player nobody was told about.)
-    with ctx.db.transaction() as db:
-        db.players.save_in_transaction(target)
-        db.mail.send(target.id, p.name, text=mail_body)
-    ctx.news(f"`.  `0{p.name}`2 has killed `5{target.name}`2!")  # lord.js:7964
+    async with ctx.db.transaction() as tx:
+        await tx.players.save(target)
+        await tx.mail.send(target.id, p.name, text=mail_body)
+    await ctx.news(f"`.  `0{p.name}`2 has killed `5{target.name}`2!")  # lord.js:7964
 
     await ctx.io.write("\n".join(lines) + "\n")
     await ctx.io.pause()
@@ -429,10 +429,10 @@ async def _lose(ctx: GameCtx, target: Player, fight: Fight) -> None:
         f"\n`.  `2You have killed `0{p.name}`2 in self defense!\n"
         f"`.  `2You receive `%{gained}`2 experience!"
     )  # reference/lord.js:7829
-    with ctx.db.transaction() as db:
-        db.players.save_in_transaction(target)
-        db.mail.send(target.id, p.name, text=mail_body)
-    ctx.news(f"`.  `0{target.name}`2 has killed `5{p.name}`2 in self defence!")  # lord.js:7852
+    async with ctx.db.transaction() as tx:
+        await tx.players.save(target)
+        await tx.mail.send(target.id, p.name, text=mail_body)
+    await ctx.news(f"`.  `0{target.name}`2 has killed `5{p.name}`2 in self defence!")  # lord.js:7852
 
     lines = [
         "",
@@ -518,7 +518,7 @@ async def _list(ctx: GameCtx) -> None:
     p = ctx.player
     players = [
         pl
-        for pl in ctx.repo.all_players()
+        for pl in await ctx.repo.all_players()
         if pl.id != p.id and pl.alive and not pl.at_inn and not pl.online
     ]
     players.sort(key=lambda pl: pl.exp, reverse=True)
