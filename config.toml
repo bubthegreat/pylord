@@ -42,3 +42,4 @@ the_latrine = true
 # recreations from surviving archive docs (see each igms/<name>/igm.py
 # for the recorded/invented split).
 werewolf = true
+outlands_tavern = true

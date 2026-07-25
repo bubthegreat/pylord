@@ -55,6 +55,7 @@ igms:
   arena_of_lords: true
   the_latrine: true
   werewolf: true
+  outlands_tavern: true
 
 game:
   forest_fights_per_day: 15

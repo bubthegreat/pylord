@@ -6,19 +6,22 @@ original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-Thirteen bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
+Fourteen bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
 `sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`,
 `lord_casino`, `apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
-`arena_of_lords`, `the_latrine`, and `werewolf` -- from a few screens each to
-a full mini-game. A sysop who doesn't want one turns it off in
-`config.toml` under `[igms]`. Add your own alongside them -- IGMs ship
-with the build, so a new one arrives with the next release rather than
+`arena_of_lords`, `the_latrine`, `werewolf`, and `outlands_tavern` -- from a
+few screens each to a full mini-game. A sysop who doesn't want one turns it
+off in `config.toml` under `[igms]`. Add your own alongside them -- IGMs
+ship with the build, so a new one arrives with the next release rather than
 being copied onto a server.
 
-None of the classic third-party IGMs has surviving source -- they were
+Most of the classic third-party IGMs have no surviving source -- they were
 separate DOS executables, and `reference/lord.js` models only the base
-game -- so every one of these is a recreation from the historical premise
-with its invented parts flagged in its module docstring.
+game -- so most of these are a recreation from the historical premise with
+its invented parts flagged in its module docstring. `outlands_tavern` is a
+partial exception: its archive ships two real `.RHP` "Random Happening"
+scripts in readable source, one of which is ported verbatim -- see its
+module docstring for the direct-port/recreation split.
 
 ## Writing an IGM
 
