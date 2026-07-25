@@ -46,7 +46,7 @@ and an interest in repeat custom.
   real IGM has exactly one fixed opponent; this recreation's three-tier
   ladder is itself invented (see below), but the top tier, previously
   invented as "Lord Vane," is now named after the real one.
-* **No running, but you can beg for mercy** -- ``WHATDONE.DOC``'s v1.4b
+* **No running, but you can beg for mercy** -- ``WHATDONE.DOC``'s Ver 1.4á
   entry: "You can no longer 'run' from Tyr in the Arena as there would be
   no place to run 'TO' in an event like that. But you CAN beg for mercy
   now." This recreation already had both halves right by design (arena
@@ -88,7 +88,7 @@ equivalent in this recreation):
   ``Player`` model has no fairy-capture flag to hook into (see
   ``docs/deviations.md``'s Forest/Bank fairy-related rows for the same
   gap elsewhere).
-* ``WHATDONE.DOC`` v1.4b's "Added option with dying man" and "Added
+* ``WHATDONE.DOC`` Ver 1.4á's "Added option with dying man" and "Added
   tapestry on waiting room wall to increase amount of options" -- both are
   one-line changelog entries with no description anywhere of what they
   actually do.

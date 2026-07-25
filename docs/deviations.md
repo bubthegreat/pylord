@@ -158,11 +158,11 @@ mechanic-by-mechanic breakdown.
 | Three-tier champion ladder ("Bruiser Hal," "The Widow Grey," "Tyr"), and every hp/strength multiplier, entry fee, purse formula, streak bonus, and daily bout cap -- no source equivalent | The real IGM has exactly one fixed opponent ("Tyr the gladiator of the arena," `ARENA.DOC`) and documents no formulas anywhere -- only prose describing the fight and its win condition. The ladder structure and every number in it remain this recreation's own invention; only the name of the top tier was adopted (see below). |
 | Random post-win "extras" (level/weapon/hitpoint/charm/strength/defence changes) not ported | `ARENA.DOC`: "I also threw in some random extras that will add alot of excitement to the game including changes in level, weapons, hit point, charm, strength, defence, and etc...." No trigger odds, magnitude, or direction (gain vs. loss) is documented for any of it -- too vague to responsibly reproduce. |
 | Fairy tie-in not ported | `ARENA.DOC`: "the arena was basically designed so you had something to do with a fairy if you catch one." This project's `Player` model has no fairy-capture flag (same gap already recorded for the Forest/Bank fairy rows above). |
-| `WHATDONE.DOC` v1.4b's "option with dying man" and "tapestry on waiting room wall to increase amount of options" not ported | Both are one-line changelog entries with no description anywhere of what they actually do; nothing to port. |
+| `WHATDONE.DOC` Ver 1.4á's "option with dying man" and "tapestry on waiting room wall to increase amount of options" not ported | Both are one-line changelog entries with no description anywhere of what they actually do; nothing to port. |
 
 Adopted: the top-tier champion is now named "Tyr" (`ARENA.DOC`'s one fixed
 opponent, verbatim); the yield option's flavor text now reads as begging
-for mercy, matching the documented phrase from `WHATDONE.DOC` v1.4b ("You
+for mercy, matching the documented phrase from `WHATDONE.DOC` Ver 1.4á ("You
 can no longer 'run' from Tyr... But you CAN beg for mercy now"); and a win
 can now pay gems as well as gold (`ARENA.DOC`'s "gold or gems" phrasing),
 wired through the combat engine's existing overkill loot bonus
