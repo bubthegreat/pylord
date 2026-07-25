@@ -29,6 +29,22 @@ persistence:
   storageClass: longhorn-retain
   size: 1Gi
 
+# All twelve bundled IGMs are on in this realm. The chart seeds any that
+# aren't on the volume yet (see the chart's init container).
+igms:
+  baraks_house: true
+  sandtigers_bar: true
+  violets_cottage: true
+  turgons_house: true
+  warriors_graveyard: true
+  lord_casino: true
+  apothecary: true
+  gem_trader: true
+  old_skull_inn: true
+  abandoned_mines: true
+  arena_of_lords: true
+  the_latrine: true
+
 game:
   forest_fights_per_day: 15
   player_fights_per_day: 3

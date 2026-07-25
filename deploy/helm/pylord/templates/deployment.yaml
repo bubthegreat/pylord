@@ -57,12 +57,26 @@ spec:
             - |
               set -e
               target="{{ .Values.persistence.mountPath }}/igms"
-              if [ -d "$target" ]; then
-                echo "igms/ already present -- leaving it alone"
-              else
-                echo "seeding bundled IGMs into $target"
-                cp -r /app/igms "$target"
-              fi
+              mkdir -p "$target"
+              # Seed per-IGM, not all-or-nothing: a release that adds new
+              # bundled IGMs must be able to put them on an already-seeded
+              # volume. The manifest records what has been offered before,
+              # so an IGM a sysop deliberately deleted stays deleted, and
+              # local edits are never overwritten.
+              manifest="$target/.seeded"
+              touch "$manifest"
+              for dir in /app/igms/*/; do
+                name=$(basename "$dir")
+                if grep -qx "$name" "$manifest" 2>/dev/null; then
+                  continue
+                fi
+                if [ ! -d "$target/$name" ]; then
+                  echo "seeding $name"
+                  cp -r "$dir" "$target/$name"
+                fi
+                echo "$name" >> "$manifest"
+              done
+              echo "IGM seeding complete"
           volumeMounts:
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
