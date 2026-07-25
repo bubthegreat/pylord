@@ -247,11 +247,14 @@ and wouldn't be sheltering a player from, resource by resource:
   bucket with an identical exposure profile, not a new hole. No additional
   bound was invented for gold beyond the archive's own recorded cap.
 * **Gems.** This is the one resource where storing it here is genuinely
-  new. Exactly two paths in this project ever touch on-hand gems:
-  ``forest.py``'s troll event (``_event_troll``, a death that zeroes
-  ``player.gems`` outright) and ``pvp.py``'s ``_win`` (halves the *loser's*
-  on-hand gems). Nothing in this project shelters gems from either path
-  today -- there is no "gem bank." Parking gems in Xenon's daycare-adjacent
+  new. Exactly two paths in this project ever take on-hand gems
+  *involuntarily* (a third, ``forest.py``'s old-woman event, is a
+  player-confirmed Y/N trade of a gem for healing -- not a loss to guard
+  against, and out of scope for this analysis): ``forest.py``'s troll
+  event (``_event_troll``, a death that zeroes ``player.gems`` outright)
+  and ``pvp.py``'s ``_win`` (halves the *loser's* on-hand gems). Nothing
+  in this project shelters gems from either involuntary path today --
+  there is no "gem bank." Parking gems in Xenon's daycare-adjacent
   storage would be the first such shelter. Because ``pylord.hooks.IGM``
   only exposes ``enter``/``daily_maint``/``forest_event``/``inn_event`` (no
   "a death/PvP-loss just happened to this player" callback exists anywhere
@@ -306,6 +309,7 @@ and wouldn't be sheltering a player from, resource by resource:
 
 from __future__ import annotations
 
+from pylord.engine.limits import GOLD_CAP, STAT_CAP
 from pylord.hooks import IGM, IgmContext, IgmMaintContext
 
 _MENU = (
@@ -546,8 +550,21 @@ class XenonsTownSquare(IGM):
             )
             await ctx.term.pause()
             return
-        p.gold += amt
-        ctx.store.set(f"gold:{p.id}", stored - amt)
+        # Never take out more than actually fits on hand. PlayerView clamps
+        # p.gold at GOLD_CAP regardless, so debiting the store by the full
+        # amt while only crediting the clamped remainder would silently
+        # destroy the difference; keep whatever doesn't fit safely in
+        # storage instead (bank.py's own withdraw clamps the request down
+        # the same way before applying it).
+        actual = min(amt, max(0, GOLD_CAP - p.gold))
+        if actual < 1:
+            await ctx.term.write(
+                "\n  `2You're already carrying all the gold you can hold.\n"
+            )
+            await ctx.term.pause()
+            return
+        p.gold += actual
+        ctx.store.set(f"gold:{p.id}", stored - actual)
         await ctx.term.write("\n  `2Withdrawing items...\n")
         await ctx.term.pause()
 
@@ -566,8 +583,17 @@ class XenonsTownSquare(IGM):
             )
             await ctx.term.pause()
             return
-        p.gems += amt
-        ctx.store.set(f"gems:{p.id}", stored - amt)
+        # See _withdraw_money's identical comment: never destroy the
+        # overflow, keep it in storage.
+        actual = min(amt, max(0, STAT_CAP - p.gems))
+        if actual < 1:
+            await ctx.term.write(
+                "\n  `2You're already carrying all the gems you can hold.\n"
+            )
+            await ctx.term.pause()
+            return
+        p.gems += actual
+        ctx.store.set(f"gems:{p.id}", stored - actual)
         await ctx.term.write("\n  `2Withdrawing items...\n")
         await ctx.term.pause()
 
@@ -641,8 +667,17 @@ class XenonsTownSquare(IGM):
             )
             await ctx.term.pause()
             return
-        p.kids += amt
-        ctx.store.set(f"kids:{p.id}", stored - amt)
+        # See _withdraw_money's identical comment: never destroy the
+        # overflow, keep it in daycare.
+        actual = min(amt, max(0, STAT_CAP - p.kids))
+        if actual < 1:
+            await ctx.term.write(
+                "\n  `2You can't watch after any more kids than you already\n  have!\n"
+            )
+            await ctx.term.pause()
+            return
+        p.kids += actual
+        ctx.store.set(f"kids:{p.id}", stored - actual)
         await ctx.term.write("\n  `2Depositing items...\n")
         await ctx.term.pause()
 

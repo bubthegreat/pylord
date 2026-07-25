@@ -27,6 +27,7 @@ from igms.xenons_town_square.igm import (
     TALK_LINE_MAXLEN,
     XenonsTownSquare,
 )
+from pylord.engine.limits import GOLD_CAP, STAT_CAP
 from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
@@ -175,6 +176,48 @@ async def test_withdraw_gems_more_than_stored_refused():
     assert ctx.store.get(f"gems:{p.id}") == 5
 
 
+async def test_withdraw_money_near_cap_keeps_the_overflow_stored():
+    """A valid withdrawal (amt <= stored) must never destroy gold: if
+    p.gold + amt would overflow GOLD_CAP, only what fits is credited and
+    debited -- the rest stays safely in Xenon's storage rather than
+    vanishing to PlayerView's silent clamp."""
+    keys = ["W", "M", "1000", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, gold=GOLD_CAP - 100)
+    ctx.store.set(f"gold:{p.id}", 1000)
+    await XenonsTownSquare().enter(ctx)
+    assert p.gold == GOLD_CAP
+    assert ctx.store.get(f"gold:{p.id}") == 900  # only 100 actually withdrawn
+
+
+async def test_withdraw_money_no_room_refused_without_debiting_storage():
+    keys = ["W", "M", "100", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, gold=GOLD_CAP)
+    ctx.store.set(f"gold:{p.id}", 500)
+    await XenonsTownSquare().enter(ctx)
+    assert p.gold == GOLD_CAP
+    assert ctx.store.get(f"gold:{p.id}") == 500
+    assert any("carrying all the gold" in line for line in ctx.term.output)
+
+
+async def test_withdraw_gems_near_cap_keeps_the_overflow_stored():
+    keys = ["W", "G", "500", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, gems=STAT_CAP - 20)
+    ctx.store.set(f"gems:{p.id}", 500)
+    await XenonsTownSquare().enter(ctx)
+    assert p.gems == STAT_CAP
+    assert ctx.store.get(f"gems:{p.id}") == 480  # only 20 actually withdrawn
+
+
+async def test_withdraw_gems_no_room_refused_without_debiting_storage():
+    keys = ["W", "G", "50", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, gems=STAT_CAP)
+    ctx.store.set(f"gems:{p.id}", 200)
+    await XenonsTownSquare().enter(ctx)
+    assert p.gems == STAT_CAP
+    assert ctx.store.get(f"gems:{p.id}") == 200
+    assert any("carrying all the gems" in line for line in ctx.term.output)
+
+
 def test_deposit_withdraw_round_trip_is_lossless():
     """Zero-sum storage: no fee/interest either direction -- what goes in
     is exactly what comes back out (recorded: one shared "no loans"
@@ -224,6 +267,28 @@ async def test_take_more_children_than_stored_refused():
     await XenonsTownSquare().enter(ctx)
     assert p.kids == 0
     assert any("a kidnapper" in line for line in ctx.term.output)
+
+
+async def test_take_children_near_cap_keeps_the_overflow_in_daycare():
+    """Same overflow guard as withdrawing gold/gems: a valid take (amt <=
+    stored) must never destroy kids -- whatever doesn't fit under
+    STAT_CAP stays safely in the daycare."""
+    keys = ["G", "T", "50", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, kids=STAT_CAP - 10, rng=SeqRandom([0]))
+    ctx.store.set(f"kids:{p.id}", 100)
+    await XenonsTownSquare().enter(ctx)
+    assert p.kids == STAT_CAP
+    assert ctx.store.get(f"kids:{p.id}") == 90  # only 10 actually taken
+
+
+async def test_take_children_no_room_refused_without_debiting_daycare():
+    keys = ["G", "T", "5", "\r", "Q", "Q"]
+    _gctx, ctx, p, _db = await _visit(keys, kids=STAT_CAP, rng=SeqRandom([0]))
+    ctx.store.set(f"kids:{p.id}", 20)
+    await XenonsTownSquare().enter(ctx)
+    assert p.kids == STAT_CAP
+    assert ctx.store.get(f"kids:{p.id}") == 20
+    assert any("can't watch after any more kids" in line for line in ctx.term.output)
 
 
 async def test_check_children_reports_none():
