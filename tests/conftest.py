@@ -7,15 +7,23 @@ collations, reserved words, what a ``VARCHAR`` needs a length for) that
 "the tests pass" on SQLite alone does not mean the game works in
 production.
 
-So: set ``PYLORD_TEST_DB_URL`` to a MySQL URL and every ``:memory:`` request
-is redirected to a private, freshly-created database on that server. The
-same 500-odd tests then exercise the real dialect, and CI runs them both
-ways.
+Set ``PYLORD_TEST_DB_URL`` to a MySQL URL and the same 500-odd tests run
+against that server instead. CI runs them both ways.
 
-A private database per request, rather than one shared and emptied
-in between, because ``:memory:`` means exactly that under SQLite's
-``StaticPool``: a test that opens two of them expects two unrelated
-realms, right down to both their first characters getting id 1.
+**How the redirect works.** One database is created for the whole session
+and every ``connect()`` hands back a handle on it; between tests its tables
+are truncated. Truncation (not ``DELETE``) because it also resets
+``AUTO_INCREMENT``, and a fair number of tests assume the first character
+created is id 1 -- IGM store keys like ``"bouts:1"`` are written that way.
+
+An earlier version gave every ``connect()`` call its own freshly created
+database, on the theory that ``:memory:`` means a private realm under
+SQLite's ``StaticPool`` and two calls should not see each other. True, but
+nothing needs it: of the nine tests that open a second database, every one
+is *reopening the same realm* to inspect it. That fidelity cost a
+``CREATE DATABASE`` and a ``DROP DATABASE`` per connection, which is the
+most expensive statement pair in the file, and it made the MySQL run take
+minutes per test file.
 """
 
 from __future__ import annotations
@@ -26,9 +34,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from pylord import data
+from pylord import data, schema
 
 _TEST_DB_URL = os.environ.get("PYLORD_TEST_DB_URL", "")
+
+#: The session's database, created once by ``_test_database`` below.
+_DB_NAME = "pylord_test"
 
 
 def pytest_report_header(config):
@@ -44,55 +55,92 @@ def _url(url) -> str:
     return url.render_as_string(hide_password=False)
 
 
-def _server_url() -> str:
-    """``_TEST_DB_URL`` with its database name stripped, for CREATE/DROP."""
-    return _url(make_url(_TEST_DB_URL).set(database=""))
-
-
-async def _run(sql: str) -> None:
-    engine = data.create_engine(_server_url())
+async def _exec(url: str, *statements: str) -> None:
+    engine = data.create_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text(sql))
+            for statement in statements:
+                await conn.execute(text(statement))
     finally:
         await engine.dispose()
 
 
-@pytest.fixture(autouse=True)
-async def _redirect_in_memory_databases(monkeypatch):
+@pytest.fixture(scope="session")
+def test_db_url() -> str:
+    """The URL every ``connect()`` is redirected to, or "" for SQLite."""
     if not _TEST_DB_URL:
+        return ""
+    return _url(make_url(_TEST_DB_URL).set(database=_DB_NAME))
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _create_test_database(test_db_url):
+    """One database for the whole run."""
+    if not test_db_url:
         yield
         return
 
-    base = make_url(_TEST_DB_URL)
+    server = _url(make_url(_TEST_DB_URL).set(database=""))
+    await _exec(
+        server,
+        f"DROP DATABASE IF EXISTS `{_DB_NAME}`",
+        f"CREATE DATABASE `{_DB_NAME}`",
+    )
+    # Build the tables now, so the per-test reset has something to
+    # truncate before any test has connected.
+    db = await data.connect(test_db_url)
+    await db.dispose()
+    try:
+        yield
+    finally:
+        await _exec(server, f"DROP DATABASE IF EXISTS `{_DB_NAME}`")
+
+
+def _truncate_all() -> list[str]:
+    """Empty every table and reset its id counter.
+
+    ``TRUNCATE`` rather than ``DELETE`` because it also resets
+    ``AUTO_INCREMENT``, and a fair number of tests assume the first
+    character created is id 1 -- IGM store keys like ``"bouts:1"`` are
+    written that way.
+    """
+    return [f"TRUNCATE TABLE `{t.name}`" for t in schema.metadata.sorted_tables]
+
+
+@pytest.fixture(autouse=True)
+async def _redirect_and_reset(test_db_url, monkeypatch):
+    """Point ``connect()`` at the session database, with SQLite's meaning.
+
+    The two forms the suite uses mean different things, and the difference
+    matters -- a test may play two whole sessions, each expecting its own
+    empty realm:
+
+    * ``":memory:"`` is a *fresh, private* realm. Under SQLite's
+      ``StaticPool`` each such call really is a separate database, so this
+      empties the tables before handing one back.
+    * a file path is *the same* realm reopened -- how the server, CLI and
+      schema tests inspect what the code under test just wrote. Handed
+      back untouched.
+    """
+    if not test_db_url:
+        yield
+        return
+
     real_connect = data.connect
-    created: list[str] = []
-    # Named per test, so a leftover database says which test leaked it.
-    prefix = os.environ.get("PYTEST_CURRENT_TEST", "t").split("::")[-1]
-    prefix = "".join(c if c.isalnum() else "_" for c in prefix)[:40]
 
     async def connect(url: str, **kwargs):
         if url == ":memory:":
-            name = f"lordt_{abs(hash(prefix)) % 10**8}_{len(created)}"
-            await _run(f"CREATE DATABASE IF NOT EXISTS `{name}`")
-            created.append(name)
-            url = _url(base.set(database=name))
-        elif url.endswith(".db"):
-            # A file path means "the same database reopened", which the
-            # per-test database already models.
-            name = f"lordt_{abs(hash(prefix + url)) % 10**8}_file"
-            await _run(f"CREATE DATABASE IF NOT EXISTS `{name}`")
-            if name not in created:
-                created.append(name)
-            url = _url(base.set(database=name))
+            await _exec(test_db_url, *_truncate_all())
+            url = test_db_url
+        elif not url.startswith(("sqlite", "mysql", "postgresql")):
+            url = test_db_url  # a file path: the same realm, left as it is
         return await real_connect(url, **kwargs)
 
     monkeypatch.setattr(data, "connect", connect)
     try:
         yield
     finally:
-        for name in created:
-            await _run(f"DROP DATABASE IF EXISTS `{name}`")
+        await _exec(test_db_url, *_truncate_all())
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +148,7 @@ async def _close_databases(monkeypatch):
     """Dispose every database a test opened, once it is done.
 
     Defined after the redirect above so it tears down *first*: pools are
-    disposed before the databases they point at are dropped.
+    disposed before the tables they point at are truncated.
 
     Tests call ``connect()`` freely and rarely close, which costs nothing
     on an in-memory SQLite database. Against a real server each of those
