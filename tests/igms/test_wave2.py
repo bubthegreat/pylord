@@ -227,6 +227,70 @@ async def test_arena_refuses_a_bout_you_cannot_pay_for():
     assert "No coin, no bout" in _screen(gctx)
 
 
+async def test_menu_names_the_documented_gladiator():
+    """ARENA.DOC: 'you can win LOTS of gold or gems IF you can beat "TYR"
+    the gladiator of the arena' -- the real IGM's one fixed opponent's
+    name, adopted for this recreation's top-tier champion (see the module
+    docstring's audit notes)."""
+    igm = ArenaOfLords()
+    gctx, ctx, _p, _ = await _visit(igm, ["L"])
+    await igm.enter(ctx)
+    assert "Tyr" in _screen(gctx)
+
+
+async def test_arena_yield_begs_for_mercy():
+    """WHATDONE.DOC's v1.4b entry: 'You can no longer "run" from Tyr in
+    the Arena... But you CAN beg for mercy now.' This recreation already
+    blocked running (is_arena) and had a yield option; the flavor text now
+    matches the documented phrase."""
+    igm = ArenaOfLords()
+    gctx, ctx, p, _ = await _visit(
+        igm, ["1", "Y", "x", "L"], rng=SeqRandom([0]), level=1, gold=5_000
+    )
+    await igm.enter(ctx)
+    assert p.gold == 5_000 - 200  # fee spent, no purse -- mercy, not a win
+    assert "beg for mercy" in _screen(gctx)
+
+
+async def test_arena_win_credits_overkill_gem():
+    """Fight._loot_bonus's roll==0 branch sets fight.gem_found and already
+    announces "You find a gem!" in the round text (combat.py); this pins
+    that the Arena actually credits the gem, wiring ARENA.DOC's "win LOTS
+    of gold or gems" into the engine's existing overkill mechanic --
+    same pattern as igms/warriors_graveyard/igm.py."""
+    igm = ArenaOfLords()
+    gctx, ctx, p, _ = await _visit(
+        igm,
+        ["1", "A", "x", "L"],
+        # opening (first strike), dmg base roll (of str//2=5) -> 4,
+        # crit roll (of 10) -> 9 i.e. crit_roll=10 (>9, POWER MOVE),
+        # loot-bonus roll (of 3) -> 0 (gem_found).
+        rng=SeqRandom([0, 4, 9, 0]),
+        level=1,
+        gold=5_000,
+    )
+    await igm.enter(ctx)
+    assert p.gems == 1
+    assert p.gold == 5_000 - 200 + 400
+    assert "find a gem" in _screen(gctx)
+
+
+async def test_arena_win_credits_overkill_bonus_gold():
+    """Same overkill setup, loot-bonus roll=1 -> bonus_gold; the purse is
+    doubled, not just narrated."""
+    igm = ArenaOfLords()
+    gctx, ctx, p, _ = await _visit(
+        igm,
+        ["1", "A", "x", "L"],
+        rng=SeqRandom([0, 4, 9, 1]),
+        level=1,
+        gold=5_000,
+    )
+    await igm.enter(ctx)
+    assert p.gold == 5_000 - 200 + 400 * 2
+    assert "more gold than expected" in _screen(gctx)
+
+
 # --- The Latrine -----------------------------------------------------------
 
 

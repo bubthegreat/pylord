@@ -133,3 +133,39 @@ docstring for the full mechanic-by-mechanic breakdown).
 | Not ported: the Black Market (`blackmarket`, `SANDBAR.PAS` :708-1521), the Old Witch (`oldwitch`, :1526-1798), and Sandtiger's keyword-driven free-text chat with its per-exchange drink-purchase gate (`talksandtiger`/`drinkcheck`, `SBARADD.PAS` :907-1244/:752-875) | Each is real source content with no equivalent anywhere in this recreation's five-item menu (permanent stat/name/sex/class purchases and a 6-tier weapon/armor shop; PvP curse/mind-fry/dwarf/abandonment hexes that mail the victim a penalty; a free-text keyword chat gated behind buying Sandtiger a drink). None is reachable from any action this port implements and none is covered by this task's brief/tests; listed here (and in the module docstring's "Not ported" section) so a future task doesn't have to rediscover the gap. |
 | Whole-visit forest-fight cost and once-per-day play-count gate not ported | `opening()`/`chktheboy` spend a forest fight and cap plays via a per-player daily counter (`epd`, `sandbar.dat`'s `intoday`/`ltoday` arrays, `SANDBAR.PAS` :443-454/:2663-2696). This recreation charges no forest fight and has no once-per-day gate at all, matching the "Other Places" hub convention shared by all six starter IGMs (`pylord/engine/scenes/other_places.py` never deducts a fight to enter any of them). Changing that would be a cross-cutting, house-wide change out of scope for a single-IGM audit. |
 | (S)tories are four verbatim SANDBAR.PAS/SBARADD.PAS tales stitched into one write + one pause each, not their original drink-gated, multi-`moreprompt()` telling | Real text pulled from `talksandtiger()`'s `HIST`/`STOR` branch (`SBARADD.PAS` :1055-1223): Halder's Story, The Barak Life, Aragorn vs. Olodrin, Chance's Exile. Presented as a single flavor pick (matching this recreation's existing `_stories()` shape) rather than a keyword chat requiring a purchased drink and multiple keypresses through the telling. |
+
+## Arena of Lords vs. ARENA.DOC/WHATDONE.DOC (archive documentation, no source)
+
+Arena of Lords was built as a recreation from the historical premise (an
+arena that pays purses), believing no material survived. This audit found
+the real **The Arena Of Lords v2.0**'s archive (`igms_to_port/arena20.zip`,
+Gary Hall aka "Slammin'", 1995) -- but only a PKLITE-packed `ARENA.EXE`, no
+source, plus prose docs (`ARENA.DOC`, `TECHNOTE.DOC`, `WHATDONE.DOC`,
+`FILE_ID.DIZ`) and an ANSI title-art data file (`ARENA.DAT`, verified to
+hold no gameplay text). **Documented recreation, verified against archive
+docs -- not direct-port-verified** like Barak's House/Sandtiger's Bar
+(real Pascal source survived for those); here there is only prose, and it
+records no formulas at all, only what the game *does*. A second archive,
+`igms_to_port/arenav2.zip` ("Haldar's Arena v2.0b", Bram Luknight), was
+read and ruled out: a different author's arena IGM, paid for entirely in
+gems rather than gold, against sysop-configured monster data -- nothing
+about this recreation matches Haldar's premise better than Gary Hall's.
+See `igms/arena_of_lords/igm.py`'s module docstring for the full
+mechanic-by-mechanic breakdown.
+
+| Deviation | Reason |
+|-----------|--------|
+| Three-tier champion ladder ("Bruiser Hal," "The Widow Grey," "Tyr"), and every hp/strength multiplier, entry fee, purse formula, streak bonus, and daily bout cap -- no source equivalent | The real IGM has exactly one fixed opponent ("Tyr the gladiator of the arena," `ARENA.DOC`) and documents no formulas anywhere -- only prose describing the fight and its win condition. The ladder structure and every number in it remain this recreation's own invention; only the name of the top tier was adopted (see below). |
+| Random post-win "extras" (level/weapon/hitpoint/charm/strength/defence changes) not ported | `ARENA.DOC`: "I also threw in some random extras that will add alot of excitement to the game including changes in level, weapons, hit point, charm, strength, defence, and etc...." No trigger odds, magnitude, or direction (gain vs. loss) is documented for any of it -- too vague to responsibly reproduce. |
+| Fairy tie-in not ported | `ARENA.DOC`: "the arena was basically designed so you had something to do with a fairy if you catch one." This project's `Player` model has no fairy-capture flag (same gap already recorded for the Forest/Bank fairy rows above). |
+| `WHATDONE.DOC` v1.4b's "option with dying man" and "tapestry on waiting room wall to increase amount of options" not ported | Both are one-line changelog entries with no description anywhere of what they actually do; nothing to port. |
+
+Adopted: the top-tier champion is now named "Tyr" (`ARENA.DOC`'s one fixed
+opponent, verbatim); the yield option's flavor text now reads as begging
+for mercy, matching the documented phrase from `WHATDONE.DOC` v1.4b ("You
+can no longer 'run' from Tyr... But you CAN beg for mercy now"); and a win
+can now pay gems as well as gold (`ARENA.DOC`'s "gold or gems" phrasing),
+wired through the combat engine's existing overkill loot bonus
+(`Fight.gem_found`/`bonus_gold`, `combat.py`) rather than a newly-invented
+roll, matching `igms/warriors_graveyard/igm.py`'s own use of the same
+mechanic.
