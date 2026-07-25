@@ -50,6 +50,8 @@ if TYPE_CHECKING:
 
 _GOLD_CAP = 2_000_000_000
 _STR_CAP = 32000  # reference/lord.js:10220-10222
+_STR_FLOOR = 5  # reference/lord.js:10107 -- selling never drops you below 5
+_DEF_FLOOR = 0  # reference/lord.js:10502
 _DEF_CAP = 32000  # reference/lord.js:10426-10428 ("DIFF: used to be 3200")
 
 _DIGITS = "0123456789"
@@ -172,7 +174,23 @@ async def weapons(ctx: GameCtx) -> str:
 
 
 async def _buy_weapon(ctx: GameCtx) -> None:
-    """Port of ``buy_weapon()``. reference/lord.js:10130-10225."""
+    """Port of ``buy_weapon()``, with one deliberate change.
+    reference/lord.js:10130-10225.
+
+    **Trade-in (not lord.js).** lord.js refuses to sell you a weapon while
+    you are carrying one ("you can't carry two!", :10195-10202), so
+    upgrading means two errands: sell, then buy. You can only hold one
+    weapon, so the shop takes the old one in part-exchange instead.
+
+    Order matters, and it is the order lord.js checks in: you must be able
+    to *wield* the new weapon, and able to *afford* it once the trade-in is
+    counted, before anything is sold. A refusal leaves you holding exactly
+    what you walked in with.
+
+    The strength requirement is measured without the old weapon's bonus,
+    since you are handing it over -- which is the figure the offer screen
+    has always shown.
+    """
     p = ctx.player
     await ctx.io.write("\n\n`2  (`0Gold: `%" + str(p.gold) + "`2)  (`00 to exit`2)\n")
     n = await _read_item_number(ctx, "  `0Number Of Weapon `2: `%")
@@ -180,14 +198,31 @@ async def _buy_weapon(ctx: GameCtx) -> None:
         return
 
     neww = data.weapon(n)
-    old_power = data.weapon(p.weapon_num).power if p.weapon_num else 0
+    oldw = data.weapon(p.weapon_num) if p.weapon_num else None
+    old_power = oldw.power if oldw else 0
     need = _need_sum(n, 10, "strength", ctx)
-
-    await ctx.io.write(
-        f'\n\n  `2"`0Hmmm I will sell you my FAVORITE `%{neww.name}`0 for `%{neww.price} `0gold!`2"\n\n\n'
-        f"  `2Note: It takes `%{need} `2strength points to weild this weapon.\n"
-        f"  `2You currently have `%{p.strength - old_power} `2strength points.\n\n"
+    # What he'll allow for the old one -- the same roll the sell counter uses.
+    trade_in = (
+        _sell_price(ctx.rng, oldw.price, p.level, p.charm, weapon=True) if oldw else 0
     )
+    bare_strength = p.strength - old_power
+
+    lines = [
+        (
+            f'\n\n  `2"`0Hmmm I will sell you my FAVORITE `%{neww.name}`0 for '
+            f'`%{neww.price} `0gold!`2"\n\n\n'
+        ),
+        f"  `2Note: It takes `%{need} `2strength points to weild this weapon.\n",
+        f"  `2You currently have `%{bare_strength} `2strength points.\n",
+    ]
+    if oldw is not None:
+        lines.append(
+            f'\n  `2"`0And I\'ll take that `%{oldw.name}`0 off your hands for '
+            f'`%{trade_in}`0 gold.`2"\n'
+        )
+    lines.append("\n")
+    await ctx.io.write("".join(lines))
+
     ich = await ctx.io.menu(
         {"Y": "yes", "N": "no"}, "  `2Buy it?  [`0N`2] : `%"
     )  # reference/lord.js:10173
@@ -197,27 +232,29 @@ async def _buy_weapon(ctx: GameCtx) -> None:
         )
         await ctx.io.pause()
         return
-    if p.strength < need:
+    if bare_strength < need:  # reference/lord.js:10187-10194
         await ctx.io.write(
             "\n  `2\"`0You silly fool! You aren't strong enough to carry\n"
             '  that weapon!`2"\n\n'
         )
         await ctx.io.pause()
         return
-    if p.weapon_num > 0:
-        await ctx.io.write(
-            "\n  `2\"`0You fool!  You already have a weapon, and you can't carry\n"
-            '  two!`2"  You realize he is right.\n\n'
-        )
-        await ctx.io.pause()
-        return
-    if p.gold < neww.price:
+    if p.gold + trade_in < neww.price:  # reference/lord.js:10203-10211
         await ctx.io.write(
             "\n  `2\"`0You stupid fool!  You don't have that much gold!\n"
             '  I knew you were up to no good the moment I saw you!`2"\n\n\n'
         )
         await ctx.io.pause()
         return
+
+    # Every check has passed: now, and only now, the old weapon changes hands.
+    if oldw is not None:
+        p.gold = min(p.gold + trade_in, _GOLD_CAP)
+        p.strength = max(p.strength - old_power, _STR_FLOOR)
+        await ctx.io.write(
+            f'\n  `2"`0Done."`2  He takes your `%{oldw.name}`2 and counts out '
+            f"`%{trade_in}`2 gold.\n"
+        )
 
     await ctx.io.write(
         '\n  `2"`0Great!`2" The fat man takes your money, and gives you the\n'
@@ -263,7 +300,7 @@ async def _sell_weapon(ctx: GameCtx) -> None:
     )
     p.weapon_num = 0
     await _credit_gold(ctx, price)
-    p.strength = max(p.strength - oldw.power, 5)
+    p.strength = max(p.strength - oldw.power, _STR_FLOOR)
     await ctx.io.pause()
 
 
@@ -318,35 +355,55 @@ async def _buy_armor(ctx: GameCtx) -> None:
     newa = data.armor(n)
     old_power = data.armor(p.armor_num).power if p.armor_num else 0
     need = _need_sum(n, 0, "defense", ctx)
-
-    await ctx.io.write(
-        f'\n\n  "`0Hmmm I will sell you a nice `%{newa.name}`0 for `%{newa.price}`0.\n'
-        '   Agreed, friend?`2"\n\n\n'
-        f"  Note: It takes `%{need}`2 defense points to wear this armor.\n"
-        f"  `2You currently have `%{p.defense - old_power} `2defense points.\n\n"
+    olda = data.armor(p.armor_num) if p.armor_num else None
+    trade_in = (
+        _sell_price(ctx.rng, olda.price, p.level, p.charm, weapon=False) if olda else 0
     )
+    bare_defense = p.defense - old_power
+
+    lines = [
+        (
+            f'\n\n  "`0Hmmm I will sell you a nice `%{newa.name}`0 for '
+            f'`%{newa.price}`0.\n   Agreed, friend?`2"\n\n\n'
+        ),
+        f"  Note: It takes `%{need}`2 defense points to wear this armor.\n",
+        f"  `2You currently have `%{bare_defense} `2defense points.\n",
+    ]
+    if olda is not None:
+        lines.append(
+            f'\n  `2"`0And I\'ll take your `%{olda.name}`0 in trade for '
+            f'`%{trade_in}`0 gold.`2"\n'
+        )
+    lines.append("\n")
+    await ctx.io.write("".join(lines))
+
     ich = await ctx.io.menu(
         {"Y": "yes", "N": "no"}, "   `2Buy it?  [`0N`2] : `%"
     )  # reference/lord.js:10395
 
+    # Same trade-in rule as the weapon shop (see _buy_weapon): you can only
+    # wear one set, so the old one is taken in part-exchange -- but not
+    # until every check has passed.
     if ich == "N":
         await ctx.io.write('\n`2  "`0Ok!  No rush!`2" the girl smiles.\n')
-    elif p.defense < need:
+    elif bare_defense < need:
         await ctx.io.write(
             "\n  `2\"`0I'm sorry, but you are not strong enough to wear\n"
             '  that armor.`2"\n'
         )
-    elif p.armor_num > 0:
-        await ctx.io.write(
-            "\n  `2\"`0You already have armour, and you can't wear\n"
-            '  two!`2" You realize she is right.\n'
-        )
-    elif p.gold < newa.price:
+    elif p.gold + trade_in < newa.price:
         await ctx.io.write(
             "\n  `2\"`0I'm sorry, but you seem to be lacking funds at the\n"
             '  moment.`2"  the girl tells you.\n'
         )
     else:
+        if olda is not None:
+            p.gold = min(p.gold + trade_in, _GOLD_CAP)
+            p.defense = max(p.defense - old_power, _DEF_FLOOR)
+            await ctx.io.write(
+                f'\n  `2"`0Thank you."`2  She folds your `%{olda.name}`2 away and '
+                f"hands over `%{trade_in}`2 gold.\n"
+            )
         await ctx.io.write(
             '\n  `2"`0Wonderful!`2" The girl takes your money, and helps you\n'
             "  into your new armour.\n"
@@ -394,5 +451,5 @@ async def _sell_armor(ctx: GameCtx) -> None:
     )
     p.armor_num = 0
     await _credit_gold(ctx, price)
-    p.defense = max(p.defense - olda.power, 0)
+    p.defense = max(p.defense - olda.power, _DEF_FLOOR)
     await ctx.io.pause()

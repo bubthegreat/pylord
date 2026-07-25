@@ -106,12 +106,61 @@ async def test_shop_limit_disabled_skips_strength_gate():
     assert ctx.player.strength == 10 + 20  # Short Sword power
 
 
-async def test_buy_refused_when_already_armed():
-    ctx = _ctx(overrides={"weapon_num": 1, "strength": 15}, keys=["2", "y", "x"])
+async def test_buying_while_armed_trades_the_old_weapon_in():
+    """You can only carry one, so the shop takes the old one in
+    part-exchange rather than sending you away to sell it first."""
+    ctx = _ctx(
+        overrides={"weapon_num": 1, "strength": 15, "gold": 1_000},
+        rng=_SeqRNG([1]),  # pins the trade-in roll: 200 // 2 + 1 = 101
+        keys=["2", "y", "x"],
+    )
     await shops_mod._buy_weapon(ctx)
-    text = screen(ctx.io)
-    assert "already have a weapon" in text
-    assert ctx.player.weapon_num == 1
+    p = ctx.player
+    assert p.weapon_num == 2  # Dagger
+    assert p.gold == 1_000 + 101 - 1_000
+    # Stick's +5 handed back, Dagger's +10 gained.
+    assert p.strength == 15 - 5 + 10
+    assert "I'll take that Stick" in screen(ctx.io)
+
+
+async def test_trade_in_counts_toward_the_price():
+    """1000 gold short on paper, but the trade-in covers it."""
+    ctx = _ctx(
+        overrides={"weapon_num": 1, "strength": 15, "gold": 950},
+        rng=_SeqRNG([1]),
+        keys=["2", "y", "x"],
+    )
+    await shops_mod._buy_weapon(ctx)
+    assert ctx.player.weapon_num == 2
+    assert ctx.player.gold == 950 + 101 - 1_000
+
+
+async def test_nothing_is_sold_when_you_cannot_afford_the_new_one():
+    """The old weapon must survive a refusal -- validate, then trade."""
+    ctx = _ctx(
+        overrides={"weapon_num": 1, "strength": 15, "gold": 10},
+        rng=_SeqRNG([1]),
+        keys=["2", "y", "x"],
+    )
+    await shops_mod._buy_weapon(ctx)
+    p = ctx.player
+    assert (p.weapon_num, p.gold, p.strength) == (1, 10, 15)
+    assert "don't have that much gold" in screen(ctx.io)
+
+
+async def test_nothing_is_sold_when_you_cannot_wield_the_new_one():
+    """Strength is judged *without* the old weapon's bonus, since you are
+    handing it over -- and a refusal leaves you holding it."""
+    ctx = _ctx(
+        overrides={"weapon_num": 1, "strength": 15, "gold": 100_000},
+        rng=_SeqRNG([1]),
+        keys=["3", "y", "x"],  # Short Sword needs 15 bare strength; we have 10
+    )
+    await shops_mod._buy_weapon(ctx)
+    p = ctx.player
+    assert (p.weapon_num, p.strength) == (1, 15)
+    assert p.gold == 100_000
+    assert "aren't strong enough" in screen(ctx.io)
 
 
 async def test_buy_declined_at_confirm_prompt_changes_nothing():
