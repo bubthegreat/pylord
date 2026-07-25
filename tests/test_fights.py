@@ -37,17 +37,20 @@ def test_max_is_the_configured_allowance_plus_trained_bonus():
     assert fights.max_forest_fights(p, {"forest_fights_per_day": 20}) == 24
 
 
-def test_endurance_price_rises_with_purchases_and_level():
+def test_endurance_price_rises_only_with_purchases():
+    """You pay for what you have trained. Neither the free point a master
+    grants nor the level that came with it moves the price."""
     _conn, repo = _repo()
     p = repo.create("Hero", "pw", "M")
     assert fights.endurance_cost(p, {}) == 1_000
     p.endurance_bought = 2
     assert fights.endurance_cost(p, {}) == 3_000
+
     p.level = 5
-    assert fights.endurance_cost(p, {}) == 15_000
-    # A master's free point doesn't make the next purchase dearer.
-    fights.grant_bonus(p)
-    assert fights.endurance_cost(p, {}) == 15_000
+    assert fights.endurance_cost(p, {}) == 3_000  # levelling changes nothing
+
+    fights.grant_bonus(p)  # a master's free forest fight
+    assert fights.endurance_cost(p, {}) == 3_000
 
 
 # --- regeneration ----------------------------------------------------------

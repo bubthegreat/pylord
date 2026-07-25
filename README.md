@@ -61,7 +61,7 @@ clean_mode = false        # hides the Inn's adult options
 win_deeds = 3             # dragon kills that end the realm (0 = never)
 shop_limit = true         # require the strength/defense to carry what you buy
 fight_regen_minutes = 15  # real minutes per recovered forest fight (0 = off)
-endurance_cost = 1000     # gold for the first bought forest fight at Turgon's
+endurance_cost = 1000     # gold for the 1st bought forest fight; 2nd costs 2x, etc.
 
 [igms]
 # true = enabled; omitted IGMs fall back to their own default

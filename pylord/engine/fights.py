@@ -14,6 +14,7 @@ that allowance is a *floor*: a player's maximum is
 and ``fight_bonus`` is earned two ways -- one free point every time you beat
 your master (so the cap tracks progression), and as many extra as you care
 to buy from Turgon's endurance training, each costing more than the last.
+Only purchases raise that price; levelling up never does.
 Both survive the Dragon reset, like the class skill ranks do.
 
 **Regeneration.** lord.js's allowance only refills at the daily rollover.
@@ -39,7 +40,9 @@ if TYPE_CHECKING:
 DEFAULT_REGEN_MINUTES = 15
 DEFAULT_FOREST_FIGHTS = 15  # reference/lord.js:1857, the base allowance
 #: What the first bought endurance point costs; each one after costs another
-#: multiple of this (2x, 3x, ...), scaled by the buyer's level.
+#: multiple of this (2x, 3x, ...). Deliberately *not* scaled by level: the
+#: free point a master grants comes with a level, and pricing on level would
+#: make every master win quietly raise the price of the next purchase.
 DEFAULT_ENDURANCE_COST = 1_000
 STAT_CAP = 32_000  # reference/lord.js:16617-16621
 
@@ -52,13 +55,14 @@ def max_forest_fights(player: Player, config: dict[str, Any] | None = None) -> i
 
 
 def endurance_cost(player: Player, config: dict[str, Any] | None = None) -> int:
-    """Price of the *next* bought point: ``base x (bought + 1) x level``.
+    """Price of the *next* bought point: ``base x (bought + 1)``.
 
-    Only purchases count toward the multiplier -- the free point a master
-    hands out on a win doesn't make the next one dearer.
+    Only purchases move the price. The free point a master hands out on a
+    win doesn't, and neither does the level that came with it -- you pay
+    for what you have trained, nothing else.
     """
     base = (config or {}).get("endurance_cost", DEFAULT_ENDURANCE_COST)
-    return base * (player.endurance_bought + 1) * max(1, player.level)
+    return base * (player.endurance_bought + 1)
 
 
 def grant_bonus(player: Player, amount: int = 1) -> None:
