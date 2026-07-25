@@ -174,13 +174,12 @@ jobs:
             http://127.0.0.1:8080/healthz | grep -q alive
           curl -fsS --retry 10 --retry-delay 2 --retry-all-errors \
             http://127.0.0.1:8080/readyz | grep -q ready
-          PY
 
       - name: The browser terminal serves the game
         run: |
           set -e
-          # Same shape as the pod: the sidecar shares the game container's
-          # network namespace and reaches it over loopback.
+          # Same shape as the pod: the sidecar reaches the game over
+          # loopback rather than over a published port.
           web_args=$(uv run --with pyyaml python - <<'PY'
           import pathlib, shlex, yaml
           docs = [d for d in yaml.safe_load_all(pathlib.Path("/tmp/render.yaml").read_text()) if d]
@@ -196,12 +195,14 @@ jobs:
           # "titleFixed=Legend of the Red Dragon" into five arguments.
           eval "set -- $web_args"
           docker run -d --name pylord-web \
-            --network "container:pylord-ci" \
+            --network host \
             --entrypoint ttyd \
             pylord:ci "$@"
 
-          # The sidecar shares pylord-ci's network namespace, so its port is
-          # published by that container (7681 above).
+          # Host networking, like the game container: in the pod these two
+          # share a network namespace and talk over loopback, and a
+          # `--network container:` join is not available against a container
+          # that is itself on the host network.
           for _ in $(seq 1 20); do
             if body=$(curl -fsS --max-time 5 http://127.0.0.1:7681/ 2>/dev/null); then
               echo "terminal served $(printf %s "$body" | wc -c) bytes"
