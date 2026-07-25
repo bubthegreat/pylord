@@ -10,20 +10,19 @@ production.
 Set ``PYLORD_TEST_DB_URL`` to a MySQL URL and the same 500-odd tests run
 against that server instead. CI runs them both ways.
 
-**How the redirect works.** One database is created for the whole session
-and every ``connect()`` hands back a handle on it; between tests its tables
-are truncated. Truncation (not ``DELETE``) because it also resets
+**How the redirect works.** A small pool of databases is created once for
+the whole run, and each ``:memory:`` request inside a test takes the next
+one, emptied first. Truncation (not ``DELETE``) because it also resets
 ``AUTO_INCREMENT``, and a fair number of tests assume the first character
 created is id 1 -- IGM store keys like ``"bouts:1"`` are written that way.
 
-An earlier version gave every ``connect()`` call its own freshly created
-database, on the theory that ``:memory:`` means a private realm under
-SQLite's ``StaticPool`` and two calls should not see each other. True, but
-nothing needs it: of the nine tests that open a second database, every one
-is *reopening the same realm* to inspect it. That fidelity cost a
-``CREATE DATABASE`` and a ``DROP DATABASE`` per connection, which is the
-most expensive statement pair in the file, and it made the MySQL run take
-minutes per test file.
+A pool, rather than one shared database, because ``:memory:`` really does
+mean a *private* realm under SQLite's ``StaticPool``, and some tests need
+two at once -- ``pylord/migrate.py``'s copy one realm into another, and
+collapsing both onto one database made them pass while testing nothing.
+A pool, rather than creating a database per connection, because
+``CREATE DATABASE``/``DROP DATABASE`` is the most expensive statement pair
+here and a truncate says the same thing.
 """
 
 from __future__ import annotations
@@ -38,8 +37,16 @@ from pylord import data, schema
 
 _TEST_DB_URL = os.environ.get("PYLORD_TEST_DB_URL", "")
 
-#: The session's database, created once by ``_test_database`` below.
-_DB_NAME = "pylord_test"
+#: The session's databases, created once by ``_create_test_database``.
+#:
+#: More than one, because ``:memory:`` means a *private* realm under
+#: SQLite's ``StaticPool`` and some tests genuinely need two at once --
+#: ``pylord/migrate.py``'s, most obviously, which copy one realm into
+#: another. Each ``:memory:`` request inside a test takes the next of
+#: these, emptied; a pool means that costs a truncate rather than a
+#: CREATE DATABASE.
+_DB_COUNT = 4
+_DB_NAMES = [f"pylord_test_{i}" for i in range(_DB_COUNT)]
 
 
 def pytest_report_header(config):
@@ -66,34 +73,39 @@ async def _exec(url: str, *statements: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def test_db_url() -> str:
-    """The URL every ``connect()`` is redirected to, or "" for SQLite."""
+def test_db_urls() -> list[str]:
+    """The pool of realm URLs, or [] when running on SQLite."""
     if not _TEST_DB_URL:
-        return ""
-    return _url(make_url(_TEST_DB_URL).set(database=_DB_NAME))
+        return []
+    base = make_url(_TEST_DB_URL)
+    return [_url(base.set(database=name)) for name in _DB_NAMES]
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _create_test_database(test_db_url):
-    """One database for the whole run."""
-    if not test_db_url:
+async def _create_test_databases(test_db_urls):
+    """Build the pool once for the whole run."""
+    if not test_db_urls:
         yield
         return
 
     server = _url(make_url(_TEST_DB_URL).set(database=""))
-    await _exec(
-        server,
-        f"DROP DATABASE IF EXISTS `{_DB_NAME}`",
-        f"CREATE DATABASE `{_DB_NAME}`",
-    )
+    statements = []
+    for name in _DB_NAMES:
+        statements += [
+            f"DROP DATABASE IF EXISTS `{name}`",
+            f"CREATE DATABASE `{name}`",
+        ]
+    await _exec(server, *statements)
+
     # Build the tables now, so the per-test reset has something to
     # truncate before any test has connected.
-    db = await data.connect(test_db_url)
-    await db.dispose()
+    for url in test_db_urls:
+        db = await data.connect(url)
+        await db.dispose()
     try:
         yield
     finally:
-        await _exec(server, f"DROP DATABASE IF EXISTS `{_DB_NAME}`")
+        await _exec(server, *[f"DROP DATABASE IF EXISTS `{n}`" for n in _DB_NAMES])
 
 
 def _truncate_all() -> list[str]:
@@ -108,39 +120,55 @@ def _truncate_all() -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-async def _redirect_and_reset(test_db_url, monkeypatch):
-    """Point ``connect()`` at the session database, with SQLite's meaning.
+async def _redirect_and_reset(test_db_urls, monkeypatch):
+    """Point ``connect()`` at the pool, keeping SQLite's own meanings.
 
     The two forms the suite uses mean different things, and the difference
-    matters -- a test may play two whole sessions, each expecting its own
-    empty realm:
+    matters -- a test may play two whole sessions, or copy one realm into
+    another, each expecting its own database:
 
-    * ``":memory:"`` is a *fresh, private* realm. Under SQLite's
-      ``StaticPool`` each such call really is a separate database, so this
-      empties the tables before handing one back.
+    * ``":memory:"`` is a *fresh, private* realm: each call takes the next
+      database from the pool, emptied first.
     * a file path is *the same* realm reopened -- how the server, CLI and
-      schema tests inspect what the code under test just wrote. Handed
-      back untouched.
+      schema tests inspect what the code under test just wrote. The first
+      such path in a test claims a database; asking again for the same
+      path returns it untouched.
     """
-    if not test_db_url:
+    if not test_db_urls:
         yield
         return
 
     real_connect = data.connect
+    taken = 0
+    by_path: dict[str, str] = {}
+
+    async def next_url() -> str:
+        nonlocal taken
+        if taken >= len(test_db_urls):
+            raise RuntimeError(
+                f"this test opened more than {len(test_db_urls)} databases; "
+                "raise _DB_COUNT in tests/conftest.py"
+            )
+        url = test_db_urls[taken]
+        taken += 1
+        await _exec(url, *_truncate_all())
+        return url
 
     async def connect(url: str, **kwargs):
         if url == ":memory:":
-            await _exec(test_db_url, *_truncate_all())
-            url = test_db_url
+            url = await next_url()
         elif not url.startswith(("sqlite", "mysql", "postgresql")):
-            url = test_db_url  # a file path: the same realm, left as it is
+            if url not in by_path:
+                by_path[url] = await next_url()
+            url = by_path[url]
         return await real_connect(url, **kwargs)
 
     monkeypatch.setattr(data, "connect", connect)
     try:
         yield
     finally:
-        await _exec(test_db_url, *_truncate_all())
+        for url in test_db_urls[:taken]:
+            await _exec(url, *_truncate_all())
 
 
 @pytest.fixture(autouse=True)

@@ -204,15 +204,14 @@ async def test_win_transfers_exact_gold_exp_gems_and_writes_news_and_mail():
     assert "has killed" in news_row.text
     assert "Victim" in news_row.text
 
-    mail_row = await query_one(database, 
-        "SELECT to_id, from_name, text, effect, read FROM mail"
-    )
-    assert mail_row.to_id == target.id
-    assert mail_row.from_name == "Hero"
-    assert "YOU HAVE BEEN ATTACKED" in mail_row.text
-    assert "has killed you" in mail_row.text
-    assert mail_row.effect is None
-    assert mail_row.read == 0
+    # Through the repository: `read` is a reserved word in MySQL, and
+    # "unread mail for the victim" is what the assertion actually means.
+    unread = await database.mail.unread_for(target.id)
+    assert len(unread) == 1
+    assert unread[0].from_name == "Hero"
+    assert "YOU HAVE BEEN ATTACKED" in unread[0].text
+    assert "has killed you" in unread[0].text
+    assert unread[0].effect is None
 
 
 async def test_win_gold_capped_at_two_billion():
