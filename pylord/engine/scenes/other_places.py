@@ -20,16 +20,16 @@ sandbox that makes a drop-in plugin safe to run against a live character:
    exception (including :class:`~pylord.hooks.IgmViolation`) is swallowed
    and the player is bounced back to the forest.
 
-**Transaction mechanics.** The session's ``sqlite3`` connection runs in the
-stdlib default ``isolation_level=""`` (implicit-BEGIN-before-DML, manual
-commit). The visit brackets its work with a leading ``commit()`` (to close
-any implicit transaction left open earlier in the session, so our
+**Transaction mechanics.** The session's connection runs in the stdlib
+default ``isolation_level=""`` (implicit-BEGIN-before-DML, manual commit).
+The visit brackets its work with a leading ``commit()`` (to close any
+implicit transaction left open earlier in the session, so our
 ``rollback()`` can only ever affect *this* visit) and a trailing
-``commit()``/``rollback()``. Crucially, nothing inside the visit uses the
-``with conn:`` context manager or the repo/ctx ``save``/``news`` helpers
-(which self-commit) -- store flush, news flush, mail insert, and the player
-UPDATE are all raw ``conn.execute`` calls, so the visit really is one
-atomic unit.
+``commit()``/``rollback()``. Crucially, nothing inside the visit opens a
+transaction of its own or calls a self-committing helper -- the store
+flush, the news flush, the mail insert and the player UPDATE all go
+through repositories that leave committing to us, so the visit really is
+one atomic unit.
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ from dataclasses import fields, replace
 from typing import TYPE_CHECKING
 
 from pylord.engine.game import scene
-from pylord.engine.persist import save_player_raw
 from pylord.hooks import IgmContext
 from pylord.models import Player
 from pylord.terminal import ConnectionClosed, OutOfKeys
@@ -112,7 +111,7 @@ async def run_guarded(ctx: GameCtx, igm: IGM, run) -> None:
     igm_ctx.store.flush()
     igm_ctx.flush_news()
     if igm_ctx.player.dirty:
-        save_player_raw(ctx.conn, ctx.player)
+        ctx.db.players.save_in_transaction(ctx.player)
     conn.commit()
 
 

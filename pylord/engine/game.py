@@ -18,6 +18,7 @@ import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from pylord.data import Database
 from pylord.engine import data
 
 if TYPE_CHECKING:
@@ -68,6 +69,10 @@ class GameCtx:
         self.repo = repo
         self.io = io
         self.conn = conn
+        # Every query the engine makes goes through here; ``conn`` remains
+        # only for the few places still holding a raw connection (and for
+        # tests asserting against the database).
+        self.db = Database(conn)
         self.config: dict[str, Any] = {} if config is None else config
         self.rng: random.Random = random.Random() if rng is None else rng
         # Task 12: the session's IgmRegistry (None when no IGMs are wired
@@ -80,19 +85,14 @@ class GameCtx:
         Day comes from ``game_state`` key ``'day'``, defaulting to "1" when
         that row hasn't been set yet.
         """
-        row = self.conn.execute(
-            "SELECT value FROM game_state WHERE key = 'day'"
-        ).fetchone()
-        day = row["value"] if row is not None else "1"
-        with self.conn:
-            self.conn.execute(
-                "INSERT INTO daily_news (day, text) VALUES (?, ?)", (day, text)
-            )
+        day = self.db.state.get("day", "1")
+        with self.db.transaction() as db:
+            db.news.add(day, text)
 
     def save(self) -> None:
         """Persist ``self.player`` inside a transaction."""
-        with self.conn:
-            self.repo.save(self.player)
+        with self.db.transaction() as db:
+            db.players.save_in_transaction(self.player)
 
 
 async def grant_exp(ctx: GameCtx, amount: int) -> None:

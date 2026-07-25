@@ -33,6 +33,7 @@ from telnetlib3.telopt import ECHO, SGA, WILL
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
 from pylord import db, igm_loader
+from pylord.data import Database
 from pylord.engine import daily, fights
 from pylord.engine.game import GameCtx, run_session
 from pylord.engine.scenes import mail as mail_scene
@@ -366,13 +367,11 @@ async def _check_gameover(io: TelnetIO, conn, repo: PlayerRepo, player: Player) 
     to a "PAY HOMAGE" screen instead of being allowed to play. Returns
     ``True`` when the session was ended this way.
     """
-    row = conn.execute(
-        "SELECT value FROM game_state WHERE key = 'won_by'"
-    ).fetchone()
-    if row is None:
+    won_by = Database(conn).state.get("won_by")
+    if won_by is None:
         return False
     try:
-        winner = repo.get(int(row["value"]))
+        winner = repo.get(int(won_by))
     except (TypeError, ValueError):
         return False
     if winner is None:
@@ -422,10 +421,9 @@ async def start(config: dict[str, Any]):
     # machine losing power mid-session. Left alone it would both inflate
     # "people on now" and lock that character out of their own account
     # ("already adventuring elsewhere") until someone edited the database.
-    with conn:
-        cleared = conn.execute(
-            "UPDATE players SET online = 0 WHERE online != 0"
-        ).rowcount
+    database = Database(conn)
+    with database.transaction():
+        cleared = database.players.clear_online_flags()
     if cleared:
         logger.info("cleared %d stale online flag(s) from a previous run", cleared)
 

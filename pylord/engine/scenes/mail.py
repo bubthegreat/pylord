@@ -37,12 +37,10 @@ arrived *during* the session).
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pylord.engine.effects import apply_effect
 from pylord.engine.game import scene
-from pylord.engine.persist import save_player_raw
 
 if TYPE_CHECKING:
     from pylord.engine.game import GameCtx
@@ -62,8 +60,8 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
 
     **Durability** (post-review fix): marking a row read and persisting the
     player's mutated stats happen in the *same* transaction
-    (``save_player_raw``, a raw ``UPDATE`` sharing this loop iteration's
-    ``with ctx.conn:`` block -- see ``pylord/engine/persist.py``). An
+    (one ``db.transaction()`` per letter, marking it read and saving the
+    player together -- see ``pylord/data.py``). An
     earlier version committed ``read = 1`` immediately but left the
     in-memory ``gold``/``exp``/etc. mutation to be persisted only by
     whatever eventually calls ``GameCtx.save()`` at session end -- so a
@@ -72,11 +70,7 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
     lost-update bug). Now either both commit or neither does, and a
     dropped commit is safe to retry: the row is still unread, so the next
     login re-shows and re-applies the very same letter."""
-    rows = ctx.conn.execute(
-        "SELECT id, from_name, text, effect FROM mail "
-        "WHERE to_id = ? AND read = 0 ORDER BY id",
-        (ctx.player.id,),
-    ).fetchall()
+    rows = ctx.db.mail.unread_for(ctx.player.id)
     if not rows:
         return 0
 
@@ -89,9 +83,11 @@ async def apply_unread_mail(ctx: GameCtx) -> int:
             await ctx.io.write(f"{row['text']}\n")
         if row["effect"]:
             apply_effect(ctx.player, json.loads(row["effect"]))
-        with ctx.conn:
-            ctx.conn.execute("UPDATE mail SET read = 1 WHERE id = ?", (row["id"],))
-            save_player_raw(ctx.conn, ctx.player)
+        # The read flag and the effect's stat changes land together, so a
+        # dropped commit re-shows the letter instead of losing what it gave.
+        with ctx.db.transaction() as db:
+            db.mail.mark_read(row["id"])
+            db.players.save_in_transaction(ctx.player)
     await ctx.io.pause()
     return len(rows)
 
@@ -152,13 +148,8 @@ async def mail(ctx: GameCtx) -> str:
 
     lines = await _compose(ctx)
     body = "\n".join(lines)
-    now = datetime.now(UTC).isoformat()
-    with ctx.conn:
-        ctx.conn.execute(
-            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
-            "VALUES (?, ?, ?, NULL, ?, 0)",
-            (recipient.id, p.name, body, now),
-        )
+    with ctx.db.transaction() as db:
+        db.mail.send(recipient.id, p.name, text=body)
 
     if recipient.id == p.id:  # reference/lord.js:3295-3300
         await ctx.io.write("\n  You are a very stupid individual.\n")

@@ -36,19 +36,14 @@ _HEADER = "\n  `2The Daily Happenings....\n`0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
 def _current_day(ctx: GameCtx) -> int:
-    row = ctx.conn.execute(
-        "SELECT value FROM game_state WHERE key = 'day'"
-    ).fetchone()
-    return int(row["value"]) if row is not None else 1
+    return ctx.db.state.get_int("day", 1)
 
 
 async def _show(ctx: GameCtx, *, today: bool) -> None:
     day = _current_day(ctx)
     target = day if today else day - 1
-    rows = ctx.conn.execute(
-        "SELECT text FROM daily_news WHERE day = ? ORDER BY id", (str(target),)
-    ).fetchall()
-    if not rows:
+    lines = ctx.db.news.for_day(target)
+    if not lines:
         if today:
             await ctx.io.write(f"{_HEADER}\n  Nothing has happened yet today.\n")
         else:  # reference/lord.js:5807-5811
@@ -57,8 +52,8 @@ async def _show(ctx: GameCtx, *, today: bool) -> None:
             )
         return
     await ctx.io.write(_HEADER)
-    for row in rows:
-        await ctx.io.write(f"{row['text']}\n")
+    for line in lines:
+        await ctx.io.write(f"{line}\n")
 
 
 @scene("news")

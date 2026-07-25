@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 from collections import namedtuple
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from pylord.engine import limits
@@ -197,7 +196,9 @@ class IgmStore:
     _MISSING = object()
 
     def __init__(self, conn: sqlite3.Connection, igm_key: str) -> None:
-        self._conn = conn
+        from pylord.data import IgmDataRepo
+
+        self._rows = IgmDataRepo(conn)
         self._key = igm_key
         self._loaded: dict[str, Any] = {}
         self._pending: dict[str, tuple[str, Any]] = {}
@@ -207,11 +208,8 @@ class IgmStore:
             op, val = self._pending[k]
             return default if op == "delete" else val
         if k not in self._loaded:
-            row = self._conn.execute(
-                "SELECT v FROM igm_data WHERE igm_key = ? AND k = ?",
-                (self._key, k),
-            ).fetchone()
-            self._loaded[k] = json.loads(row["v"]) if row is not None else self._MISSING
+            raw = self._rows.get_raw(self._key, k)
+            self._loaded[k] = json.loads(raw) if raw is not None else self._MISSING
         val = self._loaded[k]
         return default if val is self._MISSING else val
 
@@ -229,17 +227,10 @@ class IgmStore:
         """
         for k, (op, val) in self._pending.items():
             if op == "delete":
-                self._conn.execute(
-                    "DELETE FROM igm_data WHERE igm_key = ? AND k = ?",
-                    (self._key, k),
-                )
+                self._rows.delete(self._key, k)
                 self._loaded[k] = self._MISSING
             else:
-                self._conn.execute(
-                    "INSERT INTO igm_data (igm_key, k, v) VALUES (?, ?, ?) "
-                    "ON CONFLICT(igm_key, k) DO UPDATE SET v = excluded.v",
-                    (self._key, k, json.dumps(val)),
-                )
+                self._rows.set_raw(self._key, k, json.dumps(val))
                 # Fold the write into the read cache: without this, a get()
                 # after flush() falls back to whatever the cache learned
                 # *before* the write (usually "missing") and reports the
@@ -291,16 +282,8 @@ class IgmContext:
         recipient = self._gctx.repo.get_by_name(to_name)
         if recipient is None:
             raise ValueError(f"no such player to mail: {to_name!r}")
-        self._gctx.conn.execute(
-            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
-            "VALUES (?, ?, ?, ?, ?, 0)",
-            (
-                recipient.id,
-                self._igm.name,
-                text,
-                json.dumps(effect) if effect is not None else None,
-                datetime.now(UTC).isoformat(),
-            ),
+        self._gctx.db.mail.send(
+            recipient.id, self._igm.name, text=text, effect=effect
         )
 
     def other_players(self) -> list[PlayerSummary]:
@@ -318,14 +301,9 @@ class IgmContext:
         """Write buffered news lines via raw execute (no commit)."""
         if not self._news_buffer:
             return
-        row = self._gctx.conn.execute(
-            "SELECT value FROM game_state WHERE key = 'day'"
-        ).fetchone()
-        day = row["value"] if row is not None else "1"
+        day = self._gctx.db.state.get("day", "1")
         for text in self._news_buffer:
-            self._gctx.conn.execute(
-                "INSERT INTO daily_news (day, text) VALUES (?, ?)", (day, text)
-            )
+            self._gctx.db.news.add(day, text)
         self._news_buffer.clear()
 
 
@@ -344,7 +322,7 @@ class IgmMaintContext:
     own ``with conn:``, and sqlite3 connections are not re-entrant context
     managers, so a plugin calling it would commit the registry's
     transaction early and break the rollback guarantee. It writes through
-    :func:`pylord.engine.persist.save_player_raw` instead.
+    :meth:`pylord.data.Players.save_in_transaction` instead.
     """
 
     def __init__(
@@ -361,15 +339,14 @@ class _MaintRepo:
     :class:`IgmMaintContext`). Every read passes straight through."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
-        from pylord.models import PlayerRepo
+        from pylord.data import Players
 
-        self._repo = PlayerRepo(conn)
+        self._players = Players(conn)
+        self._repo = self._players
         self._conn = conn
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._repo, name)
 
     def save(self, player: Player) -> None:
-        from pylord.engine.persist import save_player_raw
-
-        save_player_raw(self._conn, player)
+        self._players.save_in_transaction(player)

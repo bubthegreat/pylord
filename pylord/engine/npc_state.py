@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from pylord.data import Database
+
 NONE = -1
 
 _KEY_VIOLET = "married_to_violet"
@@ -28,19 +30,13 @@ _KEY_SETH = "married_to_seth"
 
 
 def _get(conn: sqlite3.Connection, key: str) -> int:
-    row = conn.execute(
-        "SELECT value FROM game_state WHERE key = ?", (key,)
-    ).fetchone()
-    return int(row["value"]) if row is not None else NONE
+    return Database(conn).state.get_int(key, NONE)
 
 
 def _set(conn: sqlite3.Connection, key: str, player_id: int) -> None:
-    with conn:
-        conn.execute(
-            "INSERT INTO game_state (key, value) VALUES (:key, :value) "
-            "ON CONFLICT(key) DO UPDATE SET value = :value",
-            {"key": key, "value": str(player_id)},
-        )
+    db = Database(conn)
+    with db.transaction():
+        db.state.set(key, player_id)
 
 
 def married_to_violet(conn: sqlite3.Connection) -> int:

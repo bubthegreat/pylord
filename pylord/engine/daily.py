@@ -74,9 +74,8 @@ import random as _random_module
 import sqlite3
 from typing import Any
 
+from pylord.data import Database
 from pylord.engine import fights
-from pylord.engine.persist import save_player_raw
-from pylord.models import PlayerRepo
 
 _DEFAULT_PLAYER_FIGHTS = 3  # reference/lord.js:1856
 _BANK_CAP = 2_000_000_000  # reference/lord.js:5507, 5513
@@ -97,12 +96,6 @@ def skill_uses_for(player) -> int:
     return 0
 
 
-def _set_game_state(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute(
-        "INSERT INTO game_state (key, value) VALUES (:key, :value) "
-        "ON CONFLICT(key) DO UPDATE SET value = :value",
-        {"key": key, "value": value},
-    )
 
 
 def _pregnancy(player, rng) -> str | None:
@@ -150,26 +143,24 @@ def maintenance(
     ``IgmRegistry.run_daily_maint``), so a bad IGM can't abort the daily
     reset.
     """
-    row = conn.execute(
-        "SELECT value FROM game_state WHERE key = 'last_maint'"
-    ).fetchone()
-    if row is not None and row["value"] == today:
+    if Database(conn).state.get("last_maint") == today:
         return
 
     game_cfg = (config or {}).get("game", {})
     player_fights = game_cfg.get("player_fights_per_day", _DEFAULT_PLAYER_FIGHTS)
     rng = _random_module.Random() if rng is None else rng
 
-    repo = PlayerRepo(conn)
+    db = Database(conn)
+    repo = db.players
     news: list[str] = []
 
     # One transaction for the whole pass. Every write below goes through
-    # save_player_raw (pylord/engine/persist.py) rather than
-    # PlayerRepo.save, which opens a ``with self.conn`` block of its own --
+    # Players.save_in_transaction (pylord/data.py) rather than
+    # PlayerRepo.save, which opens a transaction of its own --
     # sqlite3 connections are not re-entrant context managers, so the
     # nested commit would end this transaction early and a failure
     # mid-pass could re-apply bank interest to everyone on the retry.
-    with conn:
+    with db.transaction():
         for player in repo.all_players():
             if player.last_played == today:
                 # Already reset today by an earlier pass (or by a session
@@ -217,18 +208,13 @@ def maintenance(
 
             player.last_played = today
 
-            save_player_raw(conn, player)
+            db.players.save_in_transaction(player)
 
-        day_row = conn.execute(
-            "SELECT value FROM game_state WHERE key = 'day'"
-        ).fetchone()
-        day = int(day_row["value"]) + 1 if day_row is not None else 2
-        _set_game_state(conn, "day", str(day))
-        _set_game_state(conn, "last_maint", today)
+        day = db.state.get_int("day", 1) + 1
+        db.state.set("day", day)
+        db.state.set("last_maint", today)
         for line in news:
-            conn.execute(
-                "INSERT INTO daily_news (day, text) VALUES (?, ?)", (str(day), line)
-            )
+            db.news.add(day, line)
 
     # After the core reset has committed, let enabled IGMs run their own
     # daily hook (each contained; see IgmRegistry.run_daily_maint).

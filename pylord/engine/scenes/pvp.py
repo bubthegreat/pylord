@@ -123,7 +123,6 @@ from typing import TYPE_CHECKING
 from pylord.engine import data
 from pylord.engine.combat import Combatant, Fight, skill_attack
 from pylord.engine.game import grant_exp, scene
-from pylord.engine.persist import save_player_raw
 from pylord.engine.scenes import _battle
 
 if TYPE_CHECKING:
@@ -368,13 +367,9 @@ async def _win(ctx: GameCtx, target: Player, fight: Fight, from_inn: bool) -> No
     # notification mail and the news line either all land or none do.
     # (These used to be three separate commits, so a failure between them
     # could leave a killed player nobody was told about.)
-    with ctx.conn:
-        save_player_raw(ctx.conn, target)
-        ctx.conn.execute(
-            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
-            "VALUES (?, ?, ?, NULL, datetime('now'), 0)",
-            (target.id, p.name, mail_body),
-        )
+    with ctx.db.transaction() as db:
+        db.players.save_in_transaction(target)
+        db.mail.send(target.id, p.name, text=mail_body)
     ctx.news(f"`.  `0{p.name}`2 has killed `5{target.name}`2!")  # lord.js:7964
 
     await ctx.io.write("\n".join(lines) + "\n")
@@ -434,13 +429,9 @@ async def _lose(ctx: GameCtx, target: Player, fight: Fight) -> None:
         f"\n`.  `2You have killed `0{p.name}`2 in self defense!\n"
         f"`.  `2You receive `%{gained}`2 experience!"
     )  # reference/lord.js:7829
-    with ctx.conn:
-        save_player_raw(ctx.conn, target)
-        ctx.conn.execute(
-            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
-            "VALUES (?, ?, ?, NULL, datetime('now'), 0)",
-            (target.id, p.name, mail_body),
-        )
+    with ctx.db.transaction() as db:
+        db.players.save_in_transaction(target)
+        db.mail.send(target.id, p.name, text=mail_body)
     ctx.news(f"`.  `0{target.name}`2 has killed `5{p.name}`2 in self defence!")  # lord.js:7852
 
     lines = [

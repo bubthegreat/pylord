@@ -380,22 +380,14 @@ async def _victory(ctx: GameCtx) -> bool:
     p.high_spirits = 1  # reference/lord.js:12171
 
     # reference/lord.js:12181 -- the realm remembers its latest hero.
-    with ctx.conn:
-        ctx.conn.execute(
-            "INSERT INTO game_state (key, value) VALUES ('latesthero', :name) "
-            "ON CONFLICT(key) DO UPDATE SET value = :name",
-            {"name": p.name},
-        )
+    with ctx.db.transaction() as db:
+        db.state.set("latesthero", p.name)
 
     win_deeds = game_cfg.get("win_deeds", _DEFAULT_WIN_DEEDS)
     if win_deeds > 0 and p.king_count >= win_deeds:  # reference/lord.js:12183-12196
         # lord.js overwrites state.won_by unconditionally (:12184-12185).
-        with ctx.conn:
-            ctx.conn.execute(
-                "INSERT INTO game_state (key, value) VALUES ('won_by', :id) "
-                "ON CONFLICT(key) DO UPDATE SET value = :id",
-                {"id": str(p.id)},
-            )
+        with ctx.db.transaction() as db:
+            db.state.set("won_by", p.id)
         await ctx.io.write(
             "\n`c  `%** YOUR QUEST IS OVER **`0\n\n"
             "  `2You must indeed be the chosen one.  The ancient magic that\n"

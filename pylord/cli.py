@@ -205,14 +205,12 @@ def _cmd_delete(args: argparse.Namespace) -> int:
         _print_player_stats(player)
         return 1
 
-    conn = repo.conn
-    with conn:
-        conn.execute("DELETE FROM mail WHERE to_id = ?", (player.id,))
-        conn.execute("DELETE FROM players WHERE id = ?", (player.id,))
-        # Anyone married to them is single again.
-        conn.execute(
-            "UPDATE players SET married_to = NULL WHERE married_to = ?", (player.id,)
-        )
+    from pylord.data import Database
+
+    database = Database(repo.conn)
+    with database.transaction() as tx:
+        tx.mail.delete_for(player.id)
+        tx.players.delete(player.id)  # also frees anyone married to them
     print(f"deleted {player.name}")
     return 0
 

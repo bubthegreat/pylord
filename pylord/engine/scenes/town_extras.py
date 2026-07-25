@@ -79,12 +79,9 @@ async def who_is_on(ctx: GameCtx) -> str:
 @scene("game_stats")
 async def game_stats(ctx: GameCtx) -> str:
     """Port of ``show_game_stats()``. reference/lord.js:16251-16276."""
-    day_row = ctx.conn.execute(
-        "SELECT value FROM game_state WHERE key = 'day'"
-    ).fetchone()
-    day = day_row["value"] if day_row is not None else "1"
+    day = ctx.db.state.get("day", "1")
     win_deeds = ctx.config.get("win_deeds", 3)  # reference/lord.js:1852
-    players = ctx.repo.all_players()
+    players = ctx.repo.all_players()  # counted below, both totals
 
     lines = [
         "",

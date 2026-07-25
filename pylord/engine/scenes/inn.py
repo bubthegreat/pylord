@@ -859,12 +859,8 @@ async def _sneak_attack(ctx: GameCtx, target: Player, subj: str) -> bool:
         f"  `0{p.name}`2 has broken into your room at the Inn!"
     )  # reference/lord.js:8079-8081 -- sent immediately, before the fight,
     # regardless of its outcome (unlike run_attack()'s own win/loss-only mail).
-    with ctx.conn:
-        ctx.conn.execute(
-            "INSERT INTO mail (to_id, from_name, text, effect, created, read) "
-            "VALUES (?, ?, ?, NULL, datetime('now'), 0)",
-            (target.id, p.name, mail_body),
-        )
+    with ctx.db.transaction() as db:
+        db.mail.send(target.id, p.name, text=mail_body)
     await ctx.io.pause()
     return await pvp_mod.run_attack(ctx, target, from_inn=True)
 
