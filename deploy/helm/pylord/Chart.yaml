@@ -3,8 +3,8 @@ name: pylord
 description: Legend of the Red Dragon -- a telnet door game server
 type: application
 # Chart version: bump on chart changes. appVersion tracks the game release.
-version: 0.1.1
-appVersion: "0.1.1"
+version: 0.1.2
+appVersion: "0.1.2"
 home: https://github.com/bubthegreat/pylord
 sources:
   - https://github.com/bubthegreat/pylord
