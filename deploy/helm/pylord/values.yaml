@@ -139,6 +139,7 @@ igms:
   werewolf: true
   outlands_tavern: true
   sunshines_fairy_land: true
+  kaldors_court: true
 
 resources:
   requests:
