@@ -31,7 +31,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from telnetlib3.telopt import ECHO, SGA, WILL
 
 import pylord.engine.scenes  # noqa: F401 -- registers SCENES (town, stats, ...)
-from pylord import data, igm_loader
+from pylord import data, health, igm_loader
 from pylord.data import Database, PlayersRepo
 from pylord.engine import daily, fights
 from pylord.engine.game import GameCtx, run_session
@@ -442,6 +442,13 @@ async def start(config: dict[str, Any]):
         )
 
     server = await telnetlib3.create_server(host=host, port=port, shell=shell)
+
+    # Kubernetes probes get their own port. Pointed at the telnet port they
+    # opened a real session every few seconds, and the log filled with
+    # connections that were never players.
+    health_port = server_cfg.get("health_port", 8080)
+    if health_port:
+        server.pylord_health = await health.start(database, host=host, port=health_port)
     # Hung off the server so a caller that shuts it down can also let go of
     # the connection pool. Without it, a short-lived server (the e2e
     # walkthrough) leaves aiomysql connections to be collected after the

@@ -63,7 +63,12 @@ class Recv:
 async def _start_test_server(tmp_path, game_config=None):
     db_path = tmp_path / "lord.db"
     config = {
-        "server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)},
+        # health_port 0: these start many servers at once, and a
+        # fixed port would collide. See tests/test_health.py.
+        "server": {
+            "host": "127.0.0.1", "port": 0, "db": str(db_path),
+            "health_port": 0,
+        },
         "game": game_config or {},
     }
     server = await start(config)
@@ -389,7 +394,12 @@ async def test_startup_clears_stale_online_flags(tmp_path):
     await database.dispose()
 
     server = await start(
-        {"server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)}, "game": {}}
+        {# health_port 0: these start many servers at once, and a
+        # fixed port would collide. See tests/test_health.py.
+        "server": {
+            "host": "127.0.0.1", "port": 0, "db": str(db_path),
+            "health_port": 0,
+        }, "game": {}}
     )
     try:
         database = await data.connect(str(db_path))

@@ -76,17 +76,31 @@ spec:
             - name: telnet
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+          # Probed over HTTP on their own port. Against the telnet port each
+          # probe was a real session -- it negotiated, logged a connection
+          # and a disconnection, and buried the players in the log.
           startupProbe:
-            tcpSocket:
-              port: telnet
+            httpGet:
+              path: /readyz
+              port: health
             {{- toYaml .Values.probes.startup | nindent 12 }}
+          # /readyz checks the database, so a pod that cannot reach MySQL
+          # leaves the Service instead of taking players it cannot save.
           readinessProbe:
-            tcpSocket:
-              port: telnet
+            httpGet:
+              path: /readyz
+              port: health
             {{- toYaml .Values.probes.readiness | nindent 12 }}
+          # /healthz deliberately checks nothing but the event loop:
+          # restarting the pod would not fix a database outage, and would
+          # end every session in progress.
           livenessProbe:
-            tcpSocket:
-              port: telnet
+            httpGet:
+              path: /healthz
+              port: health
             {{- toYaml .Values.probes.liveness | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

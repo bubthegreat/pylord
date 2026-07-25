@@ -142,8 +142,12 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# A hung telnet listener is the failure worth catching; a TCP connect covers
-# it without pretending the game speaks HTTP.
+# The endpoint Kubernetes probes (pylord/health.py). Its own port, because
+# probing the telnet port opened a session every few seconds and filled the
+# log with connections that were never players.
+health:
+  port: 8080
+
 probes:
   startup:
     periodSeconds: 2

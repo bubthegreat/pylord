@@ -228,7 +228,12 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
     work_dir.mkdir(parents=True, exist_ok=True)
     db_path = os.environ.get("PYLORD_DB_URL") or str(work_dir / "lord.db")
     config = {
-        "server": {"host": "127.0.0.1", "port": 0, "db": str(db_path)},
+        # health_port 0: these start many servers at once, and a
+        # fixed port would collide. See tests/test_health.py.
+        "server": {
+            "host": "127.0.0.1", "port": 0, "db": str(db_path),
+            "health_port": 0,
+        },
         "game": {},
         "igms": {igm: True for igm in igms or []},
     }
@@ -238,6 +243,9 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
     finally:
         server.close()
         await server.wait_closed()
+        if getattr(server, "pylord_health", None) is not None:
+            server.pylord_health.close()
+            await server.pylord_health.wait_closed()
         await server.pylord_database.dispose()
 
 
