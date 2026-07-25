@@ -140,6 +140,7 @@ igms:
   outlands_tavern: true
   sunshines_fairy_land: true
   kaldors_court: true
+  wishing_well: true
 
 resources:
   requests:
