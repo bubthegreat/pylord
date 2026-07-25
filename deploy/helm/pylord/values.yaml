@@ -133,6 +133,8 @@ igms:
   abandoned_mines: false
   arena_of_lords: false
   the_latrine: false
+  # Wave 3 -- ports from the igms_to_port archive, off by default.
+  werewolf: false
 
 resources:
   requests:
