@@ -29,6 +29,7 @@ no-ops there).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from pylord.engine.game import scene
@@ -53,6 +54,10 @@ _MENU_LINES = (
     "",
 )
 _MENU = "\n".join(_MENU_LINES)
+
+# Where the game-clock line is spliced into _MENU_LINES on every redraw --
+# right after the "-=-=-" divider (index 2), before the first menu row.
+_CLOCK_LINE_INDEX = 3
 
 _PROMPT = "`2Your choice`0? `2"
 
@@ -91,6 +96,53 @@ _GOODBYE = (
 _MENU_OPTIONS = {**_DESTINATIONS, "Q": "logoff"}
 
 
+def _clock_and_countdown(now: datetime) -> tuple[str, str]:
+    """Current UTC clock and countdown to the next UTC day-boundary.
+
+    **pylord-original addition -- no lord.js source.** lord.js's own BBS
+    door has no live in-game clock; this project's daily maintenance
+    flips the calendar day at UTC midnight (``datetime.now(UTC)
+    .date().isoformat()`` -- see ``pylord/engine/daily.py``'s module
+    docstring and ``server.py``'s login path), so showing players the
+    current UTC time plus a countdown to that same boundary is an
+    undisguised UX addition, not a port of anything.
+
+    Pure function of ``now`` (the caller passes ``datetime.now(UTC)``) so
+    tests can pin exact values without monkeypatching global time.
+    Returns ``(clock, countdown)`` as ``"HH:MM"``/``"H:MM"`` strings, no
+    seconds.
+
+    **Midnight edge case:** at exactly 00:00:00 UTC this reads
+    ``"24:00"``, not ``"0:00"`` -- it falls straight out of "minutes
+    until *tomorrow's* midnight" with no special-casing, and a freshly
+    started day having a full day left reads better than "0:00 left"
+    the instant a new day begins. See ``docs/deviations.md``.
+    """
+    clock = now.strftime("%H:%M")
+    tomorrow_midnight = datetime.combine(
+        now.date() + timedelta(days=1), datetime.min.time(), tzinfo=now.tzinfo
+    )
+    remaining_minutes = int((tomorrow_midnight - now).total_seconds()) // 60
+    hours, minutes = divmod(remaining_minutes, 60)
+    return clock, f"{hours}:{minutes:02d}"
+
+
+def _clock_line(now: datetime) -> str:
+    """The Town Square's game-time/countdown line, built from
+    ``_clock_and_countdown`` -- see that docstring for provenance."""
+    clock, countdown = _clock_and_countdown(now)
+    return f"  `2Game time: `0{clock}`2    New day in: `0{countdown}"
+
+
+def _render_menu(now: datetime) -> str:
+    """``_MENU`` with a fresh game-clock line spliced in after the
+    divider, so the clock/countdown is never baked into a static
+    constant and is current on every redraw."""
+    lines = list(_MENU_LINES)
+    lines.insert(_CLOCK_LINE_INDEX, _clock_line(now))
+    return "\n".join(lines)
+
+
 @scene("town")
 async def town(ctx: GameCtx) -> str | None:
     p = ctx.player
@@ -100,7 +152,7 @@ async def town(ctx: GameCtx) -> str | None:
     p.gold = max(0, p.gold)
     p.exp = max(0, p.exp)
 
-    await ctx.io.write(_MENU)
+    await ctx.io.write(_render_menu(datetime.now(UTC)))
     choice = await ctx.io.menu(_MENU_OPTIONS, _PROMPT)
     if choice != "Q":
         return _DESTINATIONS[choice]

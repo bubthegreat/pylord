@@ -3,6 +3,8 @@ via tests/harness.py's play()."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from tests.harness import play, screen
 
 
@@ -12,6 +14,56 @@ async def test_town_square_shows_menu_and_letters():
     assert "Town Square" in text
     assert "(F)orest" in text
     assert "(Q)uit to fields" in text
+
+
+# --- Game-time / new-day countdown (pylord-original, docs/deviations.md) ---
+
+
+def test_clock_and_countdown_mid_afternoon():
+    from pylord.engine.scenes.town import _clock_and_countdown
+
+    now = datetime(2026, 7, 24, 14, 53, tzinfo=UTC)
+    assert _clock_and_countdown(now) == ("14:53", "9:07")
+
+
+def test_clock_and_countdown_just_before_midnight():
+    from pylord.engine.scenes.town import _clock_and_countdown
+
+    now = datetime(2026, 7, 24, 23, 1, tzinfo=UTC)
+    assert _clock_and_countdown(now) == ("23:01", "0:59")
+
+
+def test_clock_and_countdown_at_noon():
+    from pylord.engine.scenes.town import _clock_and_countdown
+
+    now = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
+    assert _clock_and_countdown(now) == ("12:00", "12:00")
+
+
+def test_clock_and_countdown_at_exact_midnight_shows_24_00():
+    """Edge case: at exactly 00:00:00 UTC the countdown reads "24:00", not
+    "0:00" -- see _clock_and_countdown's docstring for why this option was
+    picked over the other."""
+    from pylord.engine.scenes.town import _clock_and_countdown
+
+    now = datetime(2026, 7, 24, 0, 0, tzinfo=UTC)
+    assert _clock_and_countdown(now) == ("00:00", "24:00")
+
+
+def test_clock_and_countdown_ignores_seconds_in_display():
+    from pylord.engine.scenes.town import _clock_and_countdown
+
+    now = datetime(2026, 7, 24, 9, 6, 30, tzinfo=UTC)
+    assert _clock_and_countdown(now) == ("09:06", "14:53")
+
+
+async def test_town_square_shows_game_time_and_countdown():
+    """Rendered fresh on every redraw (not baked into the static _MENU),
+    via _render_menu(datetime.now(UTC)) -- see town.py's town()."""
+    io, _player = await play(["q"])
+    text = screen(io)
+    assert "Game time:" in text
+    assert "New day in:" in text
 
 
 async def test_quit_logs_off_without_error():
