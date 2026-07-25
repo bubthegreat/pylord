@@ -14,6 +14,7 @@ and the shared daily flirt gate across both targets.
 from __future__ import annotations
 
 from igms.kaldors_court.igm import (
+    _SEED_TALK_LINE,
     CHANT_CHARM_DELTA,
     FAIRY_BUY_PRICE,
     FAIRY_SELL_PRICE,
@@ -31,11 +32,16 @@ from igms.kaldors_court.igm import (
     _gem_buy_price,
     _gem_sell_price,
     _horse_buy_price,
-    _SEED_TALK_LINE,
 )
 from igms.sunshines_fairy_land.igm import FAIRY_SELL_PRICE as SUNSHINE_FAIRY_SELL_PRICE
 from tests.igm_contract import contract_check
-from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx, make_maint_ctx
+from tests.igms._harness import (
+    SeqRandom,
+    make_ctx,
+    make_db,
+    make_igm_ctx,
+    make_maint_ctx,
+)
 
 
 async def _visit(keys, rng=None, **overrides):

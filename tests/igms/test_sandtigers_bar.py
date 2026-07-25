@@ -233,9 +233,8 @@ async def test_stories_rotate_via_rng():
 
     await igm.enter(ctx)
 
-    from pylord.terminal import strip
-
     from igms.sandtigers_bar.igm import _STORIES
+    from pylord.terminal import strip
 
     out = "".join(ctx.term.output)
     assert strip(_STORIES[1]) in strip(out)

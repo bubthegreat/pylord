@@ -16,7 +16,6 @@ mailed exp drain / attacker hp floor.
 from __future__ import annotations
 
 from igms.outlands_tavern.igm import (
-    BACKROOM_ENTRY_CHANCE_DENOM,
     CHARM_DISCOUNT_THRESHOLD,
     DISCOUNT_PRICE_FRACTION,
     REWARD_GOLD_PER_LEVEL,
@@ -226,7 +225,7 @@ async def test_wander_gated_once_per_day():
 
 
 async def test_view_stats_shows_level_and_gold():
-    _gctx, ctx, p, _db = await _visit(["V", "\r", "L"])
+    _gctx, ctx, _p, _db = await _visit(["V", "\r", "L"])
     await OutlandsTavern().enter(ctx)
     assert any("Your Stats" in line for line in ctx.term.output)
 
@@ -295,7 +294,7 @@ async def test_sneak_blank_name_loses_nerve():
 
 
 async def test_sneak_unknown_name_lets_retry_without_recatch():
-    _gctx, ctx, p, target, database = await _visit_with_target(
+    _gctx, ctx, p, target, _database = await _visit_with_target(
         ["S", "Bogus", "Villager", "Y", "\r", "L"],
         rng=SeqRandom([1, 6, 1, 10]),
     )

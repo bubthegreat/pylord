@@ -33,7 +33,13 @@ from igms.sunshines_fairy_land.igm import (
     SunshinesFairyLand,
 )
 from tests.igm_contract import contract_check
-from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx, make_maint_ctx
+from tests.igms._harness import (
+    SeqRandom,
+    make_ctx,
+    make_db,
+    make_igm_ctx,
+    make_maint_ctx,
+)
 
 
 async def _visit(keys, rng=None, **overrides):

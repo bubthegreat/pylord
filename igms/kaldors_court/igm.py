@@ -590,7 +590,7 @@ class KaldorsCourt(IGM):
                     await ctx.term.pause()
                     continue
                 qty = await self._ask_quantity(
-                    ctx, f"\n  `2How many gems do you want to sell? : `%"
+                    ctx, "\n  `2How many gems do you want to sell? : `%"
                 )
                 if qty < 1:
                     continue
