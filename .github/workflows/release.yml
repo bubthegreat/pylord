@@ -1,0 +1,142 @@
+name: Release
+
+# Cuts a semver release on every push to main: builds the image, pins the
+# chart at that version, then tags it. ArgoCD's prod Application tracks a
+# semver range over tags ('>=0.1.0'), so the tag *is* the deploy -- nothing
+# here talks to the cluster, and nothing writes a commit SHA into a values
+# file.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Serialize releases: a queued run recomputes its version against any tags
+# the previous run pushed.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: bubthegreat/pylord
+
+jobs:
+  tests:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: Compute release version
+    needs: [tests]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next patch version
+        id: compute
+        run: echo "version=$(bash .github/scripts/compute-version.sh)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and push the image
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Bake the version into the package
+        run: uv version "${{ needs.version.outputs.version }}" --no-sync
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: bubthegreat
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  tag-release:
+    name: Tag the release
+    # The image must exist before the tag does, so ArgoCD can never resolve
+    # a tag whose image is missing from the registry.
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Pin the chart at this version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          uv version "${VERSION}" --no-sync
+          # Quoted: a version is a string. An unquoted one that happens to
+          # parse as a YAML number comes back out of Helm as 2.521844e+06,
+          # which Kubernetes rejects with InvalidImageName -- that took the
+          # realm down once already.
+          sed -i -E "s|^(\s*tag:).*$|\1 \"${VERSION}\"|" deploy/values/prod.yaml
+          sed -i -E "s|^(version:).*$|\1 ${VERSION}|" deploy/helm/pylord/Chart.yaml
+          sed -i -E "s|^(appVersion:).*$|\1 \"${VERSION}\"|" deploy/helm/pylord/Chart.yaml
+
+      - name: Check the chart really renders that image
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # The step the old pipeline lacked. CI rendered the chart *before*
+          # the tag was rewritten, so a tag that rendered into something
+          # unusable reached the cluster untested.
+          helm template pylord deploy/helm/pylord -f deploy/values/prod.yaml \
+            | grep -q "image: \"${IMAGE}:${VERSION}\""
+
+      - name: Commit, tag, and push
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock \
+                  deploy/values/prod.yaml deploy/helm/pylord/Chart.yaml
+          git commit -m "chore(release): v${VERSION} [skip ci]"
+
+          # main can advance while the image builds, making a plain push
+          # non-fast-forward (the concurrency guard serializes release runs,
+          # not merges arriving mid-run). Rebase and retry; tag only after
+          # the commit lands, so the tag never points at an unreachable
+          # commit.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:refs/heads/main; then
+              git tag -a "v${VERSION}" -m "Release v${VERSION}"
+              git push origin "refs/tags/v${VERSION}"
+              exit 0
+            fi
+            echo "main advanced under the release (attempt ${attempt}); rebasing"
+            git fetch origin main
+            git rebase origin/main || { echo "release bump conflicts with main"; exit 1; }
+          done
+          echo "release push failed after 5 attempts" >&2
+          exit 1

@@ -1,7 +1,9 @@
 # Production realm on the homelab k3s cluster (namespace pylord-prod).
 #
-# CI rewrites image.tag on every push to the release branch; everything else
-# here is hand-maintained.
+# The release workflow pins image.tag to the version it is cutting, in the
+# same commit it tags. Argo tracks a semver range over those tags, so the
+# tag it resolves and the image this file names are always the same
+# release. Everything else here is hand-maintained.
 
 image:
   tag: "d042da2"

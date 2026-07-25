@@ -15,7 +15,11 @@ spec:
 
   source:
     repoURL: https://github.com/bubthegreat/pylord.git
-    targetRevision: main
+    # A semver range over release tags, not a branch. Argo resolves it to
+    # the newest matching tag, so cutting v0.1.2 *is* the deploy -- there is
+    # no promote job writing an image tag into a values file, and prod never
+    # follows an untagged commit on main.
+    targetRevision: ">=0.1.0"
     path: deploy/helm/pylord
     helm:
       releaseName: pylord

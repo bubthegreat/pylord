@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    # Not main: release.yml calls this workflow there, so running it here
+    # too would double every job -- including the MySQL one.
+    branches-ignore: [main]
   pull_request:
+  # Called by release.yml, so a release cannot be cut past a red suite.
+  workflow_call:
 
 jobs:
   test:

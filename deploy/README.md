@@ -114,9 +114,10 @@ deploy/
 
 | Task | How |
 |------|-----|
-| Ship a change | Merge to `main`. CI builds, writes the tag to `values/prod.yaml`, Argo syncs. |
+| Ship a change | Merge to `main`. The release workflow runs the suite, builds the image, pins the chart at the next patch version, and tags it. Argo tracks `>=0.1.0` over those tags, so the tag is the deploy. |
+| Cut a release by hand | Run the **Release** workflow from the Actions tab (`workflow_dispatch`). |
 | Change a game knob | Edit `values/prod.yaml`'s `game:` block and push — the config checksum restarts the pod. |
-| Roll back | Revert the tag commit, or `argocd app rollback pylord-prod`. |
+| Roll back | `argocd app rollback pylord-prod`, or delete the bad tag so Argo resolves the previous one: `git push origin :refs/tags/vX.Y.Z`. |
 | Sysop CLI | `kubectl -n pylord-prod exec deploy/pylord -- pylord players --config /config/config.toml` |
 | Back up the realm | `kubectl -n pylord-prod exec deploy/pylord-mysql -- sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction lord' > lord.sql` -- `--single-transaction` matters: it takes a consistent snapshot without locking players out mid-session. Longhorn also snapshots the volume. |
 | Restore | `kubectl -n pylord-prod exec -i deploy/pylord-mysql -- sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" lord' < lord.sql` |
