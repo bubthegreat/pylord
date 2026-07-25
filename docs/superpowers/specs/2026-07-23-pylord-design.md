@@ -19,7 +19,7 @@ Metropolis in 1998). The canonical open-source reference is Synchronet's GPL
 | Game model | Faithful door game: daily limits, async PvP, shared persistent world |
 | Interface | Telnet server (asyncio), ANSI color; players connect with any telnet/BBS client |
 | Fidelity | Exact clone — tables/formulas ported from GPL `lord.js`; project licensed GPL-3.0 |
-| Storage | SQLite (WAL), single server process |
+| Storage | MySQL in deployment, SQLite for local play and tests; one schema for both |
 | Auth | Character name + password, classic BBS style |
 | Plugins | Drop-in `igms/` directory, auto-discovered; per-IGM enable/disable in config |
 | Architecture | Hooked core: faithful hardcoded engine + defined hook points for IGMs |
@@ -28,9 +28,11 @@ Metropolis in 1998). The canonical open-source reference is Synchronet's GPL
 
 ## Section A — Architecture & Tech Stack
 
-- **Runtime deps**: `telnetlib3` only. Stdlib `sqlite3`. Dev deps: `pytest`, `ruff`.
+- **Runtime deps**: `telnetlib3`, `sqlalchemy` (async), `aiomysql`/`aiosqlite`,
+  `cryptography` (MySQL 8's default auth needs it). Dev deps: `pytest`, `ruff`.
 - **Process model**: one asyncio process; each telnet connection is a session
-  coroutine. All DB writes serialize through the process (SQLite WAL). No node
+  coroutine, and every database call is awaited so a query across a socket
+  cannot stall the other players' sessions. No node
   numbers, no drop files — the original's `INFO.<node>` / `3RDPARTY.DAT` /
   subprocess mechanism is replaced by in-process Python plugin classes. Fidelity
   target is player-visible behavior, not file formats.
@@ -56,7 +58,9 @@ pylord/
   hooks.py         # hook registry + IGM base class + IGM-facing API
   igm_loader.py    # scans igms/, validates, registers enabled IGMs
   models.py        # Player dataclass mirroring player_info record
-  db.py            # SQLite repository + numbered migrations
+  data.py          # repositories over an async SQLAlchemy engine
+  schema.py        # the tables, declared once for every backend
+  migrate.py       # copy a realm between databases
 igms/
   baraks_house/    # each IGM: package dir with igm.py exposing one IGM subclass
   ...
@@ -90,7 +94,7 @@ config.toml        # sysop settings incl. [igms] enable flags
 **Out of scope v1**: RIP graphics, inter-BBS play, LADY script interpreter,
 original .DAT import/export.
 
-### Data model (SQLite)
+### Data model
 
 - `players` — mirrors `player_info`: stats, gear ids, gold/bank, flags
   (seen_dragon, married_to, king count…), skill points/uses, daily counters,
@@ -104,7 +108,10 @@ original .DAT import/export.
 - `igm_data` — namespaced per-IGM key/value JSON store; IGMs never touch core
   tables directly except through the API.
 
-Migrations: a numbered list of SQL scripts in `pylord/db.py`, applied at boot.
+The tables are declared once as SQLAlchemy Core metadata in
+`pylord/schema.py` and created at boot, so the same definition produces
+correct DDL on both backends rather than two hand-written copies drifting
+apart.
 
 ## Section C — IGM Plugin API
 

@@ -27,6 +27,7 @@ loads what it needs up front and buffers what it writes -- see
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import fields
@@ -40,6 +41,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_en
 
 from pylord import schema
 from pylord.models import Player, hash_password, verify_password
+
+logger = logging.getLogger(__name__)
 
 _PLAYER_COLS = [f.name for f in fields(Player) if f.name not in ("id", "name")]
 _ALL_PLAYER_COLS = [f.name for f in fields(Player)]
@@ -382,9 +385,10 @@ class Database:
         await self.execute(stmt)
 
     async def create_schema(self) -> None:
-        """Create any missing tables and stamp the schema version."""
+        """Bring the database up to the schema the code expects."""
         async with self._engine.begin() as conn:
             await conn.run_sync(schema.metadata.create_all)
+            await conn.run_sync(self._add_missing_columns)
         existing = await self.fetch_one(select(schema.schema_version.c.applied_count))
         if existing is None:
             await self.execute(
@@ -392,6 +396,54 @@ class Database:
                     applied_count=schema.CURRENT_VERSION
                 )
             )
+        else:
+            await self.execute(
+                update(schema.schema_version).values(
+                    applied_count=schema.CURRENT_VERSION
+                )
+            )
+
+    @staticmethod
+    def _add_missing_columns(conn: Any) -> None:
+        """Add columns a release introduced to a database that predates it.
+
+        ``create_all`` only creates whole tables that are absent -- it will
+        not touch a table that already exists. Without this, adding a field
+        to ``schema.py`` would work perfectly on a fresh database and on
+        every test, and silently never reach the live realm, where the code
+        would then query a column that isn't there.
+
+        Deliberately additive only. Dropping or retyping a column is
+        destructive and is not something a server should do to a realm on
+        startup because its code changed; those need a considered
+        migration. This exists so *adding* a field -- which is what a game
+        gaining features actually does -- is safe.
+        """
+        from sqlalchemy import inspect, text
+        from sqlalchemy.schema import CreateColumn
+
+        inspector = inspect(conn)
+        preparer = conn.dialect.identifier_preparer
+        for table in schema.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                if column.server_default is None and not column.nullable:
+                    raise RuntimeError(
+                        f"cannot add {table.name}.{column.name} to an existing "
+                        "database: a NOT NULL column needs a server_default so "
+                        "the rows already there get a value"
+                    )
+                spec = CreateColumn(column).compile(dialect=conn.dialect)
+                logger.info("adding new column %s.%s", table.name, column.name)
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {preparer.format_table(table)} ADD COLUMN {spec}"
+                    )
+                )
 
     async def dispose(self) -> None:
         await self._engine.dispose()
