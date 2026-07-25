@@ -77,4 +77,11 @@ jobs:
           fi
           # [skip ci] so promoting doesn't trigger the build that promotes.
           git commit -am "chore: deploy ${{ needs.build.outputs.tag }} to prod [skip ci]"
-          git push
+          # Someone may have pushed while the image was building; rebase
+          # rather than failing the deploy on a non-fast-forward.
+          for attempt in 1 2 3; do
+            git pull --rebase --quiet origin main && git push && exit 0
+            echo "push race on attempt $attempt, retrying"
+            sleep 5
+          done
+          exit 1
