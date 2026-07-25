@@ -361,9 +361,12 @@ class TelnetIO(TermIO):
     """
 
     #: Sustained keypresses per second once the burst allowance is spent.
-    INPUT_RATE = 20.0
+    #: Comfortably above a held key's repeat rate (~30/s) so holding Enter
+    #: to keep hunting is never slowed; it exists to bound a script that
+    #: floods thousands a second.
+    INPUT_RATE = 60.0
     #: Keys that may be sent instantly before pacing applies.
-    INPUT_BURST = 25.0
+    INPUT_BURST = 90.0
 
     def __init__(self, reader, writer):
         self.reader = reader

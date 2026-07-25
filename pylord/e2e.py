@@ -17,7 +17,9 @@ Two front ends share it:
   a regression in any base screen fails CI.
 
 ``LordClient`` is deliberately small: send keys or lines, wait for a
-marker, and keep the text seen so far. Markers should avoid characters
+marker, and keep the text seen so far. Its default timeout is generous
+because it drives input far faster than a person can type, and the server
+paces sustained input (see ``TelnetIO``). Markers should avoid characters
 that scenes wrap in colour codes -- e.g. match ``"ook for something to
 kill"`` rather than ``"(L)ook ..."``, because the ``(L)`` renders with
 ANSI escapes inside it.
@@ -66,7 +68,7 @@ class Timeout(AssertionError):
 class LordClient:
     """One telnet session against a running pylord server."""
 
-    def __init__(self, reader, writer, *, timeout: float = 5.0) -> None:
+    def __init__(self, reader, writer, *, timeout: float = 15.0) -> None:
         self.reader = reader
         self.writer = writer
         self.timeout = timeout
@@ -439,41 +441,47 @@ async def _step_mail(c: LordClient) -> None:
 
 
 async def _step_forest_fight(c: LordClient) -> None:
-    """(L)ook until a monster appears, then attack it to death. The
-    character is buffed beforehand, so the fight cannot be lost; the loop
-    reacts to whichever random branch actually happened."""
+    """(L)ook until something dies.
+
+    The forest can answer a look with a fight or with any of its random
+    events, and several of those ask a question -- the hag wants a gem, the
+    horse trader wants a decision. So rather than script one path, this
+    answers whatever prompt turns up (declining anything optional) until a
+    monster is dead. The character is buffed beforehand, so the fight
+    itself cannot be lost.
+    """
     c.key("F")
     await c.forest()
-    for _ in range(60):
-        c.key("L")
+    killed = False
+    for _ in range(200):
+        if not killed:
+            c.key("L")
         branch = await c.expect_any(
-            ["You have encountered", "Event In The Forest", "YOU ARE NOTICED", FOREST_MENU]
+            [
+                "You have killed",   # the monster is down
+                "[A] : ",            # battle prompt
+                "[G] : ",            # the horse trader
+                "[N] : ",            # the hag, and any other yes/no event
+                "MORE",              # any paused screen
+                FOREST_MENU,         # back at the menu: look again
+            ]
         )
-        if branch.marker == "You have encountered":
-            while True:
-                turn = await c.expect_any(["You have killed", "Your command"])
-                if turn.marker == "Your command":
-                    c.key("A")
-                    continue
-                await c.expect("MORE")
-                c.key(" ")
-                await c.forest()
-                c.key("R")
-                await c.town()
-                return
-        if branch.marker == "Event In The Forest":
-            sub = await c.expect_any(["take the old man", "MORE"])
-            if sub.marker == "take the old man":
-                c.key("N")
-                await c.expect("MORE")
+        marker = branch.marker
+        if marker == "You have killed":
+            killed = True
+        elif marker == "[A] : ":
+            c.key("A")
+        elif marker == "[G] : ":
+            c.key("G")     # leave the horse trader alone
+        elif marker == "[N] : ":
+            c.key("N")     # decline whatever is being offered
+        elif marker == "MORE":
             c.key(" ")
-            await c.expect(FOREST_MENU)
-        elif branch.marker == "YOU ARE NOTICED":
-            await c.expect("MORE")
-            c.key(" ")
-            await c.expect(FOREST_MENU)
-        # else: the silent "nothing" event reprinted the menu -- loop.
-    raise AssertionError("no monster encountered in 60 (L)ook presses")
+        elif killed:
+            c.key("R")
+            await c.town()
+            return
+    raise AssertionError("nothing died in 200 presses of (L)ook")
 
 
 async def _step_other_places(c: LordClient) -> None:
