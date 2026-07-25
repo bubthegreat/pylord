@@ -109,3 +109,27 @@ async def test_enter_in_the_forest_hunts_rather_than_leaving():
     assert "[L]" in text  # the default is advertised
     # Something happened in the forest: a fight, or one of its events.
     assert player.forest_fights < 5 or "Event In The Forest" in text or "NOTICED" in text
+
+
+async def test_the_bartender_shows_what_you_can_ask_him():
+    """The Inn's (T)alk to barkeep built its options dynamically and printed
+    none of them -- lord.js draws that screen from lrdfile('BT'), which
+    isn't in this repo (reference/lord.js:8127-8133)."""
+    io, _player = await play(
+        ["i", "t", "r", "r", "q", "y"],
+        overrides={"level": 5, "gender": "M"},
+    )
+    text = screen(io)
+    assert "(V)iolet" in text, text[-500:]
+    assert "(B)ribe" in text
+    assert "(R)eturn to the bar" in text
+
+
+async def test_the_bartender_offers_the_dragon_hint_at_level_twelve():
+    io, _player = await play(
+        ["i", "t", "d", "x", "r", "r", "q", "y"],
+        overrides={"level": 12, "gender": "F"},
+    )
+    text = screen(io)
+    assert "(D)ragon" in text
+    assert "(S)eth Able" in text  # gender-specific gossip

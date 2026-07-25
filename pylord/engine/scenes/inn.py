@@ -683,13 +683,23 @@ async def _bartender(ctx: GameCtx) -> None:
             '\n  "Well?" the bartender inquires.  (`0? for menu`2)\n'
         )
         options = {"R": "return", "B": "bribe"}
+        lines = []
         if p.gender == "M":
             options["V"] = "gossip_violet"
+            lines.append("  `2(`0V`2)iolet -- what does she like?")
         else:
             options["S"] = "gossip_seth"
+            lines.append("  `2(`0S`2)eth Able -- what does he like?")
         if p.level == 12:
             options["D"] = "dragon_hint"
-        choice = await ctx.io.menu(options, "  `2Your choice? : ")
+            lines.append("  `2(`0D`2)ragon -- where would a man find it?")
+        lines.append("  `2(`0B`2)ribe him to point out a sleeping warrior")
+        lines.append("  `2(`0R`2)eturn to the bar")
+        # lord.js prints this menu from an external asset (lrdfile('BT'),
+        # reference/lord.js:8127-8133) that isn't in this repo -- the lines
+        # above are a reconstruction, as in town.py.
+        await ctx.io.write("\n" + "\n".join(lines) + "\n\n")
+        choice = await ctx.io.menu(options, "  `2Your choice? [`0R`2] : ")
         if choice == "R":
             return
         if choice == "B":
