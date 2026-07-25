@@ -248,28 +248,41 @@ literal text the QuickBasic compiler embedded.
   whether the original's own level-scaled buy price ever dipped under its
   own flat sell price at a low enough level.
 * **Fairy buy/sell prices, entirely invented** (flat, not level-scaled --
-  nothing records level-scaling for this shop specifically, unlike gems);
-  buy kept strictly above sell for the same guardrail *within this shop*.
-* **Buying a fairy is gated to once a day, invented, for a cross-IGM
-  guardrail reason nothing in this archive could have recorded.**
-  ``player.has_fairy`` is a single flag shared realm-wide with
+  nothing records level-scaling for this shop specifically, unlike gems)
+  -- **and sized as a cross-IGM arbitrage guard, not just priced in a
+  vacuum.** ``player.has_fairy`` is a single flag shared realm-wide with
   ``igms/sunshines_fairy_land/igm.py``, whose own General Store pays
-  ``FAIRY_SELL_PRICE = 500_000`` for the *same* flag -- ten times this
-  shop's invented ``FAIRY_BUY_PRICE = 50_000``. Without a cap, a player
-  could buy a fairy here, walk it to SunShine's, sell it there, and repeat
-  indefinitely in a single day for unbounded gold -- precisely the
-  "buying [something] real cheap from Kaldor's, and selling [it] in other
-  IGMs for a lot" exploit shape ``WHAT-IS.NEW`` v1.3 already fixed once for
-  gems (above), just recurring here across two ported IGMs that never
-  shared a review pass in the original catalogue. A once-a-day buy gate
-  (``fairy_buy:<id>``, cleared in ``daily_maint``) bounds the worst case to
-  one 450,000-gold round trip per player per day -- the same order of
-  magnitude already tolerated by SunShine's own shipped "catch a fairy"
-  loop (up to 5 tries/day at a 1-in-4 chance, each immediately sellable for
-  500,000), not a new risk class this project hasn't already accepted.
-  Selling a fairy here is left uncapped -- the sell side only ever removes
-  gold-for-item value from the realm's total fairy count, it cannot mint a
-  cheap one to re-arbitrage.
+  ``FAIRY_SELL_PRICE = 500_000`` for the *same* flag -- the only other
+  gold value this realm ever puts on a fairy (checked: no other bundled
+  IGM or base-game scene prices one; ``outlands_tavern``'s fairy is a
+  one-time sneak-bypass token with no gold value, ``bank.py``/``forest.py``
+  read the flag as a protection/bonus gate, never a price). A first
+  attempt at this port priced ``FAIRY_BUY_PRICE`` at 50,000 -- strictly
+  above this shop's own 20,000 sell price, satisfying the guardrail
+  *within this shop*, but 10x *below* SunShine's payout -- and relied on a
+  once-a-day purchase gate alone to bound the resulting cross-IGM
+  round trip (buy here, sell at SunShine's) to "only" ~450,000 gold/day,
+  2-3 orders of magnitude above the realm's baseline income (forest
+  fights net roughly 1,300-2,800 gold/day). A capped exploit is still an
+  exploit -- the fix is to size the price out of profitability entirely,
+  not merely to throttle how often it can be run. ``FAIRY_BUY_PRICE`` is
+  now **550,000 -- strictly above SunShine's 500,000 payout** -- so the
+  cross-IGM round trip is a guaranteed 50,000-gold *loss*, the same
+  "round trip always loses gold" guardrail this port already applies
+  within its own Gems Galore and Horse Heaven, extended to cover the one
+  other IGM that also prices this exact flag.
+  ``tests/igms/test_kaldors_court.py``'s
+  ``test_fairy_buy_price_exceeds_sunshines_fairy_land_payout`` imports
+  both modules' constants directly so the two prices can never drift back
+  into profitability unnoticed. ``FAIRY_SELL_PRICE`` (this shop's own
+  buy-back, 20,000) stays well below the new buy price, satisfying the
+  in-shop guardrail with room to spare.
+* **Buying a fairy is still gated to once a day** (``fairy_buy:<id>``,
+  cleared in ``daily_maint``) -- belt-and-braces alongside the price fix
+  above, not a substitute for it: even a guaranteed-loss transaction has
+  no reason to be repeatable, and every other one-time Marketplace
+  purchase in this shop (the horse) is single-ownership-gated the same
+  way, not rate-limited by price alone.
 * **Chant/Play an instrument/Scream's daily-cap count (1/day each) and
   their win/lose odds (50/50 each), invented.** The refusal lines above
   prove *a* cap existed for each; nothing records how many attempts it
@@ -400,8 +413,12 @@ HORSE_SELL_PRICE = 30_000
 HORSE_BUY_BASE = 40_000
 HORSE_BUY_PER_LEVEL = 5_000
 
-# Invented -- see module docstring's "Fairy buy/sell prices" note.
-FAIRY_BUY_PRICE = 50_000
+# Invented -- see module docstring's "Fairy buy/sell prices" note. Sized as
+# a cross-IGM arbitrage guard: strictly above igms/sunshines_fairy_land's
+# FAIRY_SELL_PRICE (500,000, the only other gold value this realm puts on
+# the shared has_fairy flag) so buying here and selling there is always a
+# net loss, not merely rate-limited.
+FAIRY_BUY_PRICE = 550_000
 FAIRY_SELL_PRICE = 20_000
 
 # "You receive/lose 1 charm point!" (Chant, KALDOR.EXE) -- literal.

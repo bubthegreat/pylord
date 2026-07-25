@@ -33,6 +33,7 @@ from igms.kaldors_court.igm import (
     _horse_buy_price,
     _SEED_TALK_LINE,
 )
+from igms.sunshines_fairy_land.igm import FAIRY_SELL_PRICE as SUNSHINE_FAIRY_SELL_PRICE
 from tests.igm_contract import contract_check
 from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx, make_maint_ctx
 
@@ -200,16 +201,28 @@ def test_fairy_round_trip_always_loses_gold():
     assert FAIRY_SELL_PRICE < FAIRY_BUY_PRICE
 
 
-async def test_fairy_buy_limited_to_once_per_day_cross_igm_guardrail():
-    """Cross-IGM guardrail: buying a fairy here is gated to once/day so a
-    player can't buy cheap here, sell high at igms/sunshines_fairy_land's
-    General Store (FAIRY_SELL_PRICE=500,000 there), and repeat for
-    unbounded gold in a single day -- see module docstring."""
+def test_fairy_buy_price_exceeds_sunshines_fairy_land_payout():
+    """Cross-IGM economy guardrail (Fix pass 2): player.has_fairy is a flag
+    shared realm-wide with igms/sunshines_fairy_land/igm.py, whose General
+    Store pays SUNSHINE_FAIRY_SELL_PRICE (500,000) for the same flag. This
+    shop's own buy price must stay strictly ABOVE that payout so buying a
+    fairy here and selling it at SunShine's is always a net loss -- not
+    just rate-limited by the once/day gate below. Importing both modules'
+    constants directly means a future price change on either side that
+    reopens the arbitrage breaks this test rather than shipping unnoticed.
+    """
+    assert FAIRY_BUY_PRICE > SUNSHINE_FAIRY_SELL_PRICE
+
+
+async def test_fairy_buy_limited_to_once_per_day():
+    """Belt-and-braces alongside the price guard above: even a
+    guaranteed-loss purchase has no reason to be repeatable in one visit."""
     keys = ["M", "F", "B", "\r", "F", "S", "\r", "F", "B", "\r", "Q", "Q"]
-    _gctx, ctx, p, _db = await _visit(keys, gold=1_000_000)
+    _gctx, ctx, p, _db = await _visit(keys, gold=10_000_000)
     await KaldorsCourt().enter(ctx)
     assert p.has_fairy == 0  # bought, then sold; second buy refused
-    assert p.gold == 1_000_000 - FAIRY_BUY_PRICE + FAIRY_SELL_PRICE
+    assert p.gold == 10_000_000 - FAIRY_BUY_PRICE + FAIRY_SELL_PRICE
+    assert any("sold you all the fairies it can spare" in line for line in ctx.term.output)
     assert any("sold you all the fairies it can spare" in line for line in ctx.term.output)
 
 
