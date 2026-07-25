@@ -1,6 +1,6 @@
 [project]
 name = "pylord"
-version = "0.1.0"
+version = "0.1.1"
 description = "Legend of the Red Dragon — Python telnet remake"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -6,7 +6,7 @@
 # release. Everything else here is hand-maintained.
 
 image:
-  tag: "0.1.0"
+  tag: "0.1.1"
   pullPolicy: Always
 
 service:
