@@ -66,9 +66,10 @@ persistence:
   # Reuse a volume that already exists rather than provisioning one.
   existingClaim: ""
 
-# Copy the image's bundled IGMs into the volume on first start, so a sysop
-# can edit or remove them without rebuilding the image.
-seedIgms: true
+# The bundled IGMs load from the image, so a fix to one reaches every realm
+# on the next release. A sysop's own plugins go in igms/ next to the
+# database on the volume; a copy there with a bundled key is ignored rather
+# than shadowing the shipped one.
 
 # Rendered into config.toml. Anything valid in the game's [game] table works;
 # see the repo README for what each knob does.

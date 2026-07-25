@@ -70,7 +70,9 @@ requirement):
 
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from abc import ABC
 
 CLEAR_SEQ = "\x1b[2J\x1b[H"
@@ -347,17 +349,46 @@ class FakeIO(TermIO):
 
 
 class TelnetIO(TermIO):
-    """TermIO backed by a telnetlib3 (reader, writer) pair."""
+    """TermIO backed by a telnetlib3 (reader, writer) pair.
+
+    **Input pacing.** A held-down key sends a continuous stream, and every
+    keypress here can mean a database write (a fight, a dig, a purchase).
+    A token bucket paces reads: a burst is free, then input is admitted at
+    ``INPUT_RATE`` keys a second. It costs an idle player nothing -- the
+    bucket is always full when you are reading the screen -- but it stops
+    one session monopolising the process, which matters on a realm open to
+    the internet.
+    """
+
+    #: Sustained keypresses per second once the burst allowance is spent.
+    INPUT_RATE = 20.0
+    #: Keys that may be sent instantly before pacing applies.
+    INPUT_BURST = 25.0
 
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
+        self._tokens = self.INPUT_BURST
+        self._last_refill = time.monotonic()
         # Set right after a raw read returns "\r": a CRLF-style Enter
         # arrives over the wire as two separate reads ("\r" then "\n"), so
         # the very next raw read must swallow a leading "\n" instead of
         # misreading it as an already-terminated blank line/keypress. See
         # _raw_read()'s docstring for the bug this fixes.
         self._swallow_lf = False
+
+    async def _throttle(self) -> None:
+        """Spend one token, waiting for it if the bucket has run dry."""
+        now = time.monotonic()
+        self._tokens = min(
+            self.INPUT_BURST,
+            self._tokens + (now - self._last_refill) * self.INPUT_RATE,
+        )
+        self._last_refill = now
+        if self._tokens < 1.0:
+            await asyncio.sleep((1.0 - self._tokens) / self.INPUT_RATE)
+            self._tokens = 1.0
+        self._tokens -= 1.0
 
     async def _raw_read(self) -> str:
         """Read one character, applying CRLF-swallowing and EOF handling.
@@ -379,6 +410,7 @@ class TelnetIO(TermIO):
         (readline/readkey/menu/pause and ultimately the server's
         connection handler) can unwind and clean up instead of spinning.
         """
+        await self._throttle()
         ch = await self.reader.read(1)
         if self._swallow_lf:
             self._swallow_lf = False

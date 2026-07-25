@@ -27,6 +27,7 @@ import importlib.util
 import logging
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -86,22 +87,42 @@ def _validate(instance: IGM) -> None:
         raise ValueError("IGM must override enter()")
 
 
-def discover(igms_dir: Path, config: dict[str, Any]) -> IgmRegistry:
+def discover(
+    igms_dir: Path | Iterable[Path], config: dict[str, Any]
+) -> IgmRegistry:
     """Discover, validate, and enable IGMs under ``igms_dir``.
+
+    Accepts one directory or several, searched in order. The **first**
+    directory to claim a key wins, so the bundled IGMs shipped inside the
+    image always take precedence over a stale copy of the same key sitting
+    on a data volume -- which is how a realm receives fixes to a bundled
+    IGM. A sysop's own plugins live in the later directory and load
+    normally, since their keys are their own.
 
     Returns an :class:`IgmRegistry` of the enabled instances. Enable state
     for each IGM key is ``config["igms"].get(key, instance.default_enabled)``.
     Never raises: a broken or duplicate plugin is logged and skipped.
     """
-    igms_dir = Path(igms_dir)
+    dirs = (
+        [Path(igms_dir)]
+        if isinstance(igms_dir, str | Path)
+        else [Path(d) for d in igms_dir]
+    )
     toggles: dict[str, Any] = (config or {}).get("igms", {}) or {}
 
     loaded: list[IGM] = []
     seen_keys: set[str] = set()
 
-    if not igms_dir.is_dir():
-        return IgmRegistry([])
+    for directory in dirs:
+        if not directory.is_dir():
+            continue
+        _load_dir(directory, loaded, seen_keys)
 
+    enabled = [igm for igm in loaded if toggles.get(igm.key, igm.default_enabled)]
+    return IgmRegistry(enabled)
+
+
+def _load_dir(igms_dir: Path, loaded: list[IGM], seen_keys: set[str]) -> None:
     for sub in sorted(igms_dir.iterdir()):
         igm_file = sub / "igm.py"
         if not sub.is_dir() or not igm_file.is_file():
@@ -112,19 +133,16 @@ def discover(igms_dir: Path, config: dict[str, Any]) -> IgmRegistry:
             logger.warning("skipping broken IGM in %s", sub, exc_info=True)
             continue
         if instance.key in seen_keys:
-            logger.warning(
-                "skipping IGM in %s: duplicate key %r", sub, instance.key
+            # Already provided by an earlier directory -- the bundled copy
+            # wins, so a stale seeded copy on a data volume is ignored
+            # rather than shadowing the fixed one.
+            logger.info(
+                "ignoring %s: key %r already loaded from an earlier directory",
+                sub, instance.key,
             )
             continue
         seen_keys.add(instance.key)
         loaded.append(instance)
-
-    enabled = [
-        igm
-        for igm in loaded
-        if toggles.get(igm.key, igm.default_enabled)
-    ]
-    return IgmRegistry(enabled)
 
 
 class IgmRegistry:

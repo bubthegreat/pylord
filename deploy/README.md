@@ -42,9 +42,13 @@ deploy/
   delete anyone's character.
 - **`Recreate`, one replica.** SQLite has a single writer and the volume is
   ReadWriteOnce.
-- **IGMs are seeded, not baked.** An init container copies the image's
-  bundled IGMs onto the volume the first time only, so a sysop can edit or
-  remove them without rebuilding.
+- **Bundled IGMs load from the image; the volume is for your own.** They
+  used to be copied onto the volume on first start, which meant a fix to a
+  bundled IGM could never reach a realm that had already been seeded --
+  the stale copy kept loading. The server now searches the image's `igms/`
+  first and the volume's second, so bundled fixes ship with the release
+  and a sysop's own plugins (their own keys) still load from the volume.
+  A leftover copy of a bundled IGM there is ignored, not shadowing.
 
 ## First-time setup
 

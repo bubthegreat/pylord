@@ -431,12 +431,20 @@ async def start(config: dict[str, Any]):
 
     # Discover drop-in IGM plugins once at startup; the registry is shared
     # (read-only after discovery) by every connection this server accepts.
-    # Resolve ``igms/`` next to the database (which cli.load_config already
-    # anchors to the config file's directory), so discovery doesn't depend
-    # on the server's current working directory.
-    igms_dir = Path(db_path).resolve().parent / "igms"
-    igms = igm_loader.discover(igms_dir, config)
-    logger.info("loaded %d enabled IGM(s) from %s", len(igms.enabled), igms_dir)
+    #
+    # Two directories, in order. The bundled ones ship *with the code* (the
+    # repo's igms/, /app/igms in the container), so a fix to a bundled IGM
+    # reaches every realm on the next release. Then ``igms/`` next to the
+    # database, for a sysop's own plugins -- a copy there with a bundled
+    # key is ignored rather than shadowing the shipped one, which is how a
+    # realm seeded with an older copy still gets the fixed version.
+    bundled_dir = Path(__file__).resolve().parent.parent / "igms"
+    local_dir = Path(db_path).resolve().parent / "igms"
+    igms = igm_loader.discover([bundled_dir, local_dir], config)
+    logger.info(
+        "loaded %d enabled IGM(s) from %s and %s",
+        len(igms.enabled), bundled_dir, local_dir,
+    )
 
     async def shell(reader, writer) -> None:
         await handle_connection(reader, writer, conn=conn, config=config, igms=igms)

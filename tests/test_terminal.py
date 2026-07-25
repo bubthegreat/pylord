@@ -300,3 +300,64 @@ def test_telnet_io_reports_character_mode_from_negotiation():
 
     assert TelnetIO(None, _Writer()).char_mode is True
     assert TelnetIO(None, _LineWriter()).char_mode is False
+
+
+# --- Input pacing ----------------------------------------------------------
+
+
+async def test_held_key_is_paced_after_the_burst():
+    """Holding a key sends a continuous stream, and every keypress can mean
+    a database write. The burst is free; sustained input is paced."""
+    import time
+
+    class _Reader:
+        async def read(self, _n):
+            return "s"
+
+    class _Writer:
+        mode = "kludge"
+
+        def write(self, _text):
+            pass
+
+    io = TelnetIO(_Reader(), _Writer())
+    # Slow enough that the pacing is unambiguous against timer jitter.
+    io.INPUT_RATE = 10.0
+    io.INPUT_BURST = 3.0
+    io._tokens = io.INPUT_BURST
+
+    started = time.monotonic()
+    for _ in range(3):
+        await io.readkey()
+    assert time.monotonic() - started < 0.05  # the burst is not slowed
+
+    started = time.monotonic()
+    for _ in range(3):
+        await io.readkey()
+    paced_elapsed = time.monotonic() - started
+    # Three more keys at 10/s cannot arrive in under 0.2s.
+    assert paced_elapsed >= 0.2, paced_elapsed
+
+
+async def test_a_normal_player_is_never_slowed():
+    """Tokens refill while you read the screen, so ordinary play never
+    waits."""
+
+    class _Reader:
+        async def read(self, _n):
+            return "a"
+
+    class _Writer:
+        mode = "kludge"
+
+        def write(self, _text):
+            pass
+
+    io = TelnetIO(_Reader(), _Writer())
+    io._tokens = io.INPUT_BURST
+    import time
+
+    started = time.monotonic()
+    for _ in range(int(io.INPUT_BURST)):
+        await io.readkey()
+    assert time.monotonic() - started < 0.05

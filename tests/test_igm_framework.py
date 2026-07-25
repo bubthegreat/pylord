@@ -738,3 +738,39 @@ def test_store_reads_its_own_writes_after_a_flush():
     store.delete("rate")
     store.flush()
     assert store.get("rate") is None
+
+
+def test_discover_prefers_the_first_directory_for_a_duplicate_key(tmp_path):
+    """A realm seeded with an old copy of a bundled IGM must still get the
+    shipped one: bundled directories are searched first, and a later copy
+    of the same key is ignored rather than shadowing it."""
+    from pylord import igm_loader
+
+    def _write(root, key, marker):
+        d = root / key
+        d.mkdir(parents=True)
+        (d / "igm.py").write_text(
+            "from pylord.hooks import IGM\n"
+            f"class X(IGM):\n"
+            f"    key = {key!r}\n"
+            f"    name = {marker!r}\n"
+            f"    default_enabled = True\n"
+            "    async def enter(self, ctx):\n        pass\n"
+        )
+
+    bundled, local = tmp_path / "bundled", tmp_path / "local"
+    _write(bundled, "mines", "shipped")
+    _write(local, "mines", "stale copy")
+    _write(local, "sysops_own", "custom")
+
+    reg = igm_loader.discover([bundled, local], {})
+    by_key = {igm.key: igm.name for igm in reg.enabled}
+
+    assert by_key["mines"] == "shipped"      # not the stale volume copy
+    assert by_key["sysops_own"] == "custom"  # a sysop's own still loads
+
+
+def test_discover_still_accepts_a_single_directory(tmp_path):
+    from pylord import igm_loader
+
+    assert igm_loader.discover(tmp_path, {}).enabled == []
