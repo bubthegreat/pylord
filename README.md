@@ -8,8 +8,9 @@ original In-Game Module (IGM) spirit intact as a drop-in plugin system.
 > browser, no telnet client needed.
 
 Forest fights, the Red Dragon, Turgon's warrior training, Violet and Seth
-at the inn, player-vs-player combat, mail, daily news, and a starter set
-of six IGMs are all here, ported from the original game logic.
+at the inn, player-vs-player combat, mail, daily news, and a growing set
+of bundled IGMs are all here, ported from the original game logic and
+from the archived IGM catalogue in `igms_to_port/`.
 
 Two things work differently on purpose, for a server people drop into
 through the day rather than call once: your forest-fight maximum is
@@ -159,7 +160,7 @@ Optional overrides: `daily_maint()` (once per game day), `forest_event()`
 Inn's menu). A crashing IGM is contained — its visit rolls back and the
 player returns to where they were.
 
-The six bundled IGMs in `igms/` are working examples, from small
+The bundled IGMs in `igms/` are working examples, from small
 (`baraks_house`) to a full mini-game (`lord_casino`).
 
 ## Running it for real
