@@ -109,6 +109,34 @@ async def test_train_grants_one_strength_once_per_day():
     assert p.strength == strength_before + 1
 
 
+async def test_train_also_grants_exp_per_hair_end_formula():
+    """BARAK.PAS's ``hair_end()`` (:1117-1123) grants exp *unconditionally*
+    on every path that reaches it (``times_hit`` 1-5) -- including the
+    ``times_hit = 5`` perfect run that already inspired the +1 strength
+    reward this action adopted. An earlier audit pass wrongly claimed that
+    branch grants "no exp" (Task 2 review finding); this pins the fix.
+
+    ``_train()`` doesn't model ``fly()``'s minigame at all, so there's no
+    real ``shots_left`` (tries remaining) to read -- the source formula
+    needs one. It assumes the flawless case the reward already implies:
+    5 hits on the first 5 of the 10 starting throws (``fly()``:1165,
+    ``tries := 10``), leaving ``shots_left = 5``. Source math:
+    ``num_end := (times_hit + shots_left) * (10 * level)`` then
+    ``num_end := num_end * level`` -- i.e. ``(5 + 5) * 10 * level * level``.
+    """
+    database, repo = await make_db()
+    p = await repo.create("Hero", "pw", "M")
+    p.level = 3
+    exp_before = p.exp
+    gctx = make_ctx(database, repo, p, keys=["A", "\r", "L"], rng=SeqRandom([]))
+    igm = BaraksHouse()
+    ctx = await make_igm_ctx(gctx, igm)
+
+    await igm.enter(ctx)
+
+    assert p.exp == exp_before + 900  # (5 + 5) * 10 * 3 * 3
+
+
 async def test_mother_chases_you_out_ends_visit():
     """BARAK.PAS sets ``pl^.hit := 1`` every time you're caught/defeated --
     beard()'s decline-the-duel branch and run()'s chase-capture both use

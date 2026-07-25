@@ -29,14 +29,26 @@ match exists, adopted verbatim:
 
 * **(A)sk Barak to train you** -- ``+1 strength``, once per day, already
   matched the source by coincidence: ``hair_end()``'s perfect-run reward
-  for destroying the flying wig in ``fly()`` is exactly
-  ``inc(pl^.strength, 1)`` with no exp, gated the same "only counts once"
-  way. No code change; now cited as confirmed rather than invented.
+  for destroying the flying wig in ``fly()`` includes exactly
+  ``inc(pl^.strength, 1)``. A first audit pass claimed that branch grants
+  "no exp"; wrong -- ``hair_end()`` (:1117-1130) grants exp
+  unconditionally on every path it can be reached by (``times_hit`` 1-5),
+  and the ``times_hit = 5`` branch grants the strength point *in addition*
+  to exp, not instead of it. Now adopted: ``_train()`` grants
+  ``(times_hit + shots_left) * (10 * level) * level`` exp alongside the
+  strength point, using ``times_hit = 5`` and, since this recreation
+  doesn't model ``fly()``'s minigame (no real ``shots_left`` to read), the
+  flawless-run reading the existing reward already implies -- 5 hits on
+  the first 5 of the 10 starting throws (``fly()``:1165), leaving
+  ``shots_left = 5``. No source day-gate applies to ``fly()``/
+  ``hair_end()`` themselves; the source's only whole-visit day-gate is the
+  ``bb^.p[play]`` flag (see ``docs/deviations.md``), not a per-action one.
 * **(M)eet his mother**, negative outcome ("chased out with a broom") --
   now sets ``hp = 1``, matching ``pl^.hit := 1``, the recurring
-  caught-or-defeated punishment used both by ``beard()``'s
-  decline-the-duel branch and ``run()``'s chase-capture ending. Previously
-  flavor-only (no stat change).
+  caught-or-defeated punishment. ``beard()`` sets it at the top of *both*
+  of its branches -- decline-the-duel (:1318) and agree-to-fight (:1344)
+  alike, before either resolves -- and ``run()``'s chase-capture ending
+  sets it too. Previously flavor-only (no stat change).
 * **(M)eet his mother**, positive outcome ("she feeds you soup") -- now
   uses Barak's "Ultra Ale" reward formula, ``hp = hp_max + hp_max // 4``
   (``chest()``'s full-basement-clear reward and ``walk_in()``'s
@@ -110,10 +122,20 @@ _QUOTES = (
 _SEARCH_MIN = 5
 _SEARCH_MAX = 50
 
-# BARAK.PAS: `pl^.hit := 1` -- the recurring "caught/defeated" punishment
-# used by both beard()'s decline-the-duel branch and run()'s chase-capture
-# ending. Adopted verbatim for mother's negative outcome (Task 2 audit).
+# BARAK.PAS: `pl^.hit := 1` -- the recurring "caught/defeated" punishment.
+# Set at the top of both of beard()'s branches (decline-the-duel and
+# agree-to-fight alike, :1318/:1344) and by run()'s chase-capture ending.
+# Adopted verbatim for mother's negative outcome (Task 2 audit).
 _CAUGHT_HP = 1
+
+# BARAK.PAS's fly() minigame: `tries := 10;` (:1165), the shot budget
+# hair_end()'s exp formula spends down via `shots_left` (tries remaining
+# when the flying wig is destroyed). This port doesn't model fly() at
+# all, so _train()'s deterministic reward assumes the flawless run its
+# existing +1 strength reward already implies: 5 hits on 5 of the 10
+# throws, leaving 5 tries unused. See _train() and the module docstring.
+_FLY_TRIES = 10
+_PERFECT_HITS = 5
 
 
 class BaraksHouse(IGM):
@@ -172,10 +194,15 @@ class BaraksHouse(IGM):
         await ctx.term.pause()
 
     async def _train(self, ctx: IgmContext) -> None:
-        # +1 strength, once per day, no exp -- confirmed against BARAK.PAS's
-        # hair_end(): a perfect run in fly() (5/5 hits on the flying wig)
-        # calls `inc(pl^.strength, 1)` and exits immediately, no exp
-        # granted. Matched by coincidence; see module docstring.
+        # Once per day. BARAK.PAS's hair_end() (:1117-1130) grants exp
+        # *and* +1 strength on a perfect run (times_hit = 5) -- an earlier
+        # audit pass wrongly read that branch as granting "no exp"; see
+        # module docstring. This port doesn't model fly()'s minigame, so
+        # it assumes the flawless run the +1 strength reward already
+        # implies (_PERFECT_HITS on _FLY_TRIES, shots_left = 5). Source
+        # math, same order (exp announced before strength):
+        #   num_end := (times_hit + shots_left) * (10 * level)
+        #   num_end := num_end * level
         p = ctx.player
         gate = f"trained:{p.id}"
         if ctx.store.get(gate, False):
@@ -185,9 +212,14 @@ class BaraksHouse(IGM):
             await ctx.term.pause()
             return
         ctx.store.set(gate, True)
+        shots_left = _FLY_TRIES - _PERFECT_HITS
+        num_end = (_PERFECT_HITS + shots_left) * (10 * p.level)
+        num_end *= p.level
+        p.exp += num_end
         p.strength += 1
         await ctx.term.write(
             "\n  `2Barak wrestles you around the yard for a while.\n"
+            f"  `0YOU GET {num_end} EXPERIENCE.\n"
             "  `0YOUR STRENGTH INCREASES BY 1!\n"
         )
         await ctx.term.pause()
