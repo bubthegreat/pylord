@@ -10,6 +10,29 @@ on:
   workflow_call:
 
 jobs:
+  changes:
+    name: What changed
+    # The MySQL and image jobs cost ~2-3 minutes each and only tell us
+    # anything when the engine, schema, image, or chart changed. IGM ports
+    # (igms/ + tests/ + config.toml + deploy/values) are the common case
+    # now and get the fast SQLite-only pipeline.
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            engine:
+              - 'pylord/**'
+              - 'Dockerfile'
+              - 'deploy/helm/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
+
   test:
     name: Tests and lint
     runs-on: ubuntu-latest
@@ -45,6 +68,9 @@ jobs:
     # SQLite and MySQL disagree about enough -- upsert syntax, collations,
     # reserved words -- that a green suite on SQLite alone says nothing
     # about the database the homelab actually runs. Same tests, real server.
+    # Skipped when nothing engine/schema-shaped changed (see `changes`).
+    needs: [changes]
+    if: needs.changes.outputs.engine == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -82,6 +108,9 @@ jobs:
     # The chart deploys against MySQL and deliberately renders no SQLite
     # path, so the container needs a real database here too -- running it
     # any other way would not be "the way the chart runs it".
+    # Skipped when nothing engine/image/chart-shaped changed (see `changes`).
+    needs: [changes]
+    if: needs.changes.outputs.engine == 'true'
     services:
       mysql:
         image: mysql:8.4
