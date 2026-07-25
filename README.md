@@ -17,6 +17,14 @@ through the day rather than call once: your forest-fight maximum is
 and one fight **comes back every 15 minutes** of real time. Both are
 documented in `docs/deviations.md` and configurable below.
 
+## Historical IGM archive and takedown requests
+
+`igms_to_port/` holds hundreds of original DOS-era IGM zips mirrored from
+the BBS archives at thebbs.org, kept as raw material for porting the best
+of them to pylord. If you are the author or rights holder of one of these
+files and want it removed — or object to your IGM being ported — email
+**bubthegreat@gmail.com** and it will be taken down, no questions asked.
+
 ## License and provenance
 
 pylord is licensed under the **GPL-3.0-or-later** (see `LICENSE`).
