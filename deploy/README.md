@@ -41,10 +41,13 @@ deploy/
   deploy a full stop-and-start, and left backups to "copy the file and hope
   nobody was mid-write". MySQL runs as its own Deployment in this chart and
   owns the volume; the game pod holds nothing.
-- **The database volume outlives the release.** `longhorn-retain`, plus
-  `helm.sh/resource-policy: keep` and `argocd.argoproj.io/sync-options:
-  Delete=false` on the PVC: deleting or pruning the Application does not
-  delete anyone's character.
+- **The database volume outlives the release** -- but the reclaim policy is
+  what actually saves it. The PVC carries `helm.sh/resource-policy: keep`
+  and `argocd.argoproj.io/sync-options: Delete=false`, and during the MySQL
+  move those did *not* stop Argo pruning the old `pylord-data` PVC once the
+  chart stopped rendering it. `longhorn-retain` did: the PV survived as
+  `Released`, with the realm intact and re-bindable. Treat the annotations
+  as a courtesy and the `Retain` reclaim policy as the actual guarantee.
 - **One replica, `maxSurge: 0`.** Not a storage limit any more -- the daily
   maintenance pass and the "already adventuring elsewhere" login check are
   not yet guarded across processes, so two game pods would both roll the

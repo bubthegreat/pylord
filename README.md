@@ -51,7 +51,12 @@ Everything is configured in `config.toml`:
 [server]
 host = "0.0.0.0"
 port = 2323
-# db = "lord.db"   # optional; defaults to lord.db next to config.toml
+# db = "lord.db"   # optional; defaults to lord.db next to config.toml.
+#                  # A full SQLAlchemy URL works too, which is how the
+#                  # game runs on MySQL:
+#                  #   mysql+aiomysql://user:pw@host/lord?charset=utf8mb4
+#                  # PYLORD_DB_URL overrides this, so a deployment can keep
+#                  # the password out of config.toml.
 
 [game]
 forest_fights_per_day = 15
@@ -81,6 +86,7 @@ uv run pylord players                          # list everyone
 uv run pylord edit Zaphod --gold 5000          # also: --gems, --level,
                                                # --alive 0|1, --reset-password
 uv run pylord delete Zaphod --yes              # remove a character for good
+uv run pylord migrate lord.db "$URL"           # move a realm to another database
 ```
 
 Daily maintenance (fight resets, bank interest, IGM daily hooks) runs
