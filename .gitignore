@@ -5,3 +5,7 @@ __pycache__
 .pytest_cache
 .ruff_cache
 *.db
+
+# Sparse clones the reference sources were extracted from (25MB);
+# reference/igm-sources/ and reference/assets/ hold everything needed.
+reference/upstream/
