@@ -4,6 +4,9 @@ A Python remake of **Legend of the Red Dragon** (LORD), the classic BBS
 door game by Seth Able Robinson — playable over plain telnet, with the
 original In-Game Module (IGM) spirit intact as a drop-in plugin system.
 
+> **Play it live: <https://lord.bubtaylor.com/>** — the realm runs in your
+> browser, no telnet client needed.
+
 Forest fights, the Red Dragon, Turgon's warrior training, Violet and Seth
 at the inn, player-vs-player combat, mail, daily news, and a starter set
 of six IGMs are all here, ported from the original game logic.
@@ -169,7 +172,8 @@ new tag — ArgoCD does the rest.
 
 The pod also runs a `ttyd` sidecar so the realm is playable in a browser
 over HTTPS (an HTTP Ingress can't carry telnet); telnet clients connect
-straight to the service's own address on 2323.
+straight to the service's own address on 2323. That browser endpoint is
+what serves the public realm at <https://lord.bubtaylor.com/>.
 
 ## Development
 
