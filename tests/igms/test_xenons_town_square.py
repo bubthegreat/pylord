@@ -20,15 +20,21 @@ from __future__ import annotations
 
 from igms.kaldors_court.igm import KaldorsCourt
 from igms.xenons_town_square.igm import (
+    _SEED_TALK_LINE,
     STORAGE_GEM_CAP,
     STORAGE_GOLD_CAP,
     TALK_BOARD_MAX_LINES,
     TALK_LINE_MAXLEN,
-    _SEED_TALK_LINE,
     XenonsTownSquare,
 )
 from tests.igm_contract import contract_check
-from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx, make_maint_ctx
+from tests.igms._harness import (
+    SeqRandom,
+    make_ctx,
+    make_db,
+    make_igm_ctx,
+    make_maint_ctx,
+)
 
 
 async def _visit(keys, rng=None, **overrides):
@@ -53,14 +59,14 @@ def test_ships_enabled():
 
 
 def test_storage_caps_match_the_archive():
-    """"Sorry. We cannot hold more than 2 billion gold pieces."/"...32
+    """ "Sorry. We cannot hold more than 2 billion gold pieces."/"...32
     thousand gems." (XENON.EXE) -- both literal."""
     assert STORAGE_GOLD_CAP == 2_000_000_000
     assert STORAGE_GEM_CAP == 32_000
 
 
 def test_talk_line_cap_matches_the_archive():
-    """"Shout your message below: Maximum of 70 characters" -- literal."""
+    """ "Shout your message below: Maximum of 70 characters" -- literal."""
     assert TALK_LINE_MAXLEN == 70
 
 
@@ -132,7 +138,9 @@ async def test_deposit_gems_refused_over_storage_cap():
     ctx.store.set(f"gems:{p.id}", STORAGE_GEM_CAP - 50)
     await XenonsTownSquare().enter(ctx)
     assert ctx.store.get(f"gems:{p.id}") == STORAGE_GEM_CAP - 50
-    assert any("cannot hold more than 32 thousand gems" in line for line in ctx.term.output)
+    assert any(
+        "cannot hold more than 32 thousand gems" in line for line in ctx.term.output
+    )
 
 
 # --- Withdraw: money / gems ------------------------------------------------
@@ -148,7 +156,7 @@ async def test_withdraw_money_moves_gold_back_out():
 
 
 async def test_withdraw_money_more_than_stored_refused():
-    """"We do not give loans, and you cannot take more than you put in!" """
+    """ "We do not give loans, and you cannot take more than you put in!" """
     keys = ["W", "M", "999", "\r", "Q", "Q"]
     _gctx, ctx, p, _db = await _visit(keys, gold=0)
     ctx.store.set(f"gold:{p.id}", 100)
@@ -208,7 +216,7 @@ async def test_take_children_moves_kids_back_out():
 
 
 async def test_take_more_children_than_stored_refused():
-    """"What are you, a kidnapper? You can't take more kids than you
+    """ "What are you, a kidnapper? You can't take more kids than you
     have!!!" """
     keys = ["G", "T", "5", "\r", "Q", "Q"]
     _gctx, ctx, p, _db = await _visit(keys, kids=0, rng=SeqRandom([0]))
@@ -253,7 +261,7 @@ async def test_leave_horse_without_one_refused():
 
 
 async def test_leave_horse_when_one_already_stored_refused():
-    """"You cannot keep more than one horse here at the same time!" """
+    """ "You cannot keep more than one horse here at the same time!" """
     keys = ["V", "L", "\r", "Q", "Q"]
     _gctx, ctx, p, _db = await _visit(keys, horse=1)
     ctx.store.set(f"horse:{p.id}", True)
@@ -272,7 +280,7 @@ async def test_take_horse_moves_it_back_out():
 
 
 async def test_take_horse_already_owned_refused():
-    """"You already HAVE your horse!!!" """
+    """ "You already HAVE your horse!!!" """
     keys = ["V", "T", "\r", "Q", "Q"]
     _gctx, ctx, p, _db = await _visit(keys, horse=1)
     ctx.store.set(f"horse:{p.id}", True)
@@ -282,7 +290,7 @@ async def test_take_horse_already_owned_refused():
 
 
 async def test_take_horse_none_stored_refused():
-    """"You do NOT have a horse here." """
+    """ "You do NOT have a horse here." """
     keys = ["V", "T", "\r", "Q", "Q"]
     _gctx, ctx, p, _db = await _visit(keys, horse=0)
     await XenonsTownSquare().enter(ctx)
@@ -313,9 +321,7 @@ async def test_horse_stored_at_xenons_cannot_also_be_sold_at_kaldors():
     assert xenon_ctx.store.get(f"horse:{player.id}") is True
 
     gold_before = player.gold
-    kaldor_gctx = make_ctx(
-        database, repo, player, keys=["M", "H", "S", "\r", "Q", "Q"]
-    )
+    kaldor_gctx = make_ctx(database, repo, player, keys=["M", "H", "S", "\r", "Q", "Q"])
     kaldor_ctx = await make_igm_ctx(kaldor_gctx, KaldorsCourt)
     await KaldorsCourt().enter(kaldor_ctx)
     assert player.gold == gold_before  # refused -- no gold manufactured
@@ -334,7 +340,7 @@ async def test_listen_shows_the_seed_line():
 
 async def test_shout_confirmed_appends_to_the_board():
     keys = ["S", "S", "Howdy all", "Y", "\r", "Q", "Q"]
-    _gctx, ctx, p, _db = await _visit(keys)
+    _gctx, ctx, _p, _db = await _visit(keys)
     await XenonsTownSquare().enter(ctx)
     assert ctx.store.get("talk_board") == [_SEED_TALK_LINE, "Hero: Howdy all"]
 

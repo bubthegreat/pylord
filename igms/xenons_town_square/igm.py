@@ -320,10 +320,7 @@ _MENU = (
 )
 
 _BANK_SUBMENU = (
-    "\n  `2(`0M`2)oney\n"
-    "  `2(`0G`2)ems\n"
-    "  `2(`0C`2)heck balances\n"
-    "  `2(`0Q`2)uit?\n"
+    "\n  `2(`0M`2)oney\n  `2(`0G`2)ems\n  `2(`0C`2)heck balances\n  `2(`0Q`2)uit?\n"
 )
 
 _NANNY_MENU = (
@@ -692,8 +689,7 @@ class XenonsTownSquare(IGM):
             return
         if ctx.store.get(f"horse:{p.id}", False):
             await ctx.term.write(
-                "\n  `2You cannot keep more than one horse here at the same\n"
-                "  time!\n"
+                "\n  `2You cannot keep more than one horse here at the same\n  time!\n"
             )
             await ctx.term.pause()
             return
@@ -758,7 +754,9 @@ class XenonsTownSquare(IGM):
     async def _listen(self, ctx: IgmContext) -> None:
         board = ctx.store.get("talk_board", [_SEED_TALK_LINE])
         line = board[ctx.rng.randrange(len(board))] if board else _SEED_TALK_LINE
-        await ctx.term.write(f"\n  `2You strain to make out what they're saying:\n  `0{line}\n")
+        await ctx.term.write(
+            f"\n  `2You strain to make out what they're saying:\n  `0{line}\n"
+        )
         await ctx.term.pause()
 
     async def _shout(self, ctx: IgmContext) -> None:
