@@ -10,24 +10,27 @@ never raises, so one bad drop-in can't take the whole game down.
 The resulting :class:`IgmRegistry` is the single object the engine threads
 through every session (``GameCtx.igms``) and through daily maintenance.
 
-**Module import strategy.** Each plugin is loaded with
-``importlib.util.spec_from_file_location`` under a synthetic, unique module
-name ``igms.<dirname>`` (directory names are unique within one ``igms/``
-tree, so the names don't collide). The module object is registered in
-``sys.modules`` *before* ``exec_module`` (so dataclasses / typing /
-``from __future__`` machinery that looks the module up by name works) and
-popped again if execution raises, leaving no half-initialized module
-behind. Re-running ``discover`` (as the tests do) simply re-execs a fresh
-module object over the same name.
+**Module import strategy.** A plugin is an ordinary Python package:
+``igms/<name>/`` with an ``__init__.py`` and an ``igm.py``. Discovery
+enumerates subpackages with :func:`pkgutil.iter_modules` and imports
+``<package>.<name>.igm`` with :func:`importlib.import_module`, which means
+a plugin's own modules can import each other -- relatively or absolutely --
+like any other Python code.
+
+This replaces an earlier scheme that executed ``igm.py`` alone via
+``spec_from_file_location`` under a synthetic module name with no parent
+package. That made relative imports impossible and confined every IGM to
+one file. It also meant a second ``discover()`` re-executed the module;
+now the second call gets the same module object out of ``sys.modules``,
+which is simply what importing twice means in Python.
 """
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import logging
+import pkgutil
 import re
-import sys
-from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,23 +46,13 @@ logger = logging.getLogger("pylord.igm")
 _SLUG_RE = re.compile(r"[a-z0-9][a-z0-9_-]*\Z")
 
 
-def _load_one(igm_file: Path, dirname: str) -> IGM:
-    """Import ``igm_file`` and return its validated IGM instance.
+def _load_one(package: str, name: str) -> IGM:
+    """Import ``<package>.<name>.igm`` and return its validated IGM instance.
 
     Raises on any problem (import error, wrong subclass count, validation
-    failure); :func:`discover` is responsible for catching + logging.
+    failure); the caller is responsible for catching + logging.
     """
-    mod_name = f"igms.{dirname}"
-    spec = importlib.util.spec_from_file_location(mod_name, igm_file)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"could not build import spec for {igm_file}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[mod_name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        sys.modules.pop(mod_name, None)
-        raise
+    module = importlib.import_module(f"{package}.{name}.igm")
 
     subclasses = [
         obj
@@ -68,13 +61,13 @@ def _load_one(igm_file: Path, dirname: str) -> IGM:
     ]
     if len(subclasses) != 1:
         raise ValueError(
-            f"expected exactly one IGM subclass in {igm_file}, found {len(subclasses)}"
+            f"expected exactly one IGM subclass in {package}.{name}.igm, "
+            f"found {len(subclasses)}"
         )
     instance = subclasses[0]()
-    # Relative *imports* stay broken by design (the synthetic module name
-    # has no parent package), but reading a plugin's own data files is
-    # fine, and both need to know where the plugin lives.
-    instance.dir = igm_file.parent
+    # Relative imports work now, but a plugin still needs its directory to
+    # reach non-Python files it ships -- data tables, .ANS screens.
+    instance.dir = Path(module.__file__).parent
     _validate(instance)
     return instance
 
@@ -89,63 +82,57 @@ def _validate(instance: IGM) -> None:
         raise ValueError("IGM must override enter()")
 
 
-def discover(igms_dir: Path | Iterable[Path], config: dict[str, Any]) -> IgmRegistry:
-    """Discover, validate, and enable IGMs under ``igms_dir``.
+def load_all(package: str) -> list[IGM]:
+    """Every valid IGM in ``package``, whether or not it is enabled.
 
-    IGMs are *code*: they ship inside the image alongside the engine, and a
-    new one arrives the way any other change does -- a folder in ``igms/``,
-    a pull request, the next release. (They were briefly loaded from the
-    data volume as well, which meant a fix to a bundled IGM could never
-    reach a realm that had already been seeded; see docs/deviations.md.)
-
-    Several directories may still be passed -- the first to claim a key
-    wins -- because the test harness uses that to isolate fixtures.
-
-    Returns an :class:`IgmRegistry` of the enabled instances. Enable state
-    for each IGM key is ``config["igms"].get(key, instance.default_enabled)``.
-    Never raises: a broken or duplicate plugin is logged and skipped.
+    Sorted by subpackage name so duplicate-key resolution is deterministic:
+    the first to claim a key wins and later claimants are logged and
+    skipped. Never raises -- an unimportable root or a broken plugin is
+    logged and skipped, because one bad plugin must never take the game
+    down.
     """
-    dirs = (
-        [Path(igms_dir)]
-        if isinstance(igms_dir, str | Path)
-        else [Path(d) for d in igms_dir]
-    )
-    toggles: dict[str, Any] = (config or {}).get("igms", {}) or {}
+    try:
+        root = importlib.import_module(package)
+    except BaseException:
+        logger.warning("no IGMs loaded: cannot import %r", package, exc_info=True)
+        return []
 
     loaded: list[IGM] = []
     seen_keys: set[str] = set()
+    names = sorted(n for _, n, ispkg in pkgutil.iter_modules(root.__path__) if ispkg)
 
-    for directory in dirs:
-        if not directory.is_dir():
-            continue
-        _load_dir(directory, loaded, seen_keys)
-
-    enabled = [igm for igm in loaded if toggles.get(igm.key, igm.default_enabled)]
-    return IgmRegistry(enabled)
-
-
-def _load_dir(igms_dir: Path, loaded: list[IGM], seen_keys: set[str]) -> None:
-    for sub in sorted(igms_dir.iterdir()):
-        igm_file = sub / "igm.py"
-        if not sub.is_dir() or not igm_file.is_file():
-            continue
+    for name in names:
         try:
-            instance = _load_one(igm_file, sub.name)
+            instance = _load_one(package, name)
         except BaseException:
-            logger.warning("skipping broken IGM in %s", sub, exc_info=True)
+            logger.warning("skipping broken IGM %s.%s", package, name, exc_info=True)
             continue
         if instance.key in seen_keys:
-            # Already provided by an earlier directory -- the bundled copy
-            # wins, so a stale seeded copy on a data volume is ignored
-            # rather than shadowing the fixed one.
             logger.info(
-                "ignoring %s: key %r already loaded from an earlier directory",
-                sub,
-                instance.key,
+                "ignoring %s.%s: key %r is already taken", package, name, instance.key
             )
             continue
         seen_keys.add(instance.key)
         loaded.append(instance)
+    return loaded
+
+
+def discover(package: str, config: dict[str, Any]) -> IgmRegistry:
+    """Discover, validate, and enable the IGMs in ``package``.
+
+    IGMs are *code*: they ship inside the image alongside the engine, and a
+    new one arrives the way any other change does -- a folder in ``igms/``,
+    a pull request, the next release.
+
+    Returns an :class:`IgmRegistry` of the enabled instances. Enable state
+    for each IGM key is ``config["igms"].get(key, instance.default_enabled)``.
+    Never raises.
+    """
+    toggles: dict[str, Any] = (config or {}).get("igms", {}) or {}
+    enabled = [
+        igm for igm in load_all(package) if toggles.get(igm.key, igm.default_enabled)
+    ]
+    return IgmRegistry(enabled)
 
 
 class IgmRegistry:

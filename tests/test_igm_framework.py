@@ -22,8 +22,9 @@ from tests.harness import query_one
 from tests.igm_contract import contract_check
 
 _FIXTURES = Path(__file__).parent / "fixtures"
-_IGMS_DIR = _FIXTURES / "igms"
-_DUP_DIR = _FIXTURES / "igms_dup"
+_IGMS_PKG = "tests.fixtures.igms"
+_DUP_PKG = "tests.fixtures.igms_dup"
+_DATA_PKG = "tests.fixtures.igms_data"
 
 
 # --- helpers ----------------------------------------------------------
@@ -47,7 +48,7 @@ def _ctx(database, repo, player, keys=None, igms=None):
 def test_discover_finds_sample_igm():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_IGMS_DIR, {})
+    reg = igm_loader.discover(_IGMS_PKG, {})
     keys = {i.key for i in reg.enabled}
     assert "sample" in keys
 
@@ -56,34 +57,44 @@ def test_discover_skips_broken_modules(caplog):
     from pylord import igm_loader
 
     with caplog.at_level("WARNING", logger="pylord.igm"):
-        reg = igm_loader.discover(_IGMS_DIR, {})
+        reg = igm_loader.discover(_IGMS_PKG, {})
     # broken_import + no_subclass never make it into the registry ...
-    assert all(i.key == "sample" for i in reg.enabled)
+    assert {i.key for i in reg.enabled} == {"sample", "multi_module"}
     # ... and the loader survived and logged rather than raising.
     assert caplog.records
 
 
-def test_discover_missing_dir_returns_empty():
+def test_discover_unknown_package_returns_empty():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_FIXTURES / "does_not_exist", {})
+    reg = igm_loader.discover("tests.fixtures.does_not_exist", {})
     assert reg.enabled == []
+
+
+def test_a_plugin_can_be_split_across_modules():
+    """The capability this whole change exists for: igm.py importing a
+    sibling module in its own package, both relatively and absolutely."""
+    from pylord import igm_loader
+
+    reg = igm_loader.discover("tests.fixtures.igms", {})
+    igm = next(i for i in reg.enabled if i.key == "multi_module")
+    assert igm.proof() == ("helpers module reached", "OK")
 
 
 def test_loader_sets_igm_dir_to_the_plugin_directory():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_FIXTURES / "igms_data", {})
+    reg = igm_loader.discover(_DATA_PKG, {})
     (igm,) = reg.enabled
-    assert igm.dir == _FIXTURES / "igms_data" / "data_igm"
+    assert igm.dir == Path(__file__).parent / "fixtures" / "igms_data" / "data_igm"
 
 
 def test_igm_can_read_a_data_file_it_ships_with():
-    """The supported way to ship more than one file: relative imports stay
-    broken under the synthetic module name, but ``self.dir`` is real."""
+    """``self.dir`` points at the plugin's own directory, which is how it
+    reaches non-Python files it ships -- data tables, .ANS screens."""
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_FIXTURES / "igms_data", {})
+    reg = igm_loader.discover(_DATA_PKG, {})
     (igm,) = reg.enabled
     assert igm.greeting() == "hello from a plugin data file"
 
@@ -106,21 +117,21 @@ def test_igm_dir_is_none_when_a_plugin_is_constructed_directly():
 def test_config_disables_igm_absent_from_other_places():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_IGMS_DIR, {"igms": {"sample": False}})
+    reg = igm_loader.discover(_IGMS_PKG, {"igms": {"sample": False}})
     assert all(i.key != "sample" for i in reg.other_places())
 
 
 def test_duplicate_key_second_skipped():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_DUP_DIR, {})
+    reg = igm_loader.discover(_DUP_PKG, {})
     assert len([i for i in reg.enabled if i.key == "dup"]) == 1
 
 
 def test_other_places_sorted_by_name():
     from pylord import igm_loader
 
-    reg = igm_loader.discover(_IGMS_DIR, {})
+    reg = igm_loader.discover(_IGMS_PKG, {})
     names = [i.name for i in reg.other_places()]
     assert names == sorted(names)
 
@@ -622,7 +633,7 @@ async def test_sample_igm_passes_contract():
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "igms._sample_fixture", _IGMS_DIR / "sample_igm" / "igm.py"
+        "igms._sample_fixture", _FIXTURES / "igms" / "sample_igm" / "igm.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -779,42 +790,6 @@ async def test_store_reads_its_own_writes_after_a_flush():
     assert IgmStore("cache", await database.igm_data.all_for("cache")).get("rate") is None
 
 
-def test_discover_prefers_the_first_directory_for_a_duplicate_key(tmp_path):
-    """A realm seeded with an old copy of a bundled IGM must still get the
-    shipped one: bundled directories are searched first, and a later copy
-    of the same key is ignored rather than shadowing it."""
-    from pylord import igm_loader
-
-    def _write(root, key, marker):
-        d = root / key
-        d.mkdir(parents=True)
-        (d / "igm.py").write_text(
-            "from pylord.hooks import IGM\n"
-            f"class X(IGM):\n"
-            f"    key = {key!r}\n"
-            f"    name = {marker!r}\n"
-            f"    default_enabled = True\n"
-            "    async def enter(self, ctx):\n        pass\n"
-        )
-
-    bundled, local = tmp_path / "bundled", tmp_path / "local"
-    _write(bundled, "mines", "shipped")
-    _write(local, "mines", "stale copy")
-    _write(local, "sysops_own", "custom")
-
-    reg = igm_loader.discover([bundled, local], {})
-    by_key = {igm.key: igm.name for igm in reg.enabled}
-
-    assert by_key["mines"] == "shipped"      # not the stale volume copy
-    assert by_key["sysops_own"] == "custom"  # a sysop's own still loads
-
-
-def test_discover_still_accepts_a_single_directory(tmp_path):
-    from pylord import igm_loader
-
-    assert igm_loader.discover(tmp_path, {}).enabled == []
-
-
 def test_every_igm_root_enumerates_as_a_package():
     """pkgutil.iter_modules only reports a subdirectory as a package when it
     has an __init__.py. The loader walks these roots, so a root that does
@@ -824,7 +799,7 @@ def test_every_igm_root_enumerates_as_a_package():
 
     expected = {
         "igms": 16,
-        "tests.fixtures.igms": 3,
+        "tests.fixtures.igms": 4,
         "tests.fixtures.igms_dup": 2,
         "tests.fixtures.igms_data": 1,
     }
