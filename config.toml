@@ -57,3 +57,5 @@ xenons_town_square = true
 # docs/deviations.md before leaving them on.
 lotto = true
 pickle = true
+oorphans = true
+freeworld2 = true
