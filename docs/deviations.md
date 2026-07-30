@@ -65,6 +65,26 @@ This document tracks intentional deviations between pylord and the reference Syn
 | Dark Cloak Tavern, the romantic reply-mail mini-game, horse trading, the "Examine The Dirt" graffiti wall and `tournament_check()` remain unported | Each is a self-contained sub-game or multiplayer side-channel (reference/lord.js:8459-8574, :3820-4209, :14620-14778, :16517-16590, :3362-3420). None is reachable from any screen this port implements, and each would need state pylord does not model (a shared rumour file, romantic mail types, `player.horse` trading, `dirt.lrd`, tournament settings). |
 | RIP graphics, inter-BBS play, and the LADY script interpreter are out of scope | Per the design spec's own "Out of scope v1" list. lord.js's `rip` branches are skipped wherever they appear. |
 
+## IGM ports (`reference/igm-sources/`)
+
+The rows above are about `reference/lord.js`, the base game. These are
+about the IGM sources vendored separately -- and they only apply to IGMs
+that are genuine **ports**. The twelve recreations in waves 1 and 2 have no
+source to deviate from; what they invented is flagged in each module's own
+docstring instead.
+
+| Deviation | Reason |
+|-----------|--------|
+| Every IGM's per-player `.dat` record becomes a key in `ctx.store` | Each source keeps a flat file with one record per LORD player, holding whatever it needs to gate a daily action (`lotto.ts:201-224`, `freeworld2.ts` `FW2_Defs`). pylord has no record files; `IgmStore` is the equivalent, namespaced per IGM, and the `day` field becomes a per-player gate key cleared in `daily_maint` -- the shape `igms/baraks_house` and `igms/abandoned_mines` already used. |
+| **Lotto:** a blank code charges nothing | `lotto.ts:90-92` marks the record and takes the gold *before* prompting for the code, so the blank-entry escape at `:108-111` bills the player for a ticket they never played. Ours charges when it deals. The only intentional behaviour change in that port. |
+| **Lotto:** a four-digit match is announced in the news | Not in the source, which prints the payout to the winner only. A payout that can be 2,000,000,000 gold should be visible to the realm it just devalued. |
+| **Lotto:** the payout curve is ported verbatim and it is enormous | `lotto.ts:166-176` carries its own comment keeping the Pascal formula "so high-level payouts scale exactly like the original machine": `magicnum` is multiplied by ten once per two character levels. At level 12 a full match pays the `pylord/engine/limits.py` gold ceiling in one keypress. Recorded, not fixed -- rebalancing it would make the port a recreation again. The IGM ships disabled. |
+| **Pickle's:** no daily limit, because the original has none | `pickle.js:141` exits after one pickle and keeps no per-player record, so nothing stops a player re-entering. The author's README claims the house edge (52/48, `:35-38`) wins "on a long enough time line", but a player who re-enters until a good roll lands on the one attribute they care about, then stops, ratchets it upward for free. No gate was added; the IGM ships disabled. |
+| **Pickle's:** row 10 is accepted and pays the same as row 1 | The prompt says rows 1-9 (`pickle.js:19`), the loop accepts 1-10 (`:23`), and the percentage is built by string concatenation -- `'.0' + row` (`:33`) -- so row 10 reads `.010`, i.e. 1%. "The higher you go, the more potent the pickle" silently resets at the top. Both the bound and the collision are reproduced. |
+| **Pickle's:** the tattoo overwrites the player's Dark Cloak description | `pickle.js:127` assigns a fixed line to `des1`, which is `Player.description1` here -- the self-description written at the Dark Cloak Tavern (`pylord/engine/scenes/dark_cloak.py:430`). The original destroys it and so does this; only a length cap against the column's 255 characters was added. |
+| **Pickle's:** a blank row leaves the garden | The source's input loop (`:11-23`) has no exit -- bad input re-prompts forever. A blank line leaves rather than trapping the player. |
+| **Pickle's:** a good pickle cannot raise `hp` past `hp_max` | The source writes `player.hp` directly (`:44-46`); `PlayerView` clamps `hp` to `[0, hp_max]` (`pylord/engine/limits.py`), which every IGM is held to. A pickle that would overheal instead heals to full. |
+
 ## Deliberate design changes (not fidelity gaps)
 
 The rows above record where this port *differs while trying to match*

@@ -74,8 +74,32 @@ import asyncio
 import re
 import time
 from abc import ABC
+from pathlib import Path
 
 CLEAR_SEQ = "\x1b[2J\x1b[H"
+
+#: Appended after a raw ``.ANS`` screen so its trailing colour, blink or
+#: background attributes cannot bleed into the rest of the session.
+_SGR_RESET = "\x1b[0m"
+
+
+def load_screen(path: str | Path) -> str:
+    """Read a DOS ``.ANS`` art file and return it ready for
+    :meth:`TermIO.write_screen`.
+
+    ``.ANS`` files are code page 437, not UTF-8: the box-drawing and block
+    characters that make up the art live in the high 128 bytes, where a
+    UTF-8 decode either fails or produces mojibake. Decoding through the
+    ``cp437`` codec maps each byte to the glyph a DOS terminal would have
+    drawn, which is what a modern UTF-8 client then renders correctly.
+
+    The embedded ANSI escapes are left exactly as they are -- that is the
+    art. Only the line endings are normalized, so the caller's own CRLF
+    handling doesn't double them.
+    """
+    raw = Path(path).read_bytes()
+    return raw.decode("cp437").replace("\r\n", "\n").replace("\r", "\n")
+
 
 _LINE_TEXT = (
     "  -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-"
@@ -270,6 +294,20 @@ class TermIO(ABC):
     async def readkey(self) -> str:
         raise NotImplementedError
 
+    async def write_screen(self, text: str) -> None:
+        """Emit a pre-rendered ANSI screen **without** backtick translation.
+
+        :meth:`write` runs its argument through :func:`render`, which is
+        right for game text but wrong for a ``.ANS`` art file: those carry
+        their own SGR escapes, and any backtick in the art would be eaten
+        as a colour code. Use this for screens loaded with
+        :func:`load_screen`; use :meth:`write` for everything else.
+
+        A reset is appended so a screen's trailing colour state cannot
+        bleed into the rest of the session.
+        """
+        raise NotImplementedError
+
     async def pause(self) -> None:
         """Show a "MORE" prompt and wait for a keypress."""
         await self.write("`2<`0MORE`2>")
@@ -329,6 +367,9 @@ class FakeIO(TermIO):
 
     async def write(self, text: str) -> None:
         self.output.append(render(text))
+
+    async def write_screen(self, text: str) -> None:
+        self.output.append(text + _SGR_RESET)
 
     async def readkey(self) -> str:
         if not self.keys:
@@ -431,6 +472,13 @@ class TelnetIO(TermIO):
         # real clients. Normalize first so an already-CRLF string isn't
         # doubled into CR CR LF.
         self.writer.write(render(text).replace("\r\n", "\n").replace("\n", "\r\n"))
+
+    async def write_screen(self, text: str) -> None:
+        # Same CRLF normalization as write(), but no render() -- see
+        # TermIO.write_screen.
+        self.writer.write(
+            (text + _SGR_RESET).replace("\r\n", "\n").replace("\n", "\r\n")
+        )
 
     @property
     def char_mode(self) -> bool:

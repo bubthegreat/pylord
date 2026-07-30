@@ -6,15 +6,16 @@ original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-Eighteen bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
+Twenty bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
 `sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`,
 `lord_casino`, `apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
 `arena_of_lords`, `the_latrine`, `werewolf`, `outlands_tavern`,
-`sunshines_fairy_land`, `kaldors_court`, `wishing_well`, and
-`xenons_town_square` -- from a few screens each to a full mini-game. A
-sysop who doesn't want one turns it off in `config.toml` under `[igms]`.
-Add your own alongside them -- IGMs ship with the build, so a new one
-arrives with the next release rather than being copied onto a server.
+`sunshines_fairy_land`, `kaldors_court`, `wishing_well`,
+`xenons_town_square`, `lotto` and `pickle` -- from a few screens each to a
+full mini-game. A sysop who doesn't want one turns it off in `config.toml`
+under `[igms]`. Add your own alongside them -- IGMs ship with the build, so
+a new one arrives with the next release rather than being copied onto a
+server.
 
 Most of the classic third-party IGMs have no surviving source -- they were
 separate DOS executables, and `reference/lord.js` models only the base
@@ -47,6 +48,17 @@ were **not** ported from:
 
 Several of those have since been audited against that source -- see each
 module's docstring for what the audit adopted and what stayed invented.
+
+**`lotto` and `pickle` are ported from that source, not recreated** -- from
+`lordts/lotto/lotto.ts` and `synchronet/pickle/pickle.js` respectively.
+
+A faithful port includes the original's balance problems, and these two
+have real ones: the lottery's payout curve reaches the two-billion gold
+ceiling at level 12, and Pickle's has no daily limit at all. Both are
+reproduced deliberately rather than rebalanced -- rebalancing a port turns
+it back into a recreation. Like everything else here they ship on, so read
+their module docstrings and the "IGM ports" table in `docs/deviations.md`
+and decide whether your realm wants them.
 
 New IGMs are ported from that source where it exists, faithfully, with every
 divergence recorded in `docs/deviations.md`.
@@ -89,6 +101,32 @@ class DragonLottery(IGM):
 > (`from . import helpers`) will fail. Import from installed/absolute paths
 > instead (`from pylord.hooks import IGM`). If you need helper modules, keep
 > your logic inside `igm.py` or import them by absolute name.
+
+### Shipping data and screen files
+
+Relative imports are out, but data files are not: the loader sets
+`self.dir` to your plugin's directory before your IGM is ever used, so
+anything too big to inline can live beside `igm.py`.
+
+```python
+    NAMES = (self.dir / "data" / "names.txt").read_text().splitlines()
+```
+
+For DOS `.ANS` art there is a pair of helpers, because such a file is
+neither UTF-8 nor backtick-coded — `pylord.terminal.load_screen()` decodes
+it from CP437, and `term.write_screen()` emits it without running
+`render()` over the escapes that *are* the art (and appends a reset so its
+colours don't bleed):
+
+```python
+from pylord.terminal import load_screen
+
+    await ctx.term.write_screen(load_screen(self.dir / "screens" / "intro.ans"))
+```
+
+`igms/pickle/` does both. Guard on `self.dir is None` (a hand-constructed
+instance in a test has no directory) and treat a missing art file as
+cosmetic — raising inside `enter()` rolls the whole visit back.
 
 Then enable it in `config.toml`:
 

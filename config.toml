@@ -47,3 +47,13 @@ sunshines_fairy_land = true
 kaldors_court = true
 wishing_well = true
 xenons_town_square = true
+
+# Wave 4 -- ports from the GPL sources in reference/igm-sources/, which
+# is a different archive from igms_to_port/: these have real readable
+# source, so they are ports rather than recreations. They reproduce their
+# originals' balance flaws deliberately -- the lottery reaches the
+# two-billion gold ceiling at level 12, and Pickle's has no daily limit.
+# See each igms/<name>/igm.py docstring and the IGM-ports table in
+# docs/deviations.md before leaving them on.
+lotto = true
+pickle = true

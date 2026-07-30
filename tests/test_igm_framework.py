@@ -70,6 +70,39 @@ def test_discover_missing_dir_returns_empty():
     assert reg.enabled == []
 
 
+def test_loader_sets_igm_dir_to_the_plugin_directory():
+    from pylord import igm_loader
+
+    reg = igm_loader.discover(_FIXTURES / "igms_data", {})
+    (igm,) = reg.enabled
+    assert igm.dir == _FIXTURES / "igms_data" / "data_igm"
+
+
+def test_igm_can_read_a_data_file_it_ships_with():
+    """The supported way to ship more than one file: relative imports stay
+    broken under the synthetic module name, but ``self.dir`` is real."""
+    from pylord import igm_loader
+
+    reg = igm_loader.discover(_FIXTURES / "igms_data", {})
+    (igm,) = reg.enabled
+    assert igm.greeting() == "hello from a plugin data file"
+
+
+def test_igm_dir_is_none_when_a_plugin_is_constructed_directly():
+    """Nothing sets ``dir`` outside the loader, so a hand-built instance
+    (contract_check does this) must cope with it being unset."""
+    from pylord.hooks import IGM
+
+    class Bare(IGM):
+        key = "bare"
+        name = "Bare"
+
+        async def enter(self, ctx) -> None:
+            pass
+
+    assert Bare().dir is None
+
+
 def test_config_disables_igm_absent_from_other_places():
     from pylord import igm_loader
 

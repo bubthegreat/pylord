@@ -35,7 +35,7 @@ from pylord.hooks import IGM, ForestEvent, IgmMaintContext, InnEvent
 
 if TYPE_CHECKING:
     import random
-    
+
 logger = logging.getLogger("pylord.igm")
 
 # A valid IGM key is a lowercase slug: starts alphanumeric, then
@@ -68,10 +68,13 @@ def _load_one(igm_file: Path, dirname: str) -> IGM:
     ]
     if len(subclasses) != 1:
         raise ValueError(
-            f"expected exactly one IGM subclass in {igm_file}, "
-            f"found {len(subclasses)}"
+            f"expected exactly one IGM subclass in {igm_file}, found {len(subclasses)}"
         )
     instance = subclasses[0]()
+    # Relative *imports* stay broken by design (the synthetic module name
+    # has no parent package), but reading a plugin's own data files is
+    # fine, and both need to know where the plugin lives.
+    instance.dir = igm_file.parent
     _validate(instance)
     return instance
 
@@ -86,9 +89,7 @@ def _validate(instance: IGM) -> None:
         raise ValueError("IGM must override enter()")
 
 
-def discover(
-    igms_dir: Path | Iterable[Path], config: dict[str, Any]
-) -> IgmRegistry:
+def discover(igms_dir: Path | Iterable[Path], config: dict[str, Any]) -> IgmRegistry:
     """Discover, validate, and enable IGMs under ``igms_dir``.
 
     IGMs are *code*: they ship inside the image alongside the engine, and a
@@ -139,7 +140,8 @@ def _load_dir(igms_dir: Path, loaded: list[IGM], seen_keys: set[str]) -> None:
             # rather than shadowing the fixed one.
             logger.info(
                 "ignoring %s: key %r already loaded from an earlier directory",
-                sub, instance.key,
+                sub,
+                instance.key,
             )
             continue
         seen_keys.add(instance.key)
@@ -156,9 +158,7 @@ class IgmRegistry:
         """Enabled IGMs, sorted by display name (the 'Other Places' menu)."""
         return sorted(self.enabled, key=lambda igm: igm.name)
 
-    def forest_events(
-        self, rng: random.Random
-    ) -> list[tuple[IGM, ForestEvent]]:
+    def forest_events(self, rng: random.Random) -> list[tuple[IGM, ForestEvent]]:
         """Collect every enabled IGM's forest event (``None`` filtered out),
         paired with the IGM that produced it -- the caller needs the owner
         to build that plugin's guardrailed context.
@@ -206,5 +206,3 @@ class IgmRegistry:
                     await mctx.flush(tx)
             except Exception:
                 logger.exception("IGM %s daily_maint() failed", igm.key)
-
-
