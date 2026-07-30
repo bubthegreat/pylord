@@ -14,6 +14,7 @@ fails fast instead of hanging the suite.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 
 import telnetlib3
 
@@ -60,7 +61,34 @@ class Recv:
         return seen
 
 
-async def _start_test_server(tmp_path, game_config=None):
+@asynccontextmanager
+async def _test_server(tmp_path, game_config=None):
+    """Start a server on an ephemeral port and shut it down completely.
+
+    A context manager rather than a start/stop pair because the stop half
+    is easy to under-do and the symptom is remote from the cause. Closing
+    the listener stops new connections but lets go of nothing: ``start()``
+    also opens a connection pool and, when asked for one, a health server.
+    Sessions check connections out of that pool, so a pool still holding
+    checked-out connections when the interpreter finally collects it is
+    reported against whichever test happens to be running at the time --
+    an SAWarning about "non-checked-in" connections, pointing at an
+    innocent test. ``pylord.server.start`` hangs the pool off the server
+    as ``pylord_database`` for exactly this; ``pylord/e2e.py``'s
+    ``running_server`` already unwinds it in this order, and this is the
+    same sequence.
+
+    Shutdown drains before it disposes. ``server.close()`` stops the
+    listener but does not wait for sessions already running, and a session
+    that is still unwinding still holds a connection checked out of the
+    pool. Disposing under it leaves that connection for the garbage
+    collector, which reports it as an SAWarning against whatever test
+    happens to be running whenever the collection lands -- so the symptom
+    shows up nowhere near the cause. The pool's own ``checkedout()`` is
+    the signal that every session has really let go.
+
+    Yields ``(port, db_path)``, the same shape as ``running_server``.
+    """
     db_path = tmp_path / "lord.db"
     config = {
         # health_port 0: these start many servers at once, and a
@@ -72,8 +100,17 @@ async def _start_test_server(tmp_path, game_config=None):
         "game": game_config or {},
     }
     server = await start(config)
-    port = server.sockets[0].getsockname()[1]
-    return server, port, db_path
+    try:
+        yield server.sockets[0].getsockname()[1], db_path
+    finally:
+        server.close()
+        await server.wait_closed()
+        if getattr(server, "pylord_health", None) is not None:
+            server.pylord_health.close()
+            await server.pylord_health.wait_closed()
+        pool = server.pylord_database.engine.pool
+        await _wait_until(lambda: pool.checkedout() == 0)
+        await server.pylord_database.dispose()
 
 
 async def _wait_until(predicate, timeout: float = 2.0, interval: float = 0.05) -> None:
@@ -112,8 +149,7 @@ async def test_server_negotiates_character_at_a_time_mode(tmp_path):
     like "b 2". Probed with a raw asyncio socket, NOT a telnetlib3 client,
     because the client library performs its own negotiation and would mask
     what the server actually sent."""
-    server, port, _db_path = await _start_test_server(tmp_path)
-    try:
+    async with _test_server(tmp_path) as (port, _db_path):
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         try:
             # Refuse the server's DO TTYPE probe so it stops waiting for
@@ -135,14 +171,10 @@ async def test_server_negotiates_character_at_a_time_mode(tmp_path):
             await asyncio.wait_for(_collect(), 2.0)  # WILL ECHO + WILL SGA
         finally:
             writer.close()
-    finally:
-        server.close()
-        await server.wait_closed()
 
 
 async def test_new_character_creation_view_stats_and_quit(tmp_path):
-    server, port, db_path = await _start_test_server(tmp_path)
-    try:
+    async with _test_server(tmp_path) as (port, db_path):
         reader, writer = await telnetlib3.open_connection(
             host="127.0.0.1", port=port, **_CONNECT_KWARGS
         )
@@ -188,9 +220,6 @@ async def test_new_character_creation_view_stats_and_quit(tmp_path):
             await _wait_until_offline(database, "Zaphod")
         finally:
             await database.dispose()
-    finally:
-        server.close()
-        await server.wait_closed()
 
 
 async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
@@ -201,11 +230,10 @@ async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
     literal 15/3 defaults (models.py's Player.forest_fights/player_fights),
     which only match lord.js's *own* stock defaults
     (reference/lord.js:1857/1856) coincidentally."""
-    server, port, db_path = await _start_test_server(
+    async with _test_server(
         tmp_path,
         game_config={"forest_fights_per_day": 20, "player_fights_per_day": 7},
-    )
-    try:
+    ) as (port, db_path):
         reader, writer = await telnetlib3.open_connection(
             host="127.0.0.1", port=port, **_CONNECT_KWARGS
         )
@@ -240,14 +268,10 @@ async def test_new_character_gets_configured_daily_fight_counts(tmp_path):
             assert player.player_fights == 7
         finally:
             await database.dispose()
-    finally:
-        server.close()
-        await server.wait_closed()
 
 
 async def test_wrong_password_three_times_disconnects(tmp_path):
-    server, port, db_path = await _start_test_server(tmp_path)
-    try:
+    async with _test_server(tmp_path) as (port, db_path):
         setup_db = await data.connect(str(db_path))
         await setup_db.players.create("Marvin", "correcthorse", "M")
         await setup_db.dispose()
@@ -281,9 +305,6 @@ async def test_wrong_password_three_times_disconnects(tmp_path):
             assert player.online == 0  # never logged in successfully
         finally:
             await database.dispose()
-    finally:
-        server.close()
-        await server.wait_closed()
 
 
 # --- Name rules, first-day skill uses, quest-over gate, inn resume --------
@@ -393,23 +414,14 @@ async def test_startup_clears_stale_online_flags(tmp_path):
     await repo.save(ghost)
     await database.dispose()
 
-    server = await start(
-        {# health_port 0: these start many servers at once, and a
-        # fixed port would collide. See tests/test_health.py.
-        "server": {
-            "host": "127.0.0.1", "port": 0, "db": str(db_path),
-            "health_port": 0,
-        }, "game": {}}
-    )
-    try:
+    # _test_server opens the same tmp_path/lord.db, so the ghost above is
+    # already in the realm the server is about to clear.
+    async with _test_server(tmp_path):
         database = await data.connect(str(db_path))
         try:
             assert (await database.players.get_by_name("Ghost")).online == 0
         finally:
             await database.dispose()
-    finally:
-        server.close()
-        await server.wait_closed()
 
 
 async def test_game_statistics_separates_enrolled_from_online(tmp_path):
