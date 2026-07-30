@@ -1,9 +1,10 @@
 """The Gem Trader -- turn gems into gold, at whatever rate the day brings.
 
 Wave-2 IGM, a recreation from the premise (a trader who buys gems) rather
-than a port -- no source survives for any of the classic IGM binaries, and
-`reference/lord.js` never modelled one. Invented here: the price band, the
-daily roll, the haggle and its charm gate.
+than a port -- no gem-trading IGM appears anywhere in
+`reference/igm-sources/`, and `reference/lord.js` never modelled one.
+Invented here: the price band, the daily roll, the haggle and its charm
+gate.
 
 The rate is rolled once per game day and shared by everyone (an
 ``IgmStore`` key, not a per-player one), so the realm's traders all see the

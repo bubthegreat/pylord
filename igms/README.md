@@ -24,6 +24,33 @@ partial exception: its archive ships two real `.RHP` "Random Happening"
 scripts in readable source, one of which is ported verbatim -- see its
 module docstring for the direct-port/recreation split.
 
+## Recreations vs. ports
+
+"No surviving source" is true of the DOS binaries, but not of the whole
+catalogue. `reference/igm-sources/` vendors real IGM source in two GPL
+trees -- a TypeScript one (`lordts/`) and a Synchronet JavaScript one
+(`synchronet/`) -- several carrying their provenance back to the original
+Pascal. That is a different archive from `igms_to_port/`, which holds the
+shareware `.zip`s most of the recreations above were audited against.
+
+Six of the bundled recreations have a real counterpart there that they
+were **not** ported from:
+
+| Bundled recreation | Real source |
+| --- | --- |
+| `baraks_house` | `reference/igm-sources/lordts/barak/` |
+| `sandtigers_bar` | `reference/igm-sources/lordts/sandbar/` (a very different game) |
+| `violets_cottage` | `reference/igm-sources/lordts/violet/` |
+| `warriors_graveyard` | `reference/igm-sources/lordts/gravyard/` |
+| `abandoned_mines` | `reference/igm-sources/lordts/lordcave/` |
+| `the_latrine` | `reference/igm-sources/lordts/outhouse/` |
+
+Several of those have since been audited against that source -- see each
+module's docstring for what the audit adopted and what stayed invented.
+
+New IGMs are ported from that source where it exists, faithfully, with every
+divergence recorded in `docs/deviations.md`.
+
 ## Writing an IGM
 
 Create `igms/<your_igm>/igm.py` containing exactly **one** subclass of

@@ -1,8 +1,14 @@
 """The Abandoned Mines -- dig for gems, and hope the roof holds.
 
-Wave-2 IGM, recreated from the premise; no source survives for the original
-binary and `reference/lord.js` never modelled an IGM's internals. Invented:
-the two shafts, their odds, the payouts and the cave-in damage.
+Wave-2 IGM, recreated from the premise: when it was written no IGM source
+was in hand, and `reference/lord.js` never modelled an IGM's internals.
+Invented: the two shafts, their odds, the payouts and the cave-in damage.
+
+**Real source has since been vendored and this is not a port of it.**
+`reference/igm-sources/lordts/lordcave/` is The L.O.R.D. Cavern v1.7 by
+Jason Brown (1995-2005), a 14-event cave crawl with its own scripting
+layer -- a much larger game than the two shafts below. Porting it is
+separate work; nothing here is derived from it.
 
 The shallow workings are safe and stingy, and rationed -- a small payout
 you can repeat forever is not small. The deep shaft pays better and can

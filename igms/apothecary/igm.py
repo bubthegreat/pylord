@@ -1,10 +1,10 @@
 """The Apothecary -- potions and tonics, paid for in gems.
 
-Wave-2 IGM. The classic LORD IGM catalogue is a list of separate DOS
-executables whose source is lost; `reference/lord.js` models the base game
-only and never an IGM's internals. So, exactly like the starter six, this
-is a **recreation from the historical premise** (a shop that sells healing
-and small blessings for gems), not a port. Everything below is invented:
+Wave-2 IGM. No apothecary IGM appears anywhere in
+`reference/igm-sources/`, and `reference/lord.js` models the base game only,
+never an IGM's internals. So, exactly like the starter six, this is a
+**recreation from the historical premise** (a shop that sells healing and
+small blessings for gems), not a port. Everything below is invented:
 
 * the three wares and their prices,
 * the tonic granting a forest fight (which leans on this project's own

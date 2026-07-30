@@ -1,7 +1,12 @@
 """The Latrine -- exactly what it sounds like, and a wall to write on.
 
-Wave-2 IGM. The original was a joke IGM; nothing of it survives to port, so
-the outcomes, odds and every line of flavour here are invented.
+Wave-2 IGM. The original was a joke IGM, and none of it was in hand when
+this was written, so the outcomes, odds and every line of flavour here are
+invented.
+
+**Real source has since been vendored and this is not a port of it.**
+`reference/igm-sources/lordts/outhouse/` is The Outhouse v1.0 by Lloyd
+Hannesson. Porting it is separate work; nothing here is derived from it.
 
 The wall is the interesting half: it is a shared, persistent scrawl board in
 ``ctx.store``, so what one player writes the next one reads. Entries are
