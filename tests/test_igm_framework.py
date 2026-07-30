@@ -813,3 +813,22 @@ def test_discover_still_accepts_a_single_directory(tmp_path):
     from pylord import igm_loader
 
     assert igm_loader.discover(tmp_path, {}).enabled == []
+
+
+def test_every_igm_root_enumerates_as_a_package():
+    """pkgutil.iter_modules only reports a subdirectory as a package when it
+    has an __init__.py. The loader walks these roots, so a root that does
+    not enumerate would silently load nothing at all."""
+    import importlib
+    import pkgutil
+
+    expected = {
+        "igms": 16,
+        "tests.fixtures.igms": 3,
+        "tests.fixtures.igms_dup": 2,
+        "tests.fixtures.igms_data": 1,
+    }
+    for name, count in expected.items():
+        pkg = importlib.import_module(name)
+        found = [n for _, n, ispkg in pkgutil.iter_modules(pkg.__path__) if ispkg]
+        assert len(found) == count, f"{name} enumerated {found}"
