@@ -102,17 +102,33 @@ class DragonLottery(IGM):
         await ctx.term.pause()
 ```
 
-> **Use absolute imports.** Each `igm.py` is loaded as a standalone module
-> (`igms.<dir>`) without a parent package, so package-relative imports
-> (`from . import helpers`) will fail. Import from installed/absolute paths
-> instead (`from pylord.hooks import IGM`). If you need helper modules, keep
-> your logic inside `igm.py` or import them by absolute name.
+### Splitting a plugin across modules
+
+An IGM is a real Python package, so a big one does not have to live in a
+single `igm.py`. Put whatever you like beside it and import it normally:
+
+```
+igms/felicity/
+  __init__.py
+  igm.py          # still exactly one IGM subclass
+  statues.py
+  prayer.py
+```
+
+```python
+from . import statues                  # relative
+from igms.felicity import prayer       # or absolute -- both work
+```
+
+The loader imports `igms.<your_igm>.igm` and looks for the single `IGM`
+subclass there; the other modules are yours to arrange. Keep them
+side-effect-free at import: the loader imports every plugin at startup.
 
 ### Shipping data and screen files
 
-Relative imports are out, but data files are not: the loader sets
-`self.dir` to your plugin's directory before your IGM is ever used, so
-anything too big to inline can live beside `igm.py`.
+Modules aren't the only thing that can live beside `igm.py`: the loader
+sets `self.dir` to your plugin's directory before your IGM is ever used, so
+anything too big to inline can ship there too.
 
 ```python
     NAMES = (self.dir / "data" / "names.txt").read_text().splitlines()

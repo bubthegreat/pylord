@@ -790,6 +790,16 @@ async def test_store_reads_its_own_writes_after_a_flush():
     assert IgmStore("cache", await database.igm_data.all_for("cache")).get("rate") is None
 
 
+def test_the_bundled_igms_load_by_package_name():
+    """server.start() names the package rather than deriving a path from
+    where pylord happens to sit on disk."""
+    from pylord import igm_loader
+
+    keys = {i.key for i in igm_loader.load_all("igms")}
+    assert len(keys) == 16
+    assert {"lotto", "pickle", "oorphans", "freeworld2"} <= keys
+
+
 def test_every_igm_root_enumerates_as_a_package():
     """pkgutil.iter_modules only reports a subdirectory as a package when it
     has an __init__.py. The loader walks these roots, so a root that does
