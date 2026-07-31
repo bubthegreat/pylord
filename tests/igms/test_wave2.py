@@ -3,8 +3,9 @@ Arena of Lords, The Latrine.
 
 All six are recreations from the historical premise rather than ports --
 see each module's docstring. These tests pin the mechanics that touch a
-character (gems spent, gold moved, hitpoints lost, daily gates) and check
-every one against the shared IGM contract.
+character (gems spent, gold moved, hitpoints lost, daily gates). The
+shared IGM contract itself is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``.
 """
 
 from __future__ import annotations
@@ -18,7 +19,6 @@ from igms.gem_trader.igm import GemTrader
 from igms.old_skull_inn.igm import OldSkullInn
 from igms.the_latrine.igm import TheLatrine
 from tests.harness import query_one
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -26,8 +26,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-_WAVE2 = [Apothecary, GemTrader, OldSkullInn, AbandonedMines, ArenaOfLords, TheLatrine]
 
 
 async def _visit(igm, keys, rng=None, **overrides):
@@ -43,19 +41,6 @@ def _screen(gctx) -> str:
     import re
 
     return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", "".join(gctx.io.output))
-
-
-@pytest.mark.parametrize("igm_cls", _WAVE2)
-async def test_contract(igm_cls):
-    await contract_check(igm_cls)
-
-
-@pytest.mark.parametrize("igm_cls", _WAVE2)
-def test_ships_enabled(igm_cls):
-    """Shipped IGMs are on by default: a sysop turns off what they don't
-    want, rather than opting each one in."""
-    assert igm_cls.default_enabled is True
-    assert igm_cls.key and igm_cls.name
 
 
 # --- Apothecary ------------------------------------------------------------

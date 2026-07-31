@@ -1,6 +1,7 @@
 """Behavior tests for Violet's Cottage (Task 17).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 charm-check math (success/fail, floored at 1), the tea heal and kids-play
 exp, once-a-day gates cleared by ``daily_maint``, and the
 married-to-Violet celebration branch (``daily_maint`` bridges the global
@@ -12,7 +13,6 @@ from __future__ import annotations
 
 from igms.violets_cottage.igm import VioletsCottage
 from pylord.engine import npc_state
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -20,11 +20,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(VioletsCottage)
-
 
 # --- impress her parents --------------------------------------------------
 

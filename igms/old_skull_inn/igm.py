@@ -1,8 +1,9 @@
 """The Old Skull Inn -- the rough house on the edge of town.
 
 Wave-2 IGM, recreated from the premise (a second, seedier inn) rather than
-ported: no source survives for the original binary. Invented here: the
-rumours, the arm-wrestling odds and stake, and the cheap bed.
+ported: no second-inn IGM appears anywhere in `reference/igm-sources/`.
+Invented here: the rumours, the arm-wrestling odds and stake, and the cheap
+bed.
 
 The bed deliberately does *not* set ``at_inn`` -- that flag is the base
 game's "asleep at the Red Dragon Inn, and therefore attackable" state

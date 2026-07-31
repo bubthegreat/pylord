@@ -6,15 +6,16 @@ original LORD's `3RDPARTY.DAT` / `INFO.<node>` handshake: instead of shelling
 out to a separate `.EXE` and swapping stats through a flat file, a pylord IGM
 is just a Python class the engine runs in-process behind a safety fence.
 
-Eighteen bundled IGMs ship here, all **enabled by default** -- `baraks_house`,
-`sandtigers_bar`, `violets_cottage`, `turgons_house`, `warriors_graveyard`,
-`lord_casino`, `apothecary`, `gem_trader`, `old_skull_inn`, `abandoned_mines`,
-`arena_of_lords`, `the_latrine`, `werewolf`, `outlands_tavern`,
-`sunshines_fairy_land`, `kaldors_court`, `wishing_well`, and
-`xenons_town_square` -- from a few screens each to a full mini-game. A
-sysop who doesn't want one turns it off in `config.toml` under `[igms]`.
-Add your own alongside them -- IGMs ship with the build, so a new one
-arrives with the next release rather than being copied onto a server.
+Twenty-two bundled IGMs ship here, all **enabled by default** --
+`baraks_house`, `sandtigers_bar`, `violets_cottage`, `turgons_house`,
+`warriors_graveyard`, `lord_casino`, `apothecary`, `gem_trader`,
+`old_skull_inn`, `abandoned_mines`, `arena_of_lords`, `the_latrine`,
+`werewolf`, `outlands_tavern`, `sunshines_fairy_land`, `kaldors_court`,
+`wishing_well`, `xenons_town_square`, `lotto`, `pickle`, `oorphans` and
+`freeworld2` -- from a few screens each to a full mini-game. A sysop who
+doesn't want one turns it off in `config.toml` under `[igms]`. Add your own
+alongside them -- IGMs ship with the build, so a new one arrives with the
+next release rather than being copied onto a server.
 
 Most of the classic third-party IGMs have no surviving source -- they were
 separate DOS executables, and `reference/lord.js` models only the base
@@ -23,6 +24,50 @@ its invented parts flagged in its module docstring. `outlands_tavern` is a
 partial exception: its archive ships two real `.RHP` "Random Happening"
 scripts in readable source, one of which is ported verbatim -- see its
 module docstring for the direct-port/recreation split.
+
+## Recreations vs. ports
+
+"No surviving source" is true of the DOS binaries, but not of the whole
+catalogue. `reference/igm-sources/` vendors real IGM source in two GPL
+trees -- a TypeScript one (`lordts/`) and a Synchronet JavaScript one
+(`synchronet/`) -- several carrying their provenance back to the original
+Pascal. That is a different archive from `igms_to_port/`, which holds the
+shareware `.zip`s most of the recreations above were audited against.
+
+Six of the bundled recreations have a real counterpart there that they
+were **not** ported from:
+
+| Bundled recreation | Real source |
+| --- | --- |
+| `baraks_house` | `reference/igm-sources/lordts/barak/` |
+| `sandtigers_bar` | `reference/igm-sources/lordts/sandbar/` (a very different game) |
+| `violets_cottage` | `reference/igm-sources/lordts/violet/` |
+| `warriors_graveyard` | `reference/igm-sources/lordts/gravyard/` |
+| `abandoned_mines` | `reference/igm-sources/lordts/lordcave/` |
+| `the_latrine` | `reference/igm-sources/lordts/outhouse/` |
+
+Several of those have since been audited against that source -- see each
+module's docstring for what the audit adopted and what stayed invented.
+
+**`lotto`, `pickle`, `oorphans` and `freeworld2` are ported from that
+source, not recreated** -- from `lordts/lotto/`, `synchronet/pickle/`,
+`lordts/oorphans/` and `lordts/freeworld2/` respectively.
+
+A faithful port includes the original's balance problems, and these have
+real ones: the lottery's payout curve reaches the two-billion gold ceiling
+at level 12, Pickle's has no daily limit, and the FreeWorld's wishing well
+can grant +100 strength in a keypress. All reproduced deliberately rather
+than rebalanced -- rebalancing a port turns it back into a recreation. Like
+everything else here they ship on, so read their module docstrings and the
+"IGM ports" table in `docs/deviations.md` and decide what your realm wants.
+
+`oorphans` is the one that changes the base game rather than sitting beside
+it: `Player.horse` is live in this port, and lord.js's own forest
+horse-trader is unported, so Olodrin's trade is currently the only way to
+get a horse in the realm.
+
+New IGMs are ported from that source where it exists, faithfully, with every
+divergence recorded in `docs/deviations.md`.
 
 ## Writing an IGM
 
@@ -57,11 +102,60 @@ class DragonLottery(IGM):
         await ctx.term.pause()
 ```
 
-> **Use absolute imports.** Each `igm.py` is loaded as a standalone module
-> (`igms.<dir>`) without a parent package, so package-relative imports
-> (`from . import helpers`) will fail. Import from installed/absolute paths
-> instead (`from pylord.hooks import IGM`). If you need helper modules, keep
-> your logic inside `igm.py` or import them by absolute name.
+### Splitting a plugin across modules
+
+An IGM is a real Python package, so a big one does not have to live in a
+single `igm.py`. Put whatever you like beside it and import it normally:
+
+```
+igms/felicity/
+  __init__.py
+  igm.py          # still exactly one IGM subclass
+  statues.py
+  prayer.py
+```
+
+```python
+from . import statues                  # relative
+from igms.felicity import prayer       # or absolute -- both work
+```
+
+The loader imports `igms.<your_igm>.igm` and looks for the single `IGM`
+subclass there; the other modules are yours to arrange. Keep them
+side-effect-free at import: the loader imports every plugin at startup.
+
+A shared base class or mixin in a sibling module works too -- `igm.py` can
+import it and subclass it there. The loader only registers the subclass
+*defined in* `igm.py`; the imported base class showing up in that module's
+namespace does not count as a second candidate.
+
+### Shipping data and screen files
+
+Modules aren't the only thing that can live beside `igm.py`: the loader
+sets `self.dir` to your plugin's directory before your IGM is ever used, so
+anything too big to inline can ship there too.
+
+```python
+    NAMES = (self.dir / "data" / "names.txt").read_text().splitlines()
+```
+
+For DOS `.ANS` art there is a pair of helpers, because such a file is
+neither UTF-8 nor backtick-coded — `pylord.terminal.load_screen()` decodes
+it from CP437, and `term.write_screen()` emits it without running
+`render()` over the escapes that *are* the art (and appends a reset so its
+colours don't bleed):
+
+```python
+from pylord.terminal import load_screen
+
+    await ctx.term.write_screen(load_screen(self.dir / "screens" / "intro.ans"))
+```
+
+`igms/oorphans/` ships `data/` (2,000 names and a table of ways to die);
+`igms/pickle/` and `igms/freeworld2/` ship `screens/`. Guard on
+`self.dir is None` (a hand-constructed instance in a test has no directory)
+and treat a missing file as cosmetic — raising inside `enter()` rolls the
+whole visit back.
 
 Then enable it in `config.toml`:
 

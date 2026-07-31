@@ -246,7 +246,36 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
         if getattr(server, "pylord_health", None) is not None:
             server.pylord_health.close()
             await server.pylord_health.wait_closed()
-        await server.pylord_database.dispose()
+        # Closing the listener does not wait for sessions already running,
+        # and one still unwinding is still holding a connection out of the
+        # pool. Disposing under it leaves that connection to the garbage
+        # collector, which reports it as an SAWarning against whatever is
+        # running whenever the collection lands -- nowhere near the cause.
+        #
+        # dispose() must run even if the drain times out, or a timeout here
+        # both masks whatever the caller's body raised *and* leaves the
+        # engine undisposed -- the exact leak this wait exists to prevent.
+        try:
+            await _wait_for_idle_pool(server.pylord_database)
+        finally:
+            await server.pylord_database.dispose()
+
+
+async def _wait_for_idle_pool(database, timeout: float = 5.0) -> None:
+    """Block until every session has returned its connection to the pool.
+
+    ``checkedout()`` is the pool's own count of connections handed out and
+    not yet given back, so this waits on the real signal rather than
+    sleeping a guessed amount. Times out rather than hanging a run: a pool
+    that never drains is worth a visible failure.
+    """
+    pool = database.engine.pool
+
+    async def _idle() -> None:
+        while pool.checkedout():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_idle(), timeout)
 
 
 async def wait_offline(db_path: Path, name: str, timeout: float = 5.0):

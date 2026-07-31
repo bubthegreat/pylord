@@ -1,7 +1,8 @@
 """Behavior tests for The Warrior's Graveyard (Task 19; source-audited --
 see ``igms/warriors_graveyard/igm.py``'s module docstring).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 IGM's own seeded gameplay: each dig outcome (gold cache, rare gem,
 nothing, undead fight), the once/day dig gate (adopted from the real
 source's once-per-day grave-rob gate -- see the module docstring), an
@@ -16,7 +17,6 @@ once/day gate, and ``daily_maint`` clearing all three daily gates.
 from __future__ import annotations
 
 from igms.warriors_graveyard.igm import WarriorsGraveyard
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -24,10 +24,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(WarriorsGraveyard)
 
 
 async def test_dig_finds_gold_cache_exact_amount():

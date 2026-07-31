@@ -1,6 +1,14 @@
 import pytest
 
-from pylord.terminal import FakeIO, OutOfKeys, TelnetIO, TermIO, render, strip
+from pylord.terminal import (
+    FakeIO,
+    OutOfKeys,
+    TelnetIO,
+    TermIO,
+    load_screen,
+    render,
+    strip,
+)
 
 # --- render() -----------------------------------------------------------
 
@@ -361,3 +369,56 @@ async def test_a_normal_player_is_never_slowed():
     for _ in range(int(io.INPUT_BURST)):
         await io.readkey()
     assert time.monotonic() - started < 0.05
+
+
+# --- .ANS screens -------------------------------------------------------
+
+
+def test_load_screen_decodes_cp437_block_characters(tmp_path):
+    """The art lives in the high 128 bytes. 0xDB is a full block in CP437;
+    a UTF-8 decode would raise on it."""
+    path = tmp_path / "art.ans"
+    path.write_bytes(b"\x1b[1;31m\xdb\xdb\xdb\r\n")
+    assert load_screen(path) == "\x1b[1;31m███\n"
+
+
+def test_load_screen_leaves_the_ansi_escapes_alone():
+    """Those escapes *are* the art -- unlike render(), nothing translates
+    or strips them."""
+    import pathlib
+
+    screen = load_screen(
+        pathlib.Path("igms/pickle/screens/garden.ans")
+    )
+    assert "\x1b[0;40;37m" in screen
+    assert "PICKLE'S MAGIC GARDEN" in screen
+
+
+async def test_write_screen_does_not_translate_backticks():
+    """A backtick in art is a backtick. write() would eat it and the
+    character after it as a colour code."""
+    io = FakeIO([])
+    await io.write_screen("`4 is a literal backtick-four here")
+    assert "`4 is a literal backtick-four here" in io.output[0]
+
+
+async def test_write_screen_appends_a_reset():
+    """Blink and background attributes in a .ANS file would otherwise bleed
+    into every line the game prints afterwards."""
+    io = FakeIO([])
+    await io.write_screen("\x1b[5;1;42;36mblinking")
+    assert io.output[0].endswith("\x1b[0m")
+
+
+async def test_telnet_write_screen_normalizes_line_endings():
+    written: list[str] = []
+
+    class _Writer:
+        mode = "kludge"
+
+        def write(self, text):
+            written.append(text)
+
+    io = TelnetIO(None, _Writer())
+    await io.write_screen("one\ntwo\r\nthree")
+    assert written[0] == "one\r\ntwo\r\nthree\x1b[0m"

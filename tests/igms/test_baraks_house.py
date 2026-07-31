@@ -1,8 +1,9 @@
 """Behavior tests for Barak's House (Task 15; audited against BARAK.PAS in
 Task 2 -- see ``igms/baraks_house/igm.py``'s module docstring).
 
-``contract_check`` covers the framework invariants (guardrails, store
-round-trip); these tests pin the IGM's own seeded gameplay: gold find
+The shared IGM contract (guardrails, store round-trip) is checked once,
+for every bundled IGM, in ``tests/igms/test_conformance.py``; these tests
+pin the IGM's own seeded gameplay: gold find
 amount, once-a-day gates (blocked within a visit and across visits via the
 flush/fresh-context pattern), the strength-training gain, mother's two
 outcomes (now pinned to BARAK.PAS's own recorded numbers -- ``hit := 1`` on
@@ -13,7 +14,6 @@ getting caught, the "Ultra Ale" over-heal clamped to ``hp_max``), and
 from __future__ import annotations
 
 from igms.baraks_house.igm import BaraksHouse
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -21,10 +21,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(BaraksHouse)
 
 
 async def test_talk_uses_verbatim_barak_quote():

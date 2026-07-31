@@ -16,7 +16,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Both packages have to be on disk before this sync: pyproject.toml declares
+# packages = ["pylord", "igms"], and hatchling silently drops a package
+# entry with nothing on disk rather than erroring, so a build that ran this
+# with igms/ missing would produce a wheel with zero IGM files and still
+# exit 0.
 COPY pylord/ ./pylord/
+COPY igms/ ./igms/
 RUN uv sync --frozen --no-dev
 
 
@@ -53,8 +59,8 @@ WORKDIR /app
 COPY --from=ttyd /tmp/ttyd /usr/local/bin/ttyd
 COPY --from=builder --chown=pylord:pylord /app/.venv /app/.venv
 COPY --chown=pylord:pylord pylord/ ./pylord/
-# The bundled IGMs are seeded into the data volume at startup (the loader
-# resolves igms/ next to the database) -- see the chart's init container.
+# IGMs are code and ship with the image, next to the package that loads
+# them by name. The data volume holds nothing but the database.
 COPY --chown=pylord:pylord igms/ ./igms/
 
 ENV PATH="/app/.venv/bin:$PATH" \

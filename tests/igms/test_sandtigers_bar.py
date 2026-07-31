@@ -2,7 +2,8 @@
 SANDBAR.PAS/SBARADD.PAS in Task 2 -- see ``igms/sandtigers_bar/igm.py``'s
 module docstring).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 gambling math (dice win/loss/push, coin-flip double-or-nothing chain,
 guess-the-cup 3x payout), the economy guard (bet validation refuses a
 bet over gold-on-hand or over ``level * 1000``), and the Task 2 audit's
@@ -16,13 +17,7 @@ adopt; see the module docstring and ``docs/deviations.md``.
 from __future__ import annotations
 
 from igms.sandtigers_bar.igm import SandtigersBar
-from tests.igm_contract import contract_check
 from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx
-
-
-async def test_contract():
-    await contract_check(SandtigersBar)
-
 
 # --- dice high/low -----------------------------------------------------
 

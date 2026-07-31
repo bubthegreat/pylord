@@ -1,11 +1,16 @@
 """Violet's Cottage -- home of Violet's family, by Trevor Herndon (Task 17).
 
-Like the other two starter-six IGMs in this batch, the original binary's
-source is lost -- no surviving screen transcript exists to port
-line-for-line, and ``reference/lord.js`` never modeled any IGM's internals
-(IGMs were always separate ``.EXE`` files reached through the
-``3RDPARTY.DAT`` handshake). This is a **recreation** built from the
+Like the other two starter-six IGMs in this batch, no screen transcript was
+in hand when this was written, and ``reference/lord.js`` never modeled any
+IGM's internals (IGMs were always separate ``.EXE`` files reached through
+the ``3RDPARTY.DAT`` handshake). This is a **recreation** built from the
 historical description in this project's design docs/task brief.
+
+**Real source has since been vendored and this is not a port of it.**
+``reference/igm-sources/lordts/violet/`` is a far larger cottage -- a
+room-by-room crawl with separate paths -- across ``cottage.ts``,
+``porch.ts`` and ``violet.ts``. Porting it is separate work; nothing here
+is derived from it.
 
 **Reconstruction notes (invented filler):**
 

@@ -23,7 +23,6 @@ import logging
 import random
 import string
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import telnetlib3
@@ -432,9 +431,8 @@ async def start(config: dict[str, Any]):
     # registry is shared (read-only after discovery) by every connection.
     # IGMs are code -- they arrive with a release, not by being copied onto
     # a volume, so the data directory holds nothing but the database.
-    igms_dir = Path(__file__).resolve().parent.parent / "igms"
-    igms = igm_loader.discover(igms_dir, config)
-    logger.info("loaded %d enabled IGM(s) from %s", len(igms.enabled), igms_dir)
+    igms = igm_loader.discover("igms", config)
+    logger.info("loaded %d enabled IGM(s)", len(igms.enabled))
 
     async def shell(reader, writer) -> None:
         await handle_connection(

@@ -1,10 +1,11 @@
 """LORD Gambling Casino, by Tobin Fricke (Task 20).
 
-Like the rest of the starter six, the original IGM's binary/source is
-lost -- no surviving screen transcript exists to port line-for-line, and
-``reference/lord.js`` never modeled any IGM's internals (they were always
-separate ``.EXE`` files reached through the ``3RDPARTY.DAT`` handshake).
-This is a **from-brief recreation** of Blackjack, Slots, and Roulette.
+Like the rest of the starter six, no screen transcript of the original was
+in hand -- no casino IGM appears anywhere in `reference/igm-sources/`
+either, and ``reference/lord.js`` never modeled any IGM's internals (they
+were always separate ``.EXE`` files reached through the ``3RDPARTY.DAT``
+handshake). This is a **from-brief recreation** of Blackjack, Slots, and
+Roulette.
 
 **Reconstruction notes (invented filler):**
 

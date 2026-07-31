@@ -2,13 +2,13 @@
 (Task 18).
 
 Turgon himself is a core LORD character (his Training Hall is
-``pylord/engine/scenes/training.py``), but no historical record survives of
-a *house* IGM ever having been written for him -- unlike Barak's House /
-Sandtiger's Bar / Violet's Cottage (the "starter six"'s first three), whose
-authorship is documented in this project's design docs, Turgon's House has
-no attested real-world author or binary to recreate. This is a **from-brief
-recreation**: the room-search / guard-dog / coupon / off-duty-Turgon shape
-below comes entirely from this task's brief, not from a lost transcript.
+``pylord/engine/scenes/training.py``), but no *house* IGM for him appears
+anywhere in ``reference/igm-sources/`` -- unlike Barak's House /
+Sandtiger's Bar / Violet's Cottage (the "starter six"'s first three), which
+all have real vendored source, Turgon's House has no attested real-world
+author or binary to recreate. This is a **from-brief recreation**: the
+room-search / guard-dog / coupon / off-duty-Turgon shape below comes
+entirely from this task's brief, not from a transcript.
 
 **Reconstruction notes (invented filler):**
 

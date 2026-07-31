@@ -1,6 +1,7 @@
 """Behavior tests for the LORD Gambling Casino (Task 20).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 IGM's own seeded gameplay. Blackjack's card math is unit-tested directly
 via its pure helpers (``_hand_value``/``_is_natural``) for exact soft-ace
 handling, then exercised end-to-end through ``enter()`` for natural/push/
@@ -20,7 +21,6 @@ from igms.lord_casino.igm import (
     _hand_value,
     _is_natural,
 )
-from tests.igm_contract import contract_check
 from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx
 
 
@@ -57,13 +57,6 @@ def test_is_natural_ace_and_ten_value():
     assert _is_natural([("A", "S"), ("K", "H")]) is True
     assert _is_natural([("9", "S"), ("9", "H")]) is False
     assert _is_natural([("A", "S"), ("6", "H"), ("4", "D")]) is False  # 3 cards
-
-
-# -- framework contract ---------------------------------------------------
-
-
-async def test_contract():
-    await contract_check(LordCasino)
 
 
 # -- blackjack --------------------------------------------------------------

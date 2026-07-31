@@ -41,7 +41,8 @@ from pylord.engine import limits
 
 if TYPE_CHECKING:
     import random
-    
+    from pathlib import Path
+
     from pylord.engine.game import GameCtx
     from pylord.models import Player
     from pylord.terminal import TermIO
@@ -90,6 +91,14 @@ class IGM:
     name: str = ""
     author: str = ""
     default_enabled: bool = False
+
+    #: Directory this plugin was loaded from, set by the loader
+    #: (:func:`pylord.igm_loader.discover`) before the instance is ever
+    #: used. Read your own data and screen files relative to it --
+    #: ``self.dir / "data" / "names.dat"`` -- rather than guessing a path
+    #: from ``__file__``, which is unreliable under the loader's synthetic
+    #: module names. ``None`` only for an instance built by hand in a test.
+    dir: Path | None = None
 
     async def enter(self, ctx: IgmContext) -> None:
         """Run the IGM for a visiting player. **Required override.**"""
@@ -168,9 +177,7 @@ class PlayerView:
         if name in self._IMMUTABLE:
             raise IgmViolation(f"IGMs may not modify player.{name}")
         if name == "level":
-            raise IgmViolation(
-                "IGMs may not modify player.level -- grant exp instead"
-            )
+            raise IgmViolation("IGMs may not modify player.level -- grant exp instead")
 
         if name == "hp":
             value = limits.clamp_hp(value, player.hp_max)
@@ -393,9 +400,7 @@ class _MaintRoster:
         return list(self._players)
 
     def get_by_name(self, name: str) -> Player | None:
-        return next(
-            (p for p in self._players if p.name.lower() == name.lower()), None
-        )
+        return next((p for p in self._players if p.name.lower() == name.lower()), None)
 
     def get(self, player_id: int) -> Player | None:
         return next((p for p in self._players if p.id == player_id), None)
