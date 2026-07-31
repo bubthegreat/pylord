@@ -28,11 +28,39 @@ from tests.igms._harness import make_db, make_maint_ctx
 ALL_IGMS = igm_loader.load_all("igms")
 IDS = [igm.key for igm in ALL_IGMS]
 
+#: The six IGMs the realm ships switched on. Everything after them is
+#: opt-in: a sysop chooses what their realm has. This has to be spelled
+#: out here rather than inferred, because `test_config_lists_every_igm_-
+#: with_its_default` below only proves config.toml and the class agree
+#: with each other -- it would happily agree on the wrong value.
+STARTER_SIX = frozenset({
+    "baraks_house", "sandtigers_bar", "violets_cottage",
+    "turgons_house", "warriors_graveyard", "lord_casino",
+})
+
 
 def test_the_bundled_set_is_not_empty():
     """A packaging mistake that stops IGMs loading would otherwise turn
     every parametrised test below into a silent no-op."""
     assert len(ALL_IGMS) == 16
+
+
+def test_starter_six_are_all_discovered_keys():
+    """Guards STARTER_SIX itself: a rename that drops one of these six out
+    of ``igms/`` would otherwise make the test below vacuously true for
+    the missing key instead of failing."""
+    assert STARTER_SIX <= set(IDS), STARTER_SIX - set(IDS)
+
+
+@pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
+def test_only_the_starter_six_are_on_by_default(igm: IGM):
+    """The product policy the old per-wave ``test_ships_disabled`` lists
+    used to pin: the starter six ship enabled, everything else ships off
+    until a sysop turns it on."""
+    assert igm.default_enabled is (igm.key in STARTER_SIX), (
+        f"{igm.key}.default_enabled={igm.default_enabled}, expected "
+        f"{igm.key in STARTER_SIX} ({'starter six' if igm.key in STARTER_SIX else 'opt-in'})"
+    )
 
 
 @pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
@@ -42,7 +70,7 @@ async def test_contract(igm: IGM):
 
 @pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
 async def test_daily_maint_runs_if_overridden(igm: IGM):
-    """Ten of the sixteen override daily_maint. It runs during global
+    """Twelve of the sixteen override daily_maint. It runs during global
     maintenance with no terminal and no player, so a plugin that reaches
     for either breaks the whole nightly pass rather than one visit."""
     if type(igm).daily_maint is IGM.daily_maint:
