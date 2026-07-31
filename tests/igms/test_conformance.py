@@ -33,38 +33,39 @@ IDS = [igm.key for igm in ALL_IGMS]
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CONFIG_TOML = _REPO_ROOT / "config.toml"
 
-#: The six IGMs the realm ships switched on. Everything after them is
-#: opt-in: a sysop chooses what their realm has. This has to be spelled
-#: out here rather than inferred, because `test_config_lists_every_igm_-
-#: with_its_default` below only proves config.toml and the class agree
-#: with each other -- it would happily agree on the wrong value.
-STARTER_SIX = frozenset({
-    "baraks_house", "sandtigers_bar", "violets_cottage",
-    "turgons_house", "warriors_graveyard", "lord_casino",
-})
+#: Every IGM key `config.toml` lists. Used as the expected bundled set:
+#: deriving it means adding an IGM does not require editing a count here,
+#: while still catching a packaging mistake that discovers nothing.
+CONFIGURED_KEYS = frozenset(tomllib.loads(_CONFIG_TOML.read_text())["igms"])
 
 
-def test_the_bundled_set_is_not_empty():
+def test_the_bundled_set_matches_config():
     """A packaging mistake that stops IGMs loading would otherwise turn
-    every parametrised test below into a silent no-op."""
-    assert len(ALL_IGMS) == 16
+    every parametrised test below into a silent no-op -- pytest collects
+    zero cases from an empty parametrize list and reports success.
 
-
-def test_starter_six_are_all_discovered_keys():
-    """Guards STARTER_SIX itself: a rename that drops one of these six out
-    of ``igms/`` would otherwise make the test below vacuously true for
-    the missing key instead of failing."""
-    assert STARTER_SIX <= set(IDS), STARTER_SIX - set(IDS)
+    Checked against `config.toml`'s `[igms]` table rather than a hardcoded
+    number, so this stays true as the catalogue grows but still fails loudly
+    if discovery returns nothing, or if an IGM lands without its toggle.
+    """
+    assert set(IDS) == CONFIGURED_KEYS, {
+        "discovered but unconfigured": sorted(set(IDS) - CONFIGURED_KEYS),
+        "configured but not discovered": sorted(CONFIGURED_KEYS - set(IDS)),
+    }
 
 
 @pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
-def test_only_the_starter_six_are_on_by_default(igm: IGM):
-    """The product policy the old per-wave ``test_ships_disabled`` lists
-    used to pin: the starter six ship enabled, everything else ships off
-    until a sysop turns it on."""
-    assert igm.default_enabled is (igm.key in STARTER_SIX), (
-        f"{igm.key}.default_enabled={igm.default_enabled}, expected "
-        f"{igm.key in STARTER_SIX} ({'starter six' if igm.key in STARTER_SIX else 'opt-in'})"
+def test_every_bundled_igm_ships_enabled(igm: IGM):
+    """The product policy the old per-wave ``test_ships_*`` lists pinned:
+    a shipped IGM is on, and the sysop turns off what they don't want.
+
+    Spelled out here rather than inferred, because
+    ``test_config_lists_every_igm_with_its_default`` below only proves
+    ``config.toml`` and the class agree with each other -- it would happily
+    agree on the wrong value.
+    """
+    assert igm.default_enabled is True, (
+        f"{igm.key}.default_enabled is False; bundled IGMs ship on"
     )
 
 

@@ -831,24 +831,41 @@ def test_the_bundled_igms_load_by_package_name():
     from pylord import igm_loader
 
     keys = {i.key for i in igm_loader.load_all("igms")}
-    assert len(keys) == 16
+    assert len(keys) > 1, "discovery found nothing -- packaging is broken"
     assert {"lotto", "pickle", "oorphans", "freeworld2"} <= keys
 
 
 def test_every_igm_root_enumerates_as_a_package():
     """pkgutil.iter_modules only reports a subdirectory as a package when it
     has an __init__.py. The loader walks these roots, so a root that does
-    not enumerate would silently load nothing at all."""
+    not enumerate would silently load nothing at all.
+
+    The fixture roots carry literal counts because they change only when a
+    fixture is deliberately added. ``igms/`` is checked against the
+    directories actually on disk instead, so adding an IGM doesn't mean
+    editing a number here -- what matters is that every plugin directory
+    enumerates, not how many there are.
+    """
     import importlib
     import pkgutil
 
-    expected = {
-        "igms": 16,
-        "tests.fixtures.igms": 5,
-        "tests.fixtures.igms_dup": 2,
-        "tests.fixtures.igms_data": 1,
-    }
-    for name, count in expected.items():
+    def _subpackages(name: str) -> list[str]:
         pkg = importlib.import_module(name)
-        found = [n for _, n, ispkg in pkgutil.iter_modules(pkg.__path__) if ispkg]
+        return [n for _, n, ispkg in pkgutil.iter_modules(pkg.__path__) if ispkg]
+
+    on_disk = sorted(
+        d.name for d in (Path(__file__).parent.parent / "igms").iterdir()
+        if d.is_dir() and (d / "igm.py").is_file()
+    )
+    assert _subpackages("igms") == on_disk, (
+        "an igms/ directory holding an igm.py did not enumerate -- it is "
+        "probably missing its __init__.py"
+    )
+
+    for name, count in (
+        ("tests.fixtures.igms", 5),
+        ("tests.fixtures.igms_dup", 2),
+        ("tests.fixtures.igms_data", 1),
+    ):
+        found = _subpackages(name)
         assert len(found) == count, f"{name} enumerated {found}"
