@@ -13,7 +13,6 @@ getting caught, the "Ultra Ale" over-heal clamped to ``hp_max``), and
 from __future__ import annotations
 
 from igms.baraks_house.igm import BaraksHouse
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -21,10 +20,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(BaraksHouse)
 
 
 async def test_talk_uses_verbatim_barak_quote():

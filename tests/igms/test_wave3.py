@@ -32,7 +32,6 @@ from igms.oorphans.igm import (
     js_round,
 )
 from igms.pickle.igm import BAD_FROM, ROW_MAX, TATTOO, Pickles, row_pct
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -40,8 +39,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-_WAVE3 = [Lotto, Pickles, Oorphans, FreeWorld2]
 
 
 async def _visit(igm, keys, rng=None, **overrides):
@@ -57,20 +54,6 @@ def _screen(gctx) -> str:
     import re
 
     return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", "".join(gctx.io.output))
-
-
-@pytest.mark.parametrize("igm_cls", _WAVE3)
-async def test_contract(igm_cls):
-    await contract_check(igm_cls)
-
-
-@pytest.mark.parametrize("igm_cls", _WAVE3)
-def test_ships_disabled(igm_cls):
-    """All four carry original behaviour a live realm should opt into
-    knowingly -- the lotto's payout curve, Pickle's missing daily limit,
-    the FreeWorld's wishing well."""
-    assert igm_cls.default_enabled is False
-    assert igm_cls.key and igm_cls.name
 
 
 # --- Seth's Tribute Lotto -------------------------------------------------

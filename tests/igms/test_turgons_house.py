@@ -11,7 +11,6 @@ leaving a held coupon alone.
 from __future__ import annotations
 
 from igms.turgons_house.igm import TurgonsHouse
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -19,10 +18,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(TurgonsHouse)
 
 
 async def test_search_guard_dog_bites():

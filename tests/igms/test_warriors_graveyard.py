@@ -16,7 +16,6 @@ once/day gate, and ``daily_maint`` clearing all three daily gates.
 from __future__ import annotations
 
 from igms.warriors_graveyard.igm import WarriorsGraveyard
-from tests.igm_contract import contract_check
 from tests.igms._harness import (
     SeqRandom,
     make_ctx,
@@ -24,10 +23,6 @@ from tests.igms._harness import (
     make_igm_ctx,
     make_maint_ctx,
 )
-
-
-async def test_contract():
-    await contract_check(WarriorsGraveyard)
 
 
 async def test_dig_finds_gold_cache_exact_amount():

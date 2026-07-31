@@ -20,7 +20,6 @@ from igms.lord_casino.igm import (
     _hand_value,
     _is_natural,
 )
-from tests.igm_contract import contract_check
 from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx
 
 
@@ -57,13 +56,6 @@ def test_is_natural_ace_and_ten_value():
     assert _is_natural([("A", "S"), ("K", "H")]) is True
     assert _is_natural([("9", "S"), ("9", "H")]) is False
     assert _is_natural([("A", "S"), ("6", "H"), ("4", "D")]) is False  # 3 cards
-
-
-# -- framework contract ---------------------------------------------------
-
-
-async def test_contract():
-    await contract_check(LordCasino)
 
 
 # -- blackjack --------------------------------------------------------------

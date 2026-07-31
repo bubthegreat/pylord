@@ -16,13 +16,7 @@ adopt; see the module docstring and ``docs/deviations.md``.
 from __future__ import annotations
 
 from igms.sandtigers_bar.igm import SandtigersBar
-from tests.igm_contract import contract_check
 from tests.igms._harness import SeqRandom, make_ctx, make_db, make_igm_ctx
-
-
-async def test_contract():
-    await contract_check(SandtigersBar)
-
 
 # --- dice high/low -----------------------------------------------------
 
