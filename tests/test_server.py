@@ -21,6 +21,7 @@ import telnetlib3
 from pylord import data
 from pylord.e2e import (
     LordClient,
+    _wait_for_idle_pool,
     edit_player,
     running_server,
     wait_offline,
@@ -75,8 +76,9 @@ async def _test_server(tmp_path, game_config=None):
     an SAWarning about "non-checked-in" connections, pointing at an
     innocent test. ``pylord.server.start`` hangs the pool off the server
     as ``pylord_database`` for exactly this; ``pylord/e2e.py``'s
-    ``running_server`` already unwinds it in this order, and this is the
-    same sequence.
+    ``running_server`` already unwinds it in this order, and this reuses
+    its ``_wait_for_idle_pool`` rather than re-implementing the wait, so
+    the two shutdown sequences can't drift apart.
 
     Shutdown drains before it disposes. ``server.close()`` stops the
     listener but does not wait for sessions already running, and a session
@@ -84,8 +86,9 @@ async def _test_server(tmp_path, game_config=None):
     pool. Disposing under it leaves that connection for the garbage
     collector, which reports it as an SAWarning against whatever test
     happens to be running whenever the collection lands -- so the symptom
-    shows up nowhere near the cause. The pool's own ``checkedout()`` is
-    the signal that every session has really let go.
+    shows up nowhere near the cause. ``_wait_for_idle_pool`` waits on the
+    pool's own ``checkedout()`` count, the real signal that every session
+    has let go, and ``dispose()`` runs even if that wait times out.
 
     Yields ``(port, db_path)``, the same shape as ``running_server``.
     """
@@ -108,17 +111,10 @@ async def _test_server(tmp_path, game_config=None):
         if getattr(server, "pylord_health", None) is not None:
             server.pylord_health.close()
             await server.pylord_health.wait_closed()
-        pool = server.pylord_database.engine.pool
-        await _wait_until(lambda: pool.checkedout() == 0)
-        await server.pylord_database.dispose()
-
-
-async def _wait_until(predicate, timeout: float = 2.0, interval: float = 0.05) -> None:
-    async def _poll() -> None:
-        while not predicate():
-            await asyncio.sleep(interval)
-
-    await asyncio.wait_for(_poll(), timeout)
+        try:
+            await _wait_for_idle_pool(server.pylord_database)
+        finally:
+            await server.pylord_database.dispose()
 
 
 async def _wait_until_player(database, name, timeout=5.0):

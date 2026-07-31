@@ -1,9 +1,10 @@
 """Fixture for ``IGM.dir``: a plugin that ships its own data file.
 
 The loader gives every plugin its directory, which is how an IGM with
-tables or ``.ANS`` screens too big to inline reads them. Relative *imports*
-are still impossible (the synthetic module name has no parent package), so
-this is the supported way to ship more than one file.
+tables or ``.ANS`` screens too big to inline reads them -- for
+non-Python files. A plugin can *also* split its Python across modules and
+import between them, relatively or absolutely; see
+``tests/fixtures/igms/multi_module/`` for that.
 
 Kept in its own fixture directory so it does not disturb the discovery
 tests that assert ``igms/`` contains exactly one enabled plugin.

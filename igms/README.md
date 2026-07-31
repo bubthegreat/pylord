@@ -124,6 +124,11 @@ The loader imports `igms.<your_igm>.igm` and looks for the single `IGM`
 subclass there; the other modules are yours to arrange. Keep them
 side-effect-free at import: the loader imports every plugin at startup.
 
+A shared base class or mixin in a sibling module works too -- `igm.py` can
+import it and subclass it there. The loader only registers the subclass
+*defined in* `igm.py`; the imported base class showing up in that module's
+namespace does not count as a second candidate.
+
 ### Shipping data and screen files
 
 Modules aren't the only thing that can live beside `igm.py`: the loader

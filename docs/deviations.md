@@ -92,7 +92,7 @@ docstring instead.
 | **FreeWorld II:** the payouts are enormous and are not rebalanced | A granted wishing-well Strength wish is up to +100 (`:496`), the Chancellor pays 50,000 gold for guessing a number in five tries (`:657`), and the Fairy Wizard pays up to 700,000 for a fairy (`:528`). Five walks a day at a 1-in-10 chance of the well, and one wish in three granted. Every figure is the source's. Recorded, not fixed; the IGM ships disabled. |
 | **FreeWorld II:** the `mswait` pacing is dropped | The source spaces its nap and Fairy Wizard ellipses with `io.mswait()` (`:434-439`, `:531-536`). `TermIO` has no timed-output primitive, and adding one for cosmetics would be a framework change in service of an animation. The text prints at once. |
 | **FreeWorld II:** its own stats screen is trimmed | `:182-282` reimplements the LORD stats page inside the IGM. Dropped here: weapon/armour *names* (an `IgmContext` exposes only `weapon_num`/`armor_num`), the per-class daily use counters (this port has one shared `skill_uses` -- see the row above), the NPC-marriage lines (global `game_state` an IGM deliberately cannot reach) and the date/time header (no clock is exposed to a plugin). |
-| **FreeWorld II:** the Chancellor's `M` skill wish always grants exactly one rank | `:482-484` adds `random(1) + 1`, and `random(1)` is always `0`. The "up to two ranks" the shape of the expression suggests never happens. Ported as written. |
+| **FreeWorld II:** the wishing well's `M` skill wish always grants exactly one rank | `:482-484` adds `random(1) + 1`, and `random(1)` is always `0`. The "up to two ranks" the shape of the expression suggests never happens. Ported as written. |
 
 ## Deliberate design changes (not fidelity gaps)
 

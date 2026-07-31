@@ -251,8 +251,14 @@ async def running_server(work_dir: Path, *, igms: list[str] | None = None):
         # pool. Disposing under it leaves that connection to the garbage
         # collector, which reports it as an SAWarning against whatever is
         # running whenever the collection lands -- nowhere near the cause.
-        await _wait_for_idle_pool(server.pylord_database)
-        await server.pylord_database.dispose()
+        #
+        # dispose() must run even if the drain times out, or a timeout here
+        # both masks whatever the caller's body raised *and* leaves the
+        # engine undisposed -- the exact leak this wait exists to prevent.
+        try:
+            await _wait_for_idle_pool(server.pylord_database)
+        finally:
+            await server.pylord_database.dispose()
 
 
 async def _wait_for_idle_pool(database, timeout: float = 5.0) -> None:

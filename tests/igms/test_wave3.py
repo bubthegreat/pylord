@@ -331,6 +331,24 @@ async def test_orphanage_adopt_charges_and_adds_a_child():
     assert player.kids == 1
 
 
+async def test_orphanage_adopt_confirm_enter_declines():
+    """The ``[y/N]`` confirm's docstring says Enter means no. Regression
+    for a bug where the prompt's default wasn't passed explicitly and
+    ``_default_from_prompt`` (which only parses a single-char ``[X]``,
+    not ``[y/N]``) fell back to swallowing the keypress instead of
+    honouring it -- so Enter did nothing rather than declining."""
+    _gctx, ctx, player, _db = await _visit(
+        Oorphans(),
+        keys=["A", "\r", "Q", "\r"],
+        level=1,
+        gold=5000,
+        kids=0,
+    )
+    await Oorphans().enter(ctx)
+    assert player.gold == 5000
+    assert player.kids == 0
+
+
 async def test_orphanage_refuses_adoption_without_the_gold():
     gctx, ctx, player, _db = await _visit(
         Oorphans(),

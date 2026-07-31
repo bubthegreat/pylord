@@ -3,8 +3,9 @@ Arena of Lords, The Latrine.
 
 All six are recreations from the historical premise rather than ports --
 see each module's docstring. These tests pin the mechanics that touch a
-character (gems spent, gold moved, hitpoints lost, daily gates) and check
-every one against the shared IGM contract.
+character (gems spent, gold moved, hitpoints lost, daily gates). The
+shared IGM contract itself is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``.
 """
 
 from __future__ import annotations

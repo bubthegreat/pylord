@@ -1,11 +1,16 @@
 """Reusable IGM contract check.
 
-Every bundled IGM's own test module is expected to call
-``contract_check(SomeIGM)`` so a single place enforces the framework's
-invariants against real plugins: the class validates, ``enter()`` runs to
-completion (or degrades gracefully when it runs out of scripted input),
-and nothing forbidden leaks out of the guardrails (level never moves,
-gold/gems/exp never go negative, hp stays within ``[0, hp_max]``).
+``tests/igms/test_conformance.py`` calls ``contract_check`` against every
+bundled IGM so a single place enforces the framework's invariants against
+real plugins: the class validates, ``enter()`` runs to completion (or
+degrades gracefully when it runs out of scripted input), and nothing
+forbidden leaks out of the guardrails (level never moves, gold/gems/exp
+never go negative, hp stays within ``[0, hp_max]``).
+
+``contract_check`` takes either a bare ``IGM`` subclass (built fresh, with
+``dir`` unset) or an already-loaded instance (``dir`` set, so a plugin
+that reads its own data files -- pickle, oorphans, freeworld2 -- is
+checked on its real path, not just its missing-data fallback).
 
 It is deliberately import-only from the public framework surface
 (``pylord.hooks`` + ``pylord.igm_loader``) so an IGM author can copy it as
@@ -26,10 +31,25 @@ from pylord.terminal import FakeIO, OutOfKeys
 _DEFAULT_KEYS = ["\r"] * 64
 
 
-async def contract_check(igm_cls: type[IGM], keys: list[str] | None = None) -> None:
-    assert issubclass(igm_cls, IGM), "IGM must subclass pylord.hooks.IGM"
+async def contract_check(
+    igm: type[IGM] | IGM, keys: list[str] | None = None
+) -> None:
+    """Run the framework contract against ``igm``.
 
-    inst = igm_cls()
+    ``igm`` may be either an ``IGM`` subclass -- built fresh here, with
+    ``dir`` left unset -- or an already-constructed instance, used as-is.
+    Passing a loaded instance (``dir`` set by :mod:`pylord.igm_loader`) is
+    how :mod:`tests.igms.test_conformance` exercises a plugin's real
+    data-file path rather than only its missing-data fallback.
+    """
+    if isinstance(igm, IGM):
+        inst = igm
+    else:
+        assert isinstance(igm, type) and issubclass(igm, IGM), (
+            "IGM must subclass pylord.hooks.IGM"
+        )
+        inst = igm()
+
     assert inst.key, "IGM.key must be a non-empty slug"
     assert inst.name, "IGM.name must be non-empty"
     assert type(inst).enter is not IGM.enter, "IGM must override enter()"

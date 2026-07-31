@@ -57,7 +57,10 @@ def _load_one(package: str, name: str) -> IGM:
     subclasses = [
         obj
         for obj in vars(module).values()
-        if isinstance(obj, type) and issubclass(obj, IGM) and obj is not IGM
+        if isinstance(obj, type)
+        and issubclass(obj, IGM)
+        and obj is not IGM
+        and obj.__module__ == module.__name__
     ]
     if len(subclasses) != 1:
         raise ValueError(
@@ -93,17 +96,26 @@ def load_all(package: str) -> list[IGM]:
     """
     try:
         root = importlib.import_module(package)
+    except (KeyboardInterrupt, SystemExit):
+        raise
     except BaseException:
         logger.warning("no IGMs loaded: cannot import %r", package, exc_info=True)
         return []
 
+    path = getattr(root, "__path__", None)
+    if path is None:
+        logger.warning("no IGMs loaded: %r is not a package", package)
+        return []
+
     loaded: list[IGM] = []
     seen_keys: set[str] = set()
-    names = sorted(n for _, n, ispkg in pkgutil.iter_modules(root.__path__) if ispkg)
+    names = sorted(n for _, n, ispkg in pkgutil.iter_modules(path) if ispkg)
 
     for name in names:
         try:
             instance = _load_one(package, name)
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except BaseException:
             logger.warning("skipping broken IGM %s.%s", package, name, exc_info=True)
             continue
@@ -128,7 +140,9 @@ def discover(package: str, config: dict[str, Any]) -> IgmRegistry:
     for each IGM key is ``config["igms"].get(key, instance.default_enabled)``.
     Never raises.
     """
-    toggles: dict[str, Any] = (config or {}).get("igms", {}) or {}
+    toggles = (config or {}).get("igms", {})
+    if not isinstance(toggles, dict):
+        toggles = {}
     enabled = [
         igm for igm in load_all(package) if toggles.get(igm.key, igm.default_enabled)
     ]

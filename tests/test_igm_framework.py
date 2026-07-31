@@ -59,7 +59,7 @@ def test_discover_skips_broken_modules(caplog):
     with caplog.at_level("WARNING", logger="pylord.igm"):
         reg = igm_loader.discover(_IGMS_PKG, {})
     # broken_import + no_subclass never make it into the registry ...
-    assert {i.key for i in reg.enabled} == {"sample", "multi_module"}
+    assert {i.key for i in reg.enabled} == {"sample", "multi_module", "shared_base"}
     # ... and the loader survived and logged rather than raising.
     assert caplog.records
 
@@ -71,6 +71,17 @@ def test_discover_unknown_package_returns_empty():
     assert reg.enabled == []
 
 
+def test_discover_root_that_imports_but_is_not_a_package_returns_empty():
+    """A root naming an importable module with no ``__path__`` (i.e. not a
+    package) must not raise. Regression: ``root.__path__`` used to be read
+    unguarded, so this raised ``AttributeError`` instead of returning an
+    empty registry like every other broken-root case."""
+    from pylord import igm_loader
+
+    reg = igm_loader.discover("pylord.hooks", {})
+    assert reg.enabled == []
+
+
 def test_a_plugin_can_be_split_across_modules():
     """The capability this whole change exists for: igm.py importing a
     sibling module in its own package, both relatively and absolutely."""
@@ -79,6 +90,19 @@ def test_a_plugin_can_be_split_across_modules():
     reg = igm_loader.discover("tests.fixtures.igms", {})
     igm = next(i for i in reg.enabled if i.key == "multi_module")
     assert igm.proof() == ("helpers module reached", "OK")
+
+
+def test_a_plugin_can_share_a_base_class_from_a_sibling_module():
+    """The subclass scan must not trip over an *imported* base class: only
+    the subclass actually defined in igm.py should register. Regression
+    for ``vars(module).values()`` counting ``SharedBase`` (imported from
+    ``base.py``) alongside ``SharedIGM``, which the old scan misread as
+    "found 2" and skipped the whole plugin."""
+    from pylord import igm_loader
+
+    reg = igm_loader.discover("tests.fixtures.igms", {})
+    igm = next(i for i in reg.enabled if i.key == "shared_base")
+    assert igm.greeting() == "shared base reached"
 
 
 def test_loader_sets_igm_dir_to_the_plugin_directory():
@@ -119,6 +143,17 @@ def test_config_disables_igm_absent_from_other_places():
 
     reg = igm_loader.discover(_IGMS_PKG, {"igms": {"sample": False}})
     assert all(i.key != "sample" for i in reg.other_places())
+
+
+def test_config_igms_table_wrong_type_falls_back_to_defaults():
+    """A sysop typo -- ``igms = ["lotto"]`` (an array, not a table) -- must
+    not crash startup. Regression: ``config["igms"].get(...)`` raised
+    ``AttributeError: 'list' object has no attribute 'get'``; each IGM
+    should instead fall back to its own ``default_enabled``."""
+    from pylord import igm_loader
+
+    reg = igm_loader.discover(_IGMS_PKG, {"igms": ["lotto"]})
+    assert {i.key for i in reg.enabled} == {"sample", "multi_module", "shared_base"}
 
 
 def test_duplicate_key_second_skipped():
@@ -809,7 +844,7 @@ def test_every_igm_root_enumerates_as_a_package():
 
     expected = {
         "igms": 16,
-        "tests.fixtures.igms": 4,
+        "tests.fixtures.igms": 5,
         "tests.fixtures.igms_dup": 2,
         "tests.fixtures.igms_data": 1,
     }

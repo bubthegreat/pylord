@@ -1,7 +1,8 @@
 """Behavior tests for The Warrior's Graveyard (Task 19; source-audited --
 see ``igms/warriors_graveyard/igm.py``'s module docstring).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 IGM's own seeded gameplay: each dig outcome (gold cache, rare gem,
 nothing, undead fight), the once/day dig gate (adopted from the real
 source's once-per-day grave-rob gate -- see the module docstring), an

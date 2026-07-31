@@ -217,7 +217,10 @@ class Oorphans(IGM):
     async def _confirm(self, ctx: IgmContext) -> bool:
         """The source's ``[y/N]`` prompt -- Enter means no (``:246-251``)."""
         return (
-            await ctx.term.menu({"Y": "yes", "N": "no"}, "  Do it? [y/`0N`2]:`%") == "Y"
+            await ctx.term.menu(
+                {"Y": "yes", "N": "no"}, "  Do it? [y/`0N`2]:`%", default="N"
+            )
+            == "Y"
         )
 
     # --- (A)dopt -------------------------------------------------------

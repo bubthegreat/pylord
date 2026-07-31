@@ -1,6 +1,7 @@
 """Behavior tests for the LORD Gambling Casino (Task 20).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 IGM's own seeded gameplay. Blackjack's card math is unit-tested directly
 via its pure helpers (``_hand_value``/``_is_natural``) for exact soft-ace
 handling, then exercised end-to-end through ``enter()`` for natural/push/

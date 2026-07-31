@@ -28,6 +28,11 @@ from tests.igms._harness import make_db, make_maint_ctx
 ALL_IGMS = igm_loader.load_all("igms")
 IDS = [igm.key for igm in ALL_IGMS]
 
+#: Derived from this file's location, not cwd -- the suite must pass no
+#: matter where pytest is invoked from.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_CONFIG_TOML = _REPO_ROOT / "config.toml"
+
 #: The six IGMs the realm ships switched on. Everything after them is
 #: opt-in: a sysop chooses what their realm has. This has to be spelled
 #: out here rather than inferred, because `test_config_lists_every_igm_-
@@ -65,7 +70,11 @@ def test_only_the_starter_six_are_on_by_default(igm: IGM):
 
 @pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
 async def test_contract(igm: IGM):
-    await contract_check(type(igm))
+    """Checks the loaded instance itself, not a freshly built one, so
+    ``igm.dir`` is the real plugin directory the loader set it to -- a
+    data-reading IGM (pickle, oorphans, freeworld2) is exercised on its
+    real data-file path, not only the ``dir is None`` fallback."""
+    await contract_check(igm)
 
 
 @pytest.mark.parametrize("igm", ALL_IGMS, ids=IDS)
@@ -116,7 +125,7 @@ def test_config_lists_every_igm_with_its_default(igm: IGM):
     missing from it still loads -- discover() falls back to
     default_enabled -- but a sysop reading the file would never learn it
     exists."""
-    config = tomllib.loads(Path("config.toml").read_text())
+    config = tomllib.loads(_CONFIG_TOML.read_text())
     toggles = config["igms"]
     assert igm.key in toggles, f"{igm.key} is not listed in config.toml [igms]"
     assert toggles[igm.key] == igm.default_enabled, (

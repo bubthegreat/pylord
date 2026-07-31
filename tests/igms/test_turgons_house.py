@@ -1,6 +1,7 @@
 """Behavior tests for Turgon's House (Task 18).
 
-``contract_check`` covers the framework invariants; these tests pin the
+The shared IGM contract is checked once, for every bundled IGM, in
+``tests/igms/test_conformance.py``; these tests pin the
 IGM's own seeded gameplay: each search outcome (guard dog, gems, off-duty
 Turgon exp, coupon find, nothing), the 3-searches/day gate, the coupon
 "one at a time" fold-into-nothing, talking's once/day defense gate (and its

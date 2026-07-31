@@ -16,7 +16,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Both packages have to be on disk before this sync: pyproject.toml declares
+# packages = ["pylord", "igms"], and hatchling silently drops a package
+# entry with nothing on disk rather than erroring, so a build that ran this
+# with igms/ missing would produce a wheel with zero IGM files and still
+# exit 0.
 COPY pylord/ ./pylord/
+COPY igms/ ./igms/
 RUN uv sync --frozen --no-dev
 
 
