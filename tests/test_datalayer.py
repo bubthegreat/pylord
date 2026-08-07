@@ -197,7 +197,7 @@ async def test_v6_migration_skips_unarmored_and_corrupt_rows():
     await _set_version(db, 5)
     await db.create_schema()
 
-    assert (await db.players.get(bare.id)).defense == 1  # model default
+    assert (await db.players.get(bare.id)).defense == 3  # model default
     assert (await db.players.get(corrupt.id)).defense == 123
 
 

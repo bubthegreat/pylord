@@ -53,8 +53,9 @@ transcribing every line -- documented deviation, not a mechanical change.
 ``Player`` -- see the inline comments in :func:`_victory` for each one):
 ``level=1``, ``hp_max=20``, ``hp=hp_max``, ``weapon_num=1`` ("Stick"),
 ``armor_num=1`` ("Coat" -- lord.js's ``arm``/``arm_num``, this project's
-``armor_num``), ``gold=500``, ``bank=0``, ``defense=1``, ``strength=10``,
-``gems=10`` (a flat overwrite, **not** additive), ``alive=1``
+``armor_num``), ``gold=500``, ``bank=0``, ``defense=3`` (base 0 + Coat's
+power, matching a fresh player -- see ``models.Player.defense``),
+``strength=10``, ``gems=10`` (a flat overwrite, **not** additive), ``alive=1``
 (``player.dead=false``), ``at_inn=0`` (``player.inn=false``), ``exp=10``,
 ``forest_fights = min(config forest_fights_per_day + player.kids, 32000)``
 (``:12163-12168``), ``player_fights = config player_fights_per_day``
@@ -99,7 +100,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pylord.engine.combat import Combatant, Fight, skill_attack
-from pylord.engine.data import Monster
+from pylord.engine.data import Monster, armor
 from pylord.engine.game import scene
 from pylord.engine.scenes import _battle
 
@@ -361,7 +362,7 @@ async def _victory(ctx: GameCtx) -> bool:
     p.armor_num = 1
     p.gold = 500
     p.bank = 0
-    p.defense = 1
+    p.defense = armor(1).power  # base 0 + Coat's power -- see models.Player.defense
     p.strength = 10
     p.gems = 10
     p.alive = 1

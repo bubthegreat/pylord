@@ -114,6 +114,9 @@ defense = clamp(defense - OLD_POWER[armor_num] + NEW_POWER[armor_num], 0, 32000)
   row) skip it.
 - No compensation for the tier 12–15 price cuts (a past buyer overpaid in
   gold terms); acceptable for a balance patch.
+- The new-player and dragon-reset defense baseline moves from 1 to 3 in
+  lockstep with Coat's power, so `defense = base (0) + armor_power` holds
+  for freshly created characters exactly as it does for migrated ones.
 
 ### 4. Error handling
 

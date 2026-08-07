@@ -62,7 +62,9 @@ players = Table(
     Column("hp", Integer, nullable=False, server_default="20"),
     Column("hp_max", Integer, nullable=False, server_default="20"),
     Column("strength", Integer, nullable=False, server_default="10"),
-    Column("defense", Integer, nullable=False, server_default="1"),
+    # base 0 + Coat's power (armor_num=1, power 3 post-rebalance) --
+    # matches models.Player.defense's default.
+    Column("defense", Integer, nullable=False, server_default="3"),
     Column("charm", Integer, nullable=False, server_default="1"),
     Column("gold", Integer, nullable=False, server_default="500"),
     Column("bank", Integer, nullable=False, server_default="0"),

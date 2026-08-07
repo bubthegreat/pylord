@@ -110,7 +110,7 @@ async def test_dragon_win_resets_every_field_and_increments_king_count():
     assert p.armor_num == 1
     assert p.gold == 500
     assert p.bank == 0
-    assert p.defense == 1
+    assert p.defense == 3  # base 0 + Coat's power, matching a fresh player
     assert p.strength == 10
     assert p.gems == 10
     assert p.alive == 1

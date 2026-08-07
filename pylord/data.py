@@ -55,6 +55,11 @@ _ARMOR_POWERS_V6 = (0, 3, 8, 25, 38, 63, 88, 125, 188, 250, 375, 560, 750, 950, 
 
 _PLAYER_COLS = [f.name for f in fields(Player) if f.name not in ("id", "name")]
 _ALL_PLAYER_COLS = [f.name for f in fields(Player)]
+#: The model's default, not the column's server_default -- used to make
+#: PlayersRepo.create() explicit about a new player's starting defense so
+#: an upgraded live realm (where _add_missing_columns never alters an
+#: existing column's stored default) can't hand out the stale value.
+_DEFAULT_DEFENSE = next(f.default for f in fields(Player) if f.name == "defense")
 
 
 def create_engine(url: str, **kwargs: Any) -> AsyncEngine:
@@ -237,7 +242,10 @@ class PlayersRepo(_Repo):
             async with self._db.transaction() as tx:
                 result = await tx.execute(
                     insert(schema.players).values(
-                        name=name, password_hash=hash_password(password), gender=gender
+                        name=name,
+                        password_hash=hash_password(password),
+                        gender=gender,
+                        defense=_DEFAULT_DEFENSE,
                     )
                 )
                 player_id = result.inserted_primary_key[0]
@@ -403,6 +411,12 @@ class Database:
         # migration must not leave applied_count behind while some
         # players are already migrated, or the next startup would
         # double-apply the migration to them.
+        # Single-server-process assumption: this read takes no row lock, so
+        # two processes racing startup against the same database could both
+        # see the pre-migration applied_count here and both run the
+        # migration below. Fine for this project's one-process deployment;
+        # would need SELECT ... FOR UPDATE (or equivalent) to be safe
+        # against concurrent startups.
         async with self.transaction() as tx:
             existing = await tx.fetch_one(
                 select(schema.schema_version.c.applied_count)

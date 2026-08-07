@@ -137,7 +137,7 @@ async def test_master_win_grants_level_and_exact_stat_gains():
     assert ctx.player.hp_max == 200 + gain.hp
     assert ctx.player.hp == ctx.player.hp_max
     assert ctx.player.strength == 1000 + gain.strength
-    assert ctx.player.defense == 1 + trainer.defense
+    assert ctx.player.defense == 3 + trainer.defense  # model default + gain
     assert ctx.player.seen_master == 0  # reset on a win
 
     # Post-review Important: the win broadcasts news (log_line()'s

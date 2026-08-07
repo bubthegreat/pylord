@@ -382,7 +382,7 @@ async def test_number_game_all_eight_prizes():
     assert p4.strength == 11
 
     p5 = await _prize_player(5)
-    assert p5.defense == 2
+    assert p5.defense == 4  # model default (3) + 1
 
     p6 = await _prize_player(6)
     assert p6.charm == 2
