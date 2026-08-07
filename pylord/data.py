@@ -398,21 +398,29 @@ class Database:
         async with self._engine.begin() as conn:
             await conn.run_sync(schema.metadata.create_all)
             await conn.run_sync(self._add_missing_columns)
-        existing = await self.fetch_one(select(schema.schema_version.c.applied_count))
-        if existing is not None and existing.applied_count < 6:
-            await self._rebalance_armor_defense()
-        if existing is None:
-            await self.execute(
-                insert(schema.schema_version).values(
-                    applied_count=schema.CURRENT_VERSION
-                )
+        # Version read, any data migration it triggers, and the version
+        # write all land as one unit -- a crash partway through a
+        # migration must not leave applied_count behind while some
+        # players are already migrated, or the next startup would
+        # double-apply the migration to them.
+        async with self.transaction() as tx:
+            existing = await tx.fetch_one(
+                select(schema.schema_version.c.applied_count)
             )
-        else:
-            await self.execute(
-                update(schema.schema_version).values(
-                    applied_count=schema.CURRENT_VERSION
+            if existing is not None and existing.applied_count < 6:
+                await tx._rebalance_armor_defense()
+            if existing is None:
+                await tx.execute(
+                    insert(schema.schema_version).values(
+                        applied_count=schema.CURRENT_VERSION
+                    )
                 )
-            )
+            else:
+                await tx.execute(
+                    update(schema.schema_version).values(
+                        applied_count=schema.CURRENT_VERSION
+                    )
+                )
 
     async def _rebalance_armor_defense(self) -> None:
         """Schema-version-6 data migration: armor powers were rescaled
