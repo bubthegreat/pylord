@@ -158,4 +158,4 @@ schema_version = Table(
 
 #: Bumped whenever the tables above change in a way an existing database
 #: has to be migrated for.
-CURRENT_VERSION = 5
+CURRENT_VERSION = 6

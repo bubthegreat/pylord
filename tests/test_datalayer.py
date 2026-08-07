@@ -7,8 +7,9 @@ underneath -- the same suite runs against SQLite locally and MySQL in CI.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import update
 
-from pylord import data
+from pylord import data, schema
 from pylord.data import Database
 
 
@@ -156,3 +157,61 @@ async def test_igm_data_is_namespaced_per_igm():
     await db.igm_data.delete("mines", "sift:1")
     assert await db.igm_data.get_raw("mines", "sift:1") is None
     assert await db.igm_data.get_raw("latrine", "sift:1") == "9"
+
+
+async def _set_version(db: Database, version: int) -> None:
+    await db.execute(
+        update(schema.schema_version).values(applied_count=version)
+    )
+
+
+async def test_v6_migration_rebases_armored_defense_by_delta():
+    db = await _db()
+    p = await db.players.create("Armored", "pw")
+    p.armor_num = 11  # Blood Armour: old power 225, new power 560
+    p.defense = 233 + 225 + 50  # base + old armor + 50 fairyland points
+    await db.players.save(p)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+
+    migrated = await db.players.get(p.id)
+    # Delta (+335) applied; the 50 bought points survive.
+    assert migrated.defense == 233 + 560 + 50
+    row = await db.fetch_one(
+        schema.schema_version.select()
+    )
+    assert row.applied_count == schema.CURRENT_VERSION
+
+
+async def test_v6_migration_skips_unarmored_and_corrupt_rows():
+    db = await _db()
+    bare = await db.players.create("Bare", "pw")
+    bare.armor_num = 0  # sold their Coat -- Player defaults to armor_num=1
+    await db.players.save(bare)
+    corrupt = await db.players.create("Corrupt", "pw")
+    corrupt.armor_num = 99
+    corrupt.defense = 123
+    await db.players.save(corrupt)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+
+    assert (await db.players.get(bare.id)).defense == 1  # model default
+    assert (await db.players.get(corrupt.id)).defense == 123
+
+
+async def test_v6_migration_is_idempotent_and_clamps():
+    db = await _db()
+    p = await db.players.create("Capped", "pw")
+    p.armor_num = 15  # delta +350
+    p.defense = 31_900
+    await db.players.save(p)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+    assert (await db.players.get(p.id)).defense == 32_000  # clamped
+
+    # Second startup: version is already current, no second delta.
+    await db.create_schema()
+    assert (await db.players.get(p.id)).defense == 32_000
