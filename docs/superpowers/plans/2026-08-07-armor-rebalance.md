@@ -172,7 +172,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Test: `tests/test_datalayer.py`
 
 **Interfaces:**
-- Consumes: `Database.players` (`PlayersRepo.all_players() -> list[Player]`, `save(player)`, `get(id)`, `create(name, password)`), `schema.schema_version.c.applied_count`, `STAT_CAP` from `pylord/engine/limits.py`, `Player.armor_num` / `Player.defense` (defaults 0 / 1).
+- Consumes: `Database.players` (`PlayersRepo.all_players() -> list[Player]`, `save(player)`, `get(id)`, `create(name, password)`), `schema.schema_version.c.applied_count`, `STAT_CAP` from `pylord/engine/limits.py`, `Player.armor_num` / `Player.defense` (defaults 1 / 1 — new players start with a Coat).
 - Produces: `Database._rebalance_armor_defense()` (private, called only from `create_schema`), module constants `_ARMOR_POWERS_V5` / `_ARMOR_POWERS_V6`, `schema.CURRENT_VERSION == 6`.
 
 - [ ] **Step 1: Write failing migration tests**
@@ -207,7 +207,9 @@ async def test_v6_migration_rebases_armored_defense_by_delta():
 
 async def test_v6_migration_skips_unarmored_and_corrupt_rows():
     db = await _db()
-    bare = await db.players.create("Bare", "pw")  # armor_num 0
+    bare = await db.players.create("Bare", "pw")
+    bare.armor_num = 0  # sold their Coat -- Player defaults to armor_num=1
+    await db.players.save(bare)
     corrupt = await db.players.create("Corrupt", "pw")
     corrupt.armor_num = 99
     corrupt.defense = 123
