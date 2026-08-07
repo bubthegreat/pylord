@@ -34,18 +34,34 @@ def test_armor_table_shape_and_endpoints():
     assert first.num == 1
     assert first.name == "Coat"
     assert first.price == 200
-    assert first.power == 1
+    assert first.power == 3
 
     last = data.ARMOR[14]
     assert last.num == 15
     assert last.name == "Armour Of Lore"
-    assert last.price == 400000000
-    assert last.power == 1000
+    assert last.price == 12_000_000
+    assert last.power == 1350
 
 
 def test_armor_lookup_is_1_indexed():
     assert data.armor(1) == data.ARMOR[0]
     assert data.armor(15) == data.ARMOR[14]
+
+
+def test_armor_powers_and_prices_strictly_increase():
+    for prev, cur in zip(data.ARMOR, data.ARMOR[1:]):
+        assert cur.power > prev.power, (prev, cur)
+        assert cur.price > prev.price, (prev, cur)
+
+
+def test_armor_upgrades_beat_fairyland_defense_price():
+    """Net upgrade cost per defense point stays under SunShines' Fairy
+    Land's flat 35,000 gold/point (igms/sunshines_fairy_land/igm.py,
+    PRICE_DEFENSE). Trade-in floor: half the old armor's price."""
+    for prev, cur in zip(data.ARMOR, data.ARMOR[1:]):
+        net_cost = cur.price - prev.price // 2
+        per_point = net_cost / (cur.power - prev.power)
+        assert per_point < 35_000, (cur.name, per_point)
 
 
 def test_exp_curve_monotonic_and_endpoints():

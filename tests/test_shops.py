@@ -229,7 +229,7 @@ async def test_buy_coat_decrements_gold_and_sets_armor():
     await shops_mod._buy_armor(ctx)
     assert ctx.player.gold == 500 - 200
     assert ctx.player.armor_num == 1
-    assert ctx.player.defense == 1 + 1
+    assert ctx.player.defense == 1 + 3
 
 
 async def test_buy_armor_refused_when_gold_insufficient():
@@ -256,7 +256,7 @@ async def test_sell_armor_exact_price_and_stat_rollback():
     assert "101" in text
     assert ctx.player.armor_num == 0
     assert ctx.player.gold == 500 + 101
-    assert ctx.player.defense == 2 - 1
+    assert ctx.player.defense == 0
 
 
 async def test_sell_armor_gold_cap_shows_lot_of_money_flavor():
