@@ -229,7 +229,7 @@ async def test_buy_coat_decrements_gold_and_sets_armor():
     await shops_mod._buy_armor(ctx)
     assert ctx.player.gold == 500 - 200
     assert ctx.player.armor_num == 1
-    assert ctx.player.defense == 1 + 1
+    assert ctx.player.defense == 3 + 3  # model default (bare) + Coat's power
 
 
 async def test_buy_armor_refused_when_gold_insufficient():
@@ -247,7 +247,7 @@ async def test_sell_armor_exact_price_and_stat_rollback():
     """level=1, charm=1 -> mult=1, armor branch (inclusive 0<=mult<=65530)
     also rolls random(1); pinned to 1. price = 200 // 2 + 1 = 101."""
     ctx = await _ctx(
-        overrides={"armor_num": 1, "defense": 2},
+        overrides={"armor_num": 1, "defense": 10},
         rng=_SeqRNG([1]),
         keys=["y", "x"],
     )
@@ -256,13 +256,13 @@ async def test_sell_armor_exact_price_and_stat_rollback():
     assert "101" in text
     assert ctx.player.armor_num == 0
     assert ctx.player.gold == 500 + 101
-    assert ctx.player.defense == 2 - 1
+    assert ctx.player.defense == 7
 
 
 async def test_sell_armor_gold_cap_shows_lot_of_money_flavor():
     """Post-review Minor 2: reference/lord.js:10494-10498."""
     ctx = await _ctx(
-        overrides={"armor_num": 1, "defense": 2, "gold": 2_000_000_000 - 50},
+        overrides={"armor_num": 1, "defense": 10, "gold": 2_000_000_000 - 50},
         rng=_SeqRNG([1]),
         keys=["y", "x"],
     )

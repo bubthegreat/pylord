@@ -49,7 +49,7 @@ class Player:
     hp: int = 20
     hp_max: int = 20
     strength: int = 10
-    defense: int = 1
+    defense: int = 3  # base 0 + Coat's power (armor_num=1, power 3 post-rebalance)
     charm: int = 1
     gold: int = 500
     bank: int = 0

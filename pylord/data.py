@@ -44,8 +44,22 @@ from pylord.models import Player, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
+#: Armor defense powers by armor_num (index 0 = unarmored) before and
+#: after the schema-version-6 rebalance
+#: (docs/superpowers/specs/2026-08-07-armor-rebalance-design.md). V5 is
+#: frozen history -- it must match what players actually bought under
+#: version 5, not the live table in pylord/engine/data/armor.py, which
+#: may drift again behind a future migration.
+_ARMOR_POWERS_V5 = (0, 1, 3, 10, 15, 25, 35, 50, 75, 100, 150, 225, 300, 400, 600, 1000)
+_ARMOR_POWERS_V6 = (0, 3, 8, 25, 38, 63, 88, 125, 188, 250, 375, 560, 750, 950, 1150, 1350)
+
 _PLAYER_COLS = [f.name for f in fields(Player) if f.name not in ("id", "name")]
 _ALL_PLAYER_COLS = [f.name for f in fields(Player)]
+#: The model's default, not the column's server_default -- used to make
+#: PlayersRepo.create() explicit about a new player's starting defense so
+#: an upgraded live realm (where _add_missing_columns never alters an
+#: existing column's stored default) can't hand out the stale value.
+_DEFAULT_DEFENSE = next(f.default for f in fields(Player) if f.name == "defense")
 
 
 def create_engine(url: str, **kwargs: Any) -> AsyncEngine:
@@ -228,7 +242,10 @@ class PlayersRepo(_Repo):
             async with self._db.transaction() as tx:
                 result = await tx.execute(
                     insert(schema.players).values(
-                        name=name, password_hash=hash_password(password), gender=gender
+                        name=name,
+                        password_hash=hash_password(password),
+                        gender=gender,
+                        defense=_DEFAULT_DEFENSE,
                     )
                 )
                 player_id = result.inserted_primary_key[0]
@@ -389,19 +406,61 @@ class Database:
         async with self._engine.begin() as conn:
             await conn.run_sync(schema.metadata.create_all)
             await conn.run_sync(self._add_missing_columns)
-        existing = await self.fetch_one(select(schema.schema_version.c.applied_count))
-        if existing is None:
-            await self.execute(
-                insert(schema.schema_version).values(
-                    applied_count=schema.CURRENT_VERSION
-                )
+        # Version read, any data migration it triggers, and the version
+        # write all land as one unit -- a crash partway through a
+        # migration must not leave applied_count behind while some
+        # players are already migrated, or the next startup would
+        # double-apply the migration to them.
+        # Single-server-process assumption: this read takes no row lock, so
+        # two processes racing startup against the same database could both
+        # see the pre-migration applied_count here and both run the
+        # migration below. Fine for this project's one-process deployment;
+        # would need SELECT ... FOR UPDATE (or equivalent) to be safe
+        # against concurrent startups.
+        async with self.transaction() as tx:
+            existing = await tx.fetch_one(
+                select(schema.schema_version.c.applied_count)
             )
-        else:
-            await self.execute(
-                update(schema.schema_version).values(
-                    applied_count=schema.CURRENT_VERSION
+            if existing is not None and existing.applied_count < 6:
+                await tx._rebalance_armor_defense()
+            if existing is None:
+                await tx.execute(
+                    insert(schema.schema_version).values(
+                        applied_count=schema.CURRENT_VERSION
+                    )
                 )
+            else:
+                await tx.execute(
+                    update(schema.schema_version).values(
+                        applied_count=schema.CURRENT_VERSION
+                    )
+                )
+
+    async def _rebalance_armor_defense(self) -> None:
+        """Schema-version-6 data migration: armor powers were rescaled
+        (see _ARMOR_POWERS_V5/_V6), so re-base every armored player's
+        defense by the delta for their equipped armor. A delta rather
+        than a recompute, so defense bought at SunShines' Fairy Land or
+        granted by IGMs survives."""
+        from pylord.engine.limits import STAT_CAP
+
+        for player in await self.players.all_players():
+            if player.armor_num == 0:
+                continue
+            if not 1 <= player.armor_num < len(_ARMOR_POWERS_V5):
+                logger.warning(
+                    "player %s has armor_num %s outside 1..15; "
+                    "skipping armor rebalance for them",
+                    player.id,
+                    player.armor_num,
+                )
+                continue
+            delta = (
+                _ARMOR_POWERS_V6[player.armor_num]
+                - _ARMOR_POWERS_V5[player.armor_num]
             )
+            player.defense = max(0, min(player.defense + delta, STAT_CAP))
+            await self.players.save(player)
 
     @staticmethod
     def _add_missing_columns(conn: Any) -> None:

@@ -7,8 +7,9 @@ underneath -- the same suite runs against SQLite locally and MySQL in CI.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import update
 
-from pylord import data
+from pylord import data, schema
 from pylord.data import Database
 
 
@@ -156,3 +157,100 @@ async def test_igm_data_is_namespaced_per_igm():
     await db.igm_data.delete("mines", "sift:1")
     assert await db.igm_data.get_raw("mines", "sift:1") is None
     assert await db.igm_data.get_raw("latrine", "sift:1") == "9"
+
+
+async def _set_version(db: Database, version: int) -> None:
+    await db.execute(
+        update(schema.schema_version).values(applied_count=version)
+    )
+
+
+async def test_v6_migration_rebases_armored_defense_by_delta():
+    db = await _db()
+    p = await db.players.create("Armored", "pw")
+    p.armor_num = 11  # Blood Armour: old power 225, new power 560
+    p.defense = 233 + 225 + 50  # base + old armor + 50 fairyland points
+    await db.players.save(p)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+
+    migrated = await db.players.get(p.id)
+    # Delta (+335) applied; the 50 bought points survive.
+    assert migrated.defense == 233 + 560 + 50
+    row = await db.fetch_one(
+        schema.schema_version.select()
+    )
+    assert row.applied_count == schema.CURRENT_VERSION
+
+
+async def test_v6_migration_skips_unarmored_and_corrupt_rows():
+    db = await _db()
+    bare = await db.players.create("Bare", "pw")
+    bare.armor_num = 0  # sold their Coat -- Player defaults to armor_num=1
+    await db.players.save(bare)
+    corrupt = await db.players.create("Corrupt", "pw")
+    corrupt.armor_num = 99
+    corrupt.defense = 123
+    await db.players.save(corrupt)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+
+    assert (await db.players.get(bare.id)).defense == 3  # model default
+    assert (await db.players.get(corrupt.id)).defense == 123
+
+
+async def test_v6_migration_is_idempotent_and_clamps():
+    db = await _db()
+    p = await db.players.create("Capped", "pw")
+    p.armor_num = 15  # delta +350
+    p.defense = 31_900
+    await db.players.save(p)
+
+    await _set_version(db, 5)
+    await db.create_schema()
+    assert (await db.players.get(p.id)).defense == 32_000  # clamped
+
+    # Second startup: version is already current, no second delta.
+    await db.create_schema()
+    assert (await db.players.get(p.id)).defense == 32_000
+
+
+async def test_v6_migration_is_atomic_across_a_crash(monkeypatch):
+    db = await _db()
+    first = await db.players.create("First", "pw")
+    first.armor_num = 11  # delta +335
+    first.defense = 233 + 225 + 50
+    await db.players.save(first)
+    second = await db.players.create("Second", "pw")
+    second.armor_num = 11
+    second.defense = 233 + 225 + 50
+    await db.players.save(second)
+
+    await _set_version(db, 5)
+
+    original_save = data.PlayersRepo.save
+    calls = 0
+
+    async def flaky_save(self, player):
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # crash partway through the migration loop
+            raise RuntimeError("simulated crash mid-migration")
+        await original_save(self, player)
+
+    monkeypatch.setattr(data.PlayersRepo, "save", flaky_save)
+
+    with pytest.raises(RuntimeError, match="simulated crash mid-migration"):
+        await db.create_schema()
+
+    monkeypatch.undo()  # restore the real save before reading state back
+
+    # Nothing committed: the first player's mid-loop save rolled back
+    # along with the version bump, so a retry sees version 5 again and
+    # re-migrates everyone -- not a double-applied delta on survivors.
+    assert (await db.players.get(first.id)).defense == 233 + 225 + 50
+    assert (await db.players.get(second.id)).defense == 233 + 225 + 50
+    row = await db.fetch_one(schema.schema_version.select())
+    assert row.applied_count == 5
